@@ -1,0 +1,1300 @@
+region,name,url,country,country_code,language,source_type
+Brasil,Folha de S.Paulo,https://www.folha.uol.com.br,Brasil,BR,Português,Jornal
+Brasil,O Globo,https://oglobo.globo.com,Brasil,BR,Português,Jornal
+Brasil,O Estado de S. Paulo (Estadão),https://www.estadao.com.br,Brasil,BR,Português,Jornal
+Brasil,Valor Econômico,https://valor.globo.com,Brasil,BR,Português,Jornal
+Brasil,Pipeline Valor,https://pipelinevalor.globo.com,Brasil,BR,Português,Digital native
+Brasil,Piauí,https://piaui.uol.com.br,Brasil,BR,Português,Revista
+Brasil,Veja,https://veja.abril.com.br,Brasil,BR,Português,Revista
+Brasil,IstoÉ,https://istoe.com.br,Brasil,BR,Português,Revista
+Brasil,CartaCapital,https://www.cartacapital.com.br,Brasil,BR,Português,Revista
+Brasil,Revista Fórum,https://revistaforum.com.br,Brasil,BR,Português,Revista
+Brasil,Revista Oeste,https://revistaoeste.com,Brasil,BR,Português,Revista
+Brasil,Crusoé,https://crusoe.com.br,Brasil,BR,Português,Revista
+Brasil,O Antagonista,https://oantagonista.com.br,Brasil,BR,Português,Digital native
+Brasil,Revista Galileu,https://revistagalileu.globo.com,Brasil,BR,Português,Revista
+Brasil,g1,https://g1.globo.com,Brasil,BR,Português,Portal
+Brasil,UOL Notícias,https://www.uol.com.br,Brasil,BR,Português,Portal
+Brasil,R7,https://www.r7.com,Brasil,BR,Português,Portal
+Brasil,Terra,https://www.terra.com.br,Brasil,BR,Português,Portal
+Brasil,GloboNews,https://g1.globo.com/globonews/,Brasil,BR,Português,TV
+Brasil,CNN Brasil,https://www.cnnbrasil.com.br,Brasil,BR,Português,TV
+Brasil,TV Cultura,https://cultura.uol.com.br,Brasil,BR,Português,TV
+Brasil,Band Jornalismo,https://www.band.com.br,Brasil,BR,Português,TV
+Brasil,BandNews TV,https://bandnewstv.uol.com.br,Brasil,BR,Português,TV
+Brasil,SBT News,https://www.sbt.com.br,Brasil,BR,Português,TV
+Brasil,Record,https://www.record.com.br,Brasil,BR,Português,TV
+Brasil,Record News,https://noticias.r7.com/record-news/,Brasil,BR,Português,TV
+Brasil,Jovem Pan News,https://jovempan.com.br,Brasil,BR,Português,Rádio
+Brasil,CBN,https://cbn.globo.com,Brasil,BR,Português,Rádio
+Brasil,EBC - Empresa Brasil de Comunicação,https://www.ebc.com.br,Brasil,BR,Português,Agência
+Brasil,Agência Brasil,https://agenciabrasil.ebc.com.br,Brasil,BR,Português,Agência
+Brasil,TV Brasil,https://tvbrasil.ebc.com.br,Brasil,BR,Português,TV
+Brasil,Rádios EBC,https://radios.ebc.com.br,Brasil,BR,Português,Rádio
+Brasil,Agência Gov,https://agenciagov.ebc.com.br,Brasil,BR,Português,Agência
+Brasil,Agência Senado,https://www12.senado.leg.br/noticias,Brasil,BR,Português,Agência
+Brasil,Agência Câmara de Notícias,https://www.camara.leg.br/noticias,Brasil,BR,Português,Agência
+Brasil,Agência Fiocruz de Notícias,https://agencia.fiocruz.br,Brasil,BR,Português,Agência
+Brasil,Agência FAPESP,https://agencia.fapesp.br,Brasil,BR,Português,Agência
+Brasil,Pesquisa FAPESP,https://revistapesquisa.fapesp.br,Brasil,BR,Português,Revista
+Brasil,InfoMoney,https://www.infomoney.com.br,Brasil,BR,Português,Digital native
+Brasil,Brazil Journal,https://braziljournal.com,Brasil,BR,Português,Digital native
+Brasil,NeoFeed,https://neofeed.com.br,Brasil,BR,Português,Digital native
+Brasil,Exame,https://exame.com,Brasil,BR,Português,Revista
+Brasil,Money Times,https://www.moneytimes.com.br,Brasil,BR,Português,Digital native
+Brasil,Seu Dinheiro,https://www.seudinheiro.com,Brasil,BR,Português,Digital native
+Brasil,IstoÉ Dinheiro,https://istoedinheiro.com.br,Brasil,BR,Português,Revista
+Brasil,E-Investidor (Estadão),https://www.estadao.com.br/einvestidor/,Brasil,BR,Português,Digital native
+Brasil,InvestNews,https://investnews.com.br,Brasil,BR,Português,Digital native
+Brasil,Capital Reset,https://capitalreset.uol.com.br,Brasil,BR,Português,Digital native
+Brasil,Suno Notícias,https://www.suno.com.br/noticias/,Brasil,BR,Português,Digital native
+Brasil,The Shift,https://theshift.info,Brasil,BR,Português,Digital native
+Brasil,Nexo Jornal,https://www.nexojornal.com.br,Brasil,BR,Português,Digital native
+Brasil,JOTA,https://www.jota.info,Brasil,BR,Português,Digital native
+Brasil,Poder360,https://www.poder360.com.br,Brasil,BR,Português,Digital native
+Brasil,Metrópoles,https://www.metropoles.com,Brasil,BR,Português,Digital native
+Brasil,The Intercept Brasil,https://www.intercept.com.br,Brasil,BR,Português,Investigativo
+Brasil,Congresso em Foco,https://www.congressoemfoco.com.br,Brasil,BR,Português,Digital native
+Brasil,Gazeta do Povo,https://www.gazetadopovo.com.br,Brasil,BR,Português,Jornal
+Brasil,Brasil de Fato,https://www.brasildefato.com.br,Brasil,BR,Português,Digital native
+Brasil,Brasil 247,https://www.brasil247.com,Brasil,BR,Português,Digital native
+Brasil,Diário do Centro do Mundo,https://www.diariodocentrodomundo.com.br,Brasil,BR,Português,Blog
+Brasil,SUMAÚMA,https://sumauma.com,Brasil,BR,Português,Investigativo
+Brasil,((o))eco,https://oeco.org.br,Brasil,BR,Português,Digital native
+Brasil,Agência Pública,https://apublica.org,Brasil,BR,Português,Investigativo
+Brasil,Repórter Brasil,https://reporterbrasil.org.br,Brasil,BR,Português,Investigativo
+Brasil,Fiquem Sabendo,https://fiquemsabendo.com.br,Brasil,BR,Português,Digital native
+Brasil,Núcleo Jornalismo,https://nucleo.jor.br,Brasil,BR,Português,Digital native
+Brasil,Amazônia Real,https://amazoniareal.com.br,Brasil,BR,Português,Investigativo
+Brasil,InfoAmazonia,https://infoamazonia.org,Brasil,BR,Português,Digital native
+Brasil,Mongabay Brasil,https://www.mongabay.com.br,Brasil,BR,Português,Digital native
+Brasil,O Joio e O Trigo,https://ojoioeotrigo.com.br,Brasil,BR,Português,Investigativo
+Brasil,Gênero e Número,https://www.generonumero.media,Brasil,BR,Português,Digital native
+Brasil,Alma Preta,https://almapreta.com.br,Brasil,BR,Português,Digital native
+Brasil,Ponte Jornalismo,https://ponte.org,Brasil,BR,Português,Investigativo
+Brasil,AzMina,https://azmina.com.br,Brasil,BR,Português,Digital native
+Brasil,Agência Mural,https://agenciamural.org.br,Brasil,BR,Português,Digital native
+Brasil,Marco Zero Conteúdo,https://marcozero.org,Brasil,BR,Português,Investigativo
+Brasil,Saiba Mais,https://saibamais.jor.br,Brasil,BR,Português,Digital native
+Brasil,Tilt (UOL),https://www.uol.com.br/tilt/,Brasil,BR,Português,Digital native
+Brasil,Canaltech,https://canaltech.com.br,Brasil,BR,Português,Digital native
+Brasil,Tecnoblog,https://tecnoblog.net,Brasil,BR,Português,Blog
+Brasil,Olhar Digital,https://olhardigital.com.br,Brasil,BR,Português,Digital native
+Brasil,TecMundo,https://www.tecmundo.com.br,Brasil,BR,Português,Digital native
+Brasil,Mobile Time,https://www.mobiletime.com.br,Brasil,BR,Português,Digital native
+Brasil,Ludopédio,https://ludopedio.org.br,Brasil,BR,Português,Blog
+Brasil,ge (Globo Esporte),https://ge.globo.com,Brasil,BR,Português,Portal
+Brasil,Aos Fatos,https://www.aosfatos.org,Brasil,BR,Português,Fact-checking
+Brasil,Agência Lupa,https://www.agencialupa.org,Brasil,BR,Português,Fact-checking
+Brasil,Estadão Verifica,https://www.estadao.com.br/estadao-verifica,Brasil,BR,Português,Fact-checking
+Brasil,Projeto Comprova,https://projetocomprova.com.br,Brasil,BR,Português,Fact-checking
+Brasil,Fato ou Fake (g1),https://g1.globo.com/fato-ou-fake/,Brasil,BR,Português,Fact-checking
+Brasil,Boatos.org,https://www.boatos.org,Brasil,BR,Português,Fact-checking
+Brasil,E-farsas,https://www.e-farsas.com,Brasil,BR,Português,Fact-checking
+Brasil,BBC News Brasil,https://www.bbc.com/portuguese,Brasil / Reino Unido,BR/GB,Português,Portal
+Brasil,DW Brasil,https://www.dw.com/pt-br,Brasil / Alemanha,BR/DE,Português,Portal
+Brasil,ContilNet Notícias,https://contilnetnoticias.com.br,Brasil,BR,Português,Portal
+Brasil,ac24horas,https://ac24horas.com,Brasil,BR,Português,Portal
+Brasil,A Gazeta do Acre,https://agazetadoacre.com,Brasil,BR,Português,Portal
+Brasil,g1 Acre,https://g1.globo.com/ac/acre/,Brasil,BR,Português,Portal
+Brasil,Gazeta de Alagoas,https://www.gazetadealagoas.com.br,Brasil,BR,Português,Jornal
+Brasil,Cada Minuto,https://www.cadaminuto.com.br,Brasil,BR,Português,Portal
+Brasil,TNH1,https://www.tnh1.com.br,Brasil,BR,Português,Portal
+Brasil,Diário do Amapá,https://www.diariodoamapa.com.br,Brasil,BR,Português,Jornal
+Brasil,SelesNafes.com,https://selesnafes.com,Brasil,BR,Português,Portal
+Brasil,g1 Amapá,https://g1.globo.com/ap/amapa/,Brasil,BR,Português,Portal
+Brasil,A Crítica,https://www.acritica.com,Brasil,BR,Português,Jornal
+Brasil,Amazonas Atual,https://amazonasatual.com.br,Brasil,BR,Português,Digital native
+Brasil,D24AM,https://d24am.com,Brasil,BR,Português,Portal
+Brasil,Em Tempo,https://emtempo.com.br,Brasil,BR,Português,Jornal
+Brasil,g1 Amazonas,https://g1.globo.com/am/amazonas/,Brasil,BR,Português,Portal
+Brasil,Correio (Correio 24 Horas),https://www.correio24horas.com.br,Brasil,BR,Português,Jornal
+Brasil,A Tarde,https://atarde.com.br,Brasil,BR,Português,Jornal
+Brasil,Bahia Notícias,https://www.bahianoticias.com.br,Brasil,BR,Português,Portal
+Brasil,Acorda Cidade,https://www.acordacidade.com.br,Brasil,BR,Português,Portal
+Brasil,O Povo,https://www.opovo.com.br,Brasil,BR,Português,Jornal
+Brasil,Diário do Nordeste,https://diariodonordeste.verdesmares.com.br,Brasil,BR,Português,Jornal
+Brasil,Correio Braziliense,https://www.correiobraziliense.com.br,Brasil,BR,Português,Jornal
+Brasil,Jornal de Brasília,https://jornaldebrasilia.com.br,Brasil,BR,Português,Jornal
+Brasil,A Gazeta,https://www.agazeta.com.br,Brasil,BR,Português,Jornal
+Brasil,Século Diário,https://www.seculodiario.com.br,Brasil,BR,Português,Digital native
+Brasil,Folha Vitória,https://www.folhavitoria.com.br,Brasil,BR,Português,Portal
+Brasil,O Popular,https://opopular.com.br,Brasil,BR,Português,Jornal
+Brasil,Jornal Opção,https://www.jornalopcao.com.br,Brasil,BR,Português,Jornal
+Brasil,Mais Goiás,https://www.maisgoias.com.br,Brasil,BR,Português,Portal
+Brasil,A Redação,https://aredacao.com.br,Brasil,BR,Português,Portal
+Brasil,O Imparcial,https://oimparcial.com.br,Brasil,BR,Português,Jornal
+Brasil,Imirante,https://imirante.com,Brasil,BR,Português,Portal
+Brasil,Gazeta Digital,https://www.gazetadigital.com.br,Brasil,BR,Português,Jornal
+Brasil,Olhar Direto,https://www.olhardireto.com.br,Brasil,BR,Português,Portal
+Brasil,MidiaNews,https://www.midianews.com.br,Brasil,BR,Português,Portal
+Brasil,RDNews,https://www.rdnews.com.br,Brasil,BR,Português,Portal
+Brasil,Primeira Hora,https://primeirahora.com.br,Brasil,BR,Português,Portal
+Brasil,Campo Grande News,https://www.campograndenews.com.br,Brasil,BR,Português,Portal
+Brasil,Correio do Estado,https://correiodoestado.com.br,Brasil,BR,Português,Jornal
+Brasil,A Crítica de Campo Grande,https://acritica.net,Brasil,BR,Português,Jornal
+Brasil,Dourados News,https://www.douradosnews.com.br,Brasil,BR,Português,Portal
+Brasil,O Pantaneiro,https://www.opantaneiro.com.br,Brasil,BR,Português,Portal
+Brasil,Estado de Minas,https://www.em.com.br,Brasil,BR,Português,Jornal
+Brasil,O Tempo,https://www.otempo.com.br,Brasil,BR,Português,Jornal
+Brasil,Itatiaia,https://www.itatiaia.com.br,Brasil,BR,Português,Rádio
+Brasil,Hoje em Dia,https://www.hojeemdia.com.br,Brasil,BR,Português,Jornal
+Brasil,O Liberal,https://www.oliberal.com,Brasil,BR,Português,Jornal
+Brasil,Diário do Pará,https://diariodopara.com.br,Brasil,BR,Português,Jornal
+Brasil,Jornal da Paraíba,https://jornaldaparaiba.com.br,Brasil,BR,Português,Jornal
+Brasil,Portal Correio (Correio da Paraíba),https://portalcorreio.com.br,Brasil,BR,Português,Jornal
+Brasil,Bem Paraná,https://www.bemparana.com.br,Brasil,BR,Português,Portal
+Brasil,Plural,https://plural.jor.br,Brasil,BR,Português,Digital native
+Brasil,Tribuna do Paraná,https://www.tribunapr.com.br,Brasil,BR,Português,Jornal
+Brasil,Folha de Londrina,https://www.folhadelondrina.com.br,Brasil,BR,Português,Jornal
+Brasil,Diario de Pernambuco,https://www.diariodepernambuco.com.br,Brasil,BR,Português,Jornal
+Brasil,Folha de Pernambuco,https://www.folhape.com.br,Brasil,BR,Português,Jornal
+Brasil,Jornal do Commercio (JC),https://jc.uol.com.br,Brasil,BR,Português,Jornal
+Brasil,NE Notícias,https://www.nenoticias.com.br,Brasil,BR,Português,Portal
+Brasil,O Dia (Piauí),https://portalodia.com,Brasil,BR,Português,Jornal
+Brasil,MeioNews (ex-Meio Norte),https://www.meionews.com,Brasil,BR,Português,Portal
+Brasil,Cidade Verde,https://www.cidadeverde.com,Brasil,BR,Português,Portal
+Brasil,GP1,https://www.gp1.com.br,Brasil,BR,Português,Portal
+Brasil,180graus,https://www.180graus.com,Brasil,BR,Português,Portal
+Brasil,Extra,https://extra.globo.com,Brasil,BR,Português,Jornal
+Brasil,O Dia (RJ),https://odia.ig.com.br,Brasil,BR,Português,Jornal
+Brasil,Tribuna do Norte,https://tribunadonorte.com.br,Brasil,BR,Português,Jornal
+Brasil,Novo Notícias,https://novonoticias.com,Brasil,BR,Português,Portal
+Brasil,GZH (Zero Hora),https://gauchazh.clicrbs.com.br,Brasil,BR,Português,Jornal
+Brasil,Correio do Povo,https://www.correiodopovo.com.br,Brasil,BR,Português,Jornal
+Brasil,Jornal do Comércio (RS),https://www.jornaldocomercio.com,Brasil,BR,Português,Jornal
+Brasil,Sul21,https://sul21.com.br,Brasil,BR,Português,Digital native
+Brasil,O Sul,https://www.osul.com.br,Brasil,BR,Português,Portal
+Brasil,Rondoniaovivo,https://rondoniaovivo.com,Brasil,BR,Português,Portal
+Brasil,Rondoniagora,https://www.rondoniagora.com,Brasil,BR,Português,Portal
+Brasil,g1 Rondônia,https://g1.globo.com/ro/rondonia/,Brasil,BR,Português,Portal
+Brasil,Folha de Boa Vista,https://folhabv.com.br,Brasil,BR,Português,Jornal
+Brasil,g1 Roraima,https://g1.globo.com/rr/roraima/,Brasil,BR,Português,Portal
+Brasil,NSC Total,https://www.nsctotal.com.br,Brasil,BR,Português,Portal
+Brasil,ND Mais,https://ndmais.com.br,Brasil,BR,Português,Portal
+Brasil,Diário Regional (ex-Diário do Iguaçu),https://diregional.com.br,Brasil,BR,Português,Jornal
+Brasil,ACidade ON,https://www.acidadeon.com,Brasil,BR,Português,Portal
+Brasil,Diário da Região,https://www.diariodaregiao.com.br,Brasil,BR,Português,Jornal
+Brasil,Cruzeiro do Sul,https://www.jornalcruzeiro.com.br,Brasil,BR,Português,Jornal
+Brasil,Infonet,https://infonet.com.br,Brasil,BR,Português,Portal
+Brasil,Jornal da Cidade,https://www.jornaldacidade.net,Brasil,BR,Português,Jornal
+Brasil,g1 Sergipe,https://g1.globo.com/se/sergipe/,Brasil,BR,Português,Portal
+Brasil,Jornal do Tocantins,https://www.jornaldotocantins.com.br,Brasil,BR,Português,Jornal
+Brasil,T1 Notícias,https://t1noticias.com.br,Brasil,BR,Português,Portal
+Brasil,g1 Tocantins,https://g1.globo.com/to/tocantins/,Brasil,BR,Português,Portal
+América Latina e Caribe,Clarín,https://www.clarin.com,Argentina,AR,Espanhol,Jornal
+América Latina e Caribe,La Nación,https://www.lanacion.com.ar,Argentina,AR,Espanhol,Jornal
+América Latina e Caribe,Infobae,https://www.infobae.com,Argentina,AR,Espanhol,Digital native
+América Latina e Caribe,Página/12,https://www.pagina12.com.ar,Argentina,AR,Espanhol,Jornal
+América Latina e Caribe,Perfil,https://www.perfil.com,Argentina,AR,Espanhol,Jornal / Revista
+América Latina e Caribe,Chequeado,https://chequeado.com,Argentina,AR,Espanhol,Fact-checking
+América Latina e Caribe,Revista Elefante Blanco,https://www.revistaelefanteblanco.com,Argentina,AR,Espanhol,Digital native / Investigativo
+América Latina e Caribe,El País (Uruguai),https://www.elpais.com.uy,Uruguai,UY,Espanhol,Jornal
+América Latina e Caribe,la diaria,https://ladiaria.com.uy,Uruguai,UY,Espanhol,Jornal / Digital native
+América Latina e Caribe,Búsqueda,https://www.busqueda.com.uy,Uruguai,UY,Espanhol,Revista
+América Latina e Caribe,El Observador,https://www.elobservador.com.uy,Uruguai,UY,Espanhol,Jornal
+América Latina e Caribe,Brecha,https://brecha.com.uy,Uruguai,UY,Espanhol,Revista
+América Latina e Caribe,ABC Color,https://www.abc.com.py,Paraguai,PY,Espanhol,Jornal
+América Latina e Caribe,Última Hora,https://www.ultimahora.com,Paraguai,PY,Espanhol,Jornal
+América Latina e Caribe,La Nación (Paraguai),https://www.lanacion.com.py,Paraguai,PY,Espanhol,Jornal
+América Latina e Caribe,El Surtidor (El Surti),https://elsurti.com,Paraguai,PY,Espanhol,Digital native / Investigativo / Fact-checking
+América Latina e Caribe,Emol / El Mercurio,https://www.emol.com,Chile,CL,Espanhol,Jornal / Portal
+América Latina e Caribe,La Tercera,https://www.latercera.com,Chile,CL,Espanhol,Jornal
+América Latina e Caribe,CIPER,https://www.ciperchile.cl,Chile,CL,Espanhol,Investigativo
+América Latina e Caribe,El Mostrador,https://www.elmostrador.cl,Chile,CL,Espanhol,Digital native
+América Latina e Caribe,BioBioChile,https://www.biobiochile.cl,Chile,CL,Espanhol,Rádio / Portal
+América Latina e Caribe,Fast Check CL,https://www.fastcheck.cl,Chile,CL,Espanhol,Fact-checking
+América Latina e Caribe,Mala Espina Check,https://malaespinacheck.cl,Chile,CL,Espanhol,Fact-checking
+América Latina e Caribe,Los Tiempos,https://www.lostiempos.com,Bolívia,BO,Espanhol,Jornal
+América Latina e Caribe,El Deber,https://eldeber.com.bo,Bolívia,BO,Espanhol,Jornal
+América Latina e Caribe,La Razón (Bolívia),https://www.la-razon.com,Bolívia,BO,Espanhol,Jornal
+América Latina e Caribe,Brújula Digital,https://brujuladigital.net,Bolívia,BO,Espanhol,Digital native
+América Latina e Caribe,Agencia de Noticias Fides (ANF),https://www.noticiasfides.com,Bolívia,BO,Espanhol,Agência
+América Latina e Caribe,Bolivia Verifica,https://boliviaverifica.bo,Bolívia,BO,Espanhol,Fact-checking
+América Latina e Caribe,El Comercio (Peru),https://elcomercio.pe,Peru,PE,Espanhol,Jornal
+América Latina e Caribe,La República (Peru),https://larepublica.pe,Peru,PE,Espanhol,Jornal
+América Latina e Caribe,RPP Noticias,https://rpp.pe,Peru,PE,Espanhol,Rádio / Portal
+América Latina e Caribe,Ojo Público,https://ojo-publico.com,Peru,PE,Espanhol,Investigativo / Digital native
+América Latina e Caribe,IDL-Reporteros,https://www.idl-reporteros.pe,Peru,PE,Espanhol,Investigativo
+América Latina e Caribe,Convoca,https://convoca.pe,Peru,PE,Espanhol,Investigativo
+América Latina e Caribe,Salud con Lupa,https://saludconlupa.com,Peru,PE,Espanhol,Investigativo / Digital native
+América Latina e Caribe,El Universo,https://www.eluniverso.com,Equador,EC,Espanhol,Jornal
+América Latina e Caribe,El Comercio (Equador),https://www.elcomercio.com,Equador,EC,Espanhol,Jornal
+América Latina e Caribe,Primicias,https://www.primicias.ec,Equador,EC,Espanhol,Digital native
+América Latina e Caribe,Plan V,https://www.planv.com.ec,Equador,EC,Espanhol,Investigativo / Revista
+América Latina e Caribe,GK,https://gk.city,Equador,EC,Espanhol,Digital native
+América Latina e Caribe,Ecuador Chequea,https://www.ecuadorchequea.com,Equador,EC,Espanhol,Fact-checking
+América Latina e Caribe,El Tiempo,https://www.eltiempo.com,Colômbia,CO,Espanhol,Jornal
+América Latina e Caribe,El Espectador,https://www.elespectador.com,Colômbia,CO,Espanhol,Jornal
+América Latina e Caribe,Semana,https://www.semana.com,Colômbia,CO,Espanhol,Revista
+América Latina e Caribe,La Silla Vacía,https://www.lasillavacia.com,Colômbia,CO,Espanhol,Digital native / Fact-checking
+América Latina e Caribe,Cuestión Pública,https://cuestionpublica.com,Colômbia,CO,Espanhol,Investigativo
+América Latina e Caribe,Vorágine,https://voragine.co,Colômbia,CO,Espanhol,Investigativo
+América Latina e Caribe,ColombiaCheck,https://colombiacheck.com,Colômbia,CO,Espanhol,Fact-checking
+América Latina e Caribe,El Nacional,https://www.elnacional.com,Venezuela,VE,Espanhol,Jornal / Digital native
+América Latina e Caribe,Efecto Cocuyo,https://efectococuyo.com,Venezuela,VE,Espanhol,Digital native
+América Latina e Caribe,Armando.info,https://armando.info,Venezuela,VE,Espanhol,Investigativo
+América Latina e Caribe,El Pitazo,https://elpitazo.net,Venezuela,VE,Espanhol,Digital native
+América Latina e Caribe,TalCual,https://talcualdigital.com,Venezuela,VE,Espanhol,Digital native
+América Latina e Caribe,Runrun.es,https://runrun.es,Venezuela,VE,Espanhol,Investigativo / Digital native
+América Latina e Caribe,Cotejo.info,https://cotejo.info,Venezuela,VE,Espanhol,Fact-checking
+América Latina e Caribe,Venezolana de Televisión (VTV),https://www.vtv.gob.ve,Venezuela,VE,Espanhol,TV
+América Latina e Caribe,Stabroek News,https://www.stabroeknews.com,Guiana,GY,Inglês,Jornal
+América Latina e Caribe,Kaieteur News,https://www.kaieteurnewsonline.com,Guiana,GY,Inglês,Jornal
+América Latina e Caribe,Guyana Chronicle,https://guyanachronicle.com,Guiana,GY,Inglês,Jornal
+América Latina e Caribe,Demerara Waves,https://demerarawaves.com,Guiana,GY,Inglês,Digital native / Rádio
+América Latina e Caribe,de Ware Tijd,https://www.dwtonline.com,Suriname,SR,Holandês,Jornal
+América Latina e Caribe,Starnieuws,https://www.starnieuws.com,Suriname,SR,Holandês,Digital native
+América Latina e Caribe,Suriname Herald,https://srherald.com,Suriname,SR,Holandês,Digital native
+América Latina e Caribe,France-Guyane,https://www.franceguyane.fr,Guiana Francesa,GF,Francês,Jornal
+América Latina e Caribe,Guyaweb,https://www.guyaweb.com,Guiana Francesa,GF,Francês,Digital native / Investigativo
+América Latina e Caribe,Guyane la 1ère,https://la1ere.franceinfo.fr/guyane,Guiana Francesa,GF,Francês,TV / Rádio
+América Latina e Caribe,Reforma,https://www.reforma.com,México,MX,Espanhol,Jornal
+América Latina e Caribe,El Universal (México),https://www.eluniversal.com.mx,México,MX,Espanhol,Jornal
+América Latina e Caribe,La Jornada,https://www.jornada.com.mx,México,MX,Espanhol,Jornal
+América Latina e Caribe,Milenio,https://www.milenio.com,México,MX,Espanhol,Jornal / TV
+América Latina e Caribe,Proceso,https://www.proceso.com.mx,México,MX,Espanhol,Revista
+América Latina e Caribe,Animal Político,https://animalpolitico.com,México,MX,Espanhol,Digital native / Fact-checking
+América Latina e Caribe,Aristegui Noticias,https://aristeguinoticias.com,México,MX,Espanhol,Digital native / Rádio
+América Latina e Caribe,Mexicanos Contra la Corrupción y la Impunidad,https://contralacorrupcion.mx,México,MX,Espanhol,Investigativo
+América Latina e Caribe,Quinto Elemento Lab,https://quintoelab.org,México,MX,Espanhol,Investigativo
+América Latina e Caribe,Verificado,https://verificado.com.mx,México,MX,Espanhol,Fact-checking
+América Latina e Caribe,Prensa Libre,https://www.prensalibre.com,Guatemala,GT,Espanhol,Jornal
+América Latina e Caribe,La Hora,https://lahora.gt,Guatemala,GT,Espanhol,Jornal / Digital native
+América Latina e Caribe,Plaza Pública,https://www.plazapublica.com.gt,Guatemala,GT,Espanhol,Investigativo / Digital native
+América Latina e Caribe,Agencia Ocote,https://www.agenciaocote.com,Guatemala,GT,Espanhol,Digital native / Fact-checking
+América Latina e Caribe,No-Ficción,https://www.no-ficcion.com,Guatemala,GT,Espanhol,Investigativo
+América Latina e Caribe,Nómada,https://nomada.gt,Guatemala,GT,Espanhol,Digital native
+América Latina e Caribe,Amandala,https://amandala.com.bz,Belize,BZ,Inglês,Jornal
+América Latina e Caribe,7 News Belize,https://www.7newsbelize.com,Belize,BZ,Inglês,TV
+América Latina e Caribe,The Reporter,https://www.reporter.bz,Belize,BZ,Inglês,Jornal
+América Latina e Caribe,Breaking Belize News,https://www.breakingbelizenews.com,Belize,BZ,Inglês,Digital native
+América Latina e Caribe,El Faro,https://elfaro.net,El Salvador,SV,Espanhol,Investigativo / Digital native
+América Latina e Caribe,La Prensa Gráfica,https://www.laprensagrafica.com,El Salvador,SV,Espanhol,Jornal
+América Latina e Caribe,El Diario de Hoy,https://www.elsalvador.com,El Salvador,SV,Espanhol,Jornal
+América Latina e Caribe,Revista Factum,https://www.revistafactum.com,El Salvador,SV,Espanhol,Investigativo / Revista
+América Latina e Caribe,GatoEncerrado,https://gatoencerrado.news,El Salvador,SV,Espanhol,Digital native / Investigativo
+América Latina e Caribe,El Heraldo,https://www.elheraldo.hn,Honduras,HN,Espanhol,Jornal
+América Latina e Caribe,La Prensa (Honduras),https://www.laprensa.hn,Honduras,HN,Espanhol,Jornal
+América Latina e Caribe,Contracorriente,https://contracorriente.red,Honduras,HN,Espanhol,Investigativo / Digital native
+América Latina e Caribe,Criterio.hn,https://criterio.hn,Honduras,HN,Espanhol,Digital native / Investigativo
+América Latina e Caribe,Radio Progreso,https://radioprogresohn.net,Honduras,HN,Espanhol,Rádio
+América Latina e Caribe,Confidencial,https://confidencial.digital,Nicarágua,NI,Espanhol,Investigativo / Digital native
+América Latina e Caribe,La Prensa (Nicarágua),https://www.laprensani.com,Nicarágua,NI,Espanhol,Jornal
+América Latina e Caribe,Divergentes,https://www.divergentes.com,Nicarágua,NI,Espanhol,Investigativo / Digital native
+América Latina e Caribe,Despacho 505,https://www.despacho505.com,Nicarágua,NI,Espanhol,Digital native
+América Latina e Caribe,El 19 Digital,https://www.el19digital.com,Nicarágua,NI,Espanhol,Digital native
+América Latina e Caribe,La Nación (Costa Rica),https://www.nacion.com,Costa Rica,CR,Espanhol,Jornal
+América Latina e Caribe,CRHoy,https://www.crhoy.com,Costa Rica,CR,Espanhol,Digital native
+América Latina e Caribe,Semanario Universidad,https://semanariouniversidad.com,Costa Rica,CR,Espanhol,Jornal / Revista
+América Latina e Caribe,Delfino.cr,https://delfino.cr,Costa Rica,CR,Espanhol,Digital native
+América Latina e Caribe,Doble Check,https://doblecheck.cr,Costa Rica,CR,Espanhol,Fact-checking
+América Latina e Caribe,La Prensa (Panamá),https://www.prensa.com,Panamá,PA,Espanhol,Jornal
+América Latina e Caribe,La Estrella de Panamá,https://www.laestrella.com.pa,Panamá,PA,Espanhol,Jornal
+América Latina e Caribe,TVN Noticias,https://www.tvn-2.com,Panamá,PA,Espanhol,TV / Portal
+América Latina e Caribe,Foco,https://focopanama.com,Panamá,PA,Espanhol,Investigativo / Digital native
+América Latina e Caribe,Granma,https://www.granma.cu,Cuba,CU,Espanhol,Jornal
+América Latina e Caribe,Prensa Latina,https://www.prensa-latina.cu,Cuba,CU,Espanhol,Agência
+América Latina e Caribe,Cubadebate,http://www.cubadebate.cu,Cuba,CU,Espanhol,Portal
+América Latina e Caribe,14ymedio,https://www.14ymedio.com,Cuba,CU,Espanhol,Digital native
+América Latina e Caribe,El Toque,https://eltoque.com,Cuba,CU,Espanhol,Digital native
+América Latina e Caribe,Periodismo de Barrio,https://periodismodebarrio.org,Cuba,CU,Espanhol,Investigativo / Digital native
+América Latina e Caribe,Revista El Estornudo,https://www.revistaelestornudo.com,Cuba,CU,Espanhol,Revista / Digital native
+América Latina e Caribe,Diario de Cuba,https://diariodecuba.com,Cuba,CU,Espanhol,Digital native
+América Latina e Caribe,Le Nouvelliste,https://lenouvelliste.com,Haiti,HT,Francês,Jornal
+América Latina e Caribe,Le National,https://lenational.org,Haiti,HT,Francês,Jornal
+América Latina e Caribe,AlterPresse,https://www.alterpresse.org,Haiti,HT,Francês,Agência / Digital native
+América Latina e Caribe,AyiboPost,https://ayibopost.com,Haiti,HT,Francês / Crioulo,Digital native / Investigativo
+América Latina e Caribe,Radio Télé Métropole,https://www.metropole.ht,Haiti,HT,Francês / Crioulo,Rádio / TV
+América Latina e Caribe,Diario Libre,https://www.diariolibre.com,República Dominicana,DO,Espanhol,Jornal
+América Latina e Caribe,Listín Diario,https://listindiario.com,República Dominicana,DO,Espanhol,Jornal
+América Latina e Caribe,Acento,https://acento.com.do,República Dominicana,DO,Espanhol,Digital native
+América Latina e Caribe,El Día,https://eldia.com.do,República Dominicana,DO,Espanhol,Jornal
+América Latina e Caribe,Noticias SIN,https://noticiassin.com,República Dominicana,DO,Espanhol,TV / Portal
+América Latina e Caribe,The Gleaner,https://jamaica-gleaner.com,Jamaica,JM,Inglês,Jornal
+América Latina e Caribe,Jamaica Observer,https://www.jamaicaobserver.com,Jamaica,JM,Inglês,Jornal
+América Latina e Caribe,Television Jamaica (TVJ),https://televisionjamaica.com,Jamaica,JM,Inglês,TV
+América Latina e Caribe,Nationwide News Network,https://nationwideradiojm.com,Jamaica,JM,Inglês,Rádio
+América Latina e Caribe,Trinidad and Tobago Guardian,https://guardian.co.tt,Trinidad e Tobago,TT,Inglês,Jornal
+América Latina e Caribe,Trinidad Express,https://trinidadexpress.com,Trinidad e Tobago,TT,Inglês,Jornal
+América Latina e Caribe,Trinidad and Tobago Newsday,https://newsday.co.tt,Trinidad e Tobago,TT,Inglês,Jornal
+América Latina e Caribe,CNC3,https://www.cnc3.co.tt,Trinidad e Tobago,TT,Inglês,TV
+América Latina e Caribe,Wired868,https://wired868.com,Trinidad e Tobago,TT,Inglês,Digital native
+América Latina e Caribe,Nation News,https://www.nationnews.com,Barbados,BB,Inglês,Jornal
+América Latina e Caribe,Barbados Today,https://barbadostoday.bb,Barbados,BB,Inglês,Digital native
+América Latina e Caribe,Caribbean Broadcasting Corporation (CBC),https://www.cbc.bb,Barbados,BB,Inglês,TV / Rádio
+América Latina e Caribe,The Tribune,https://www.tribune242.com,Bahamas,BS,Inglês,Jornal
+América Latina e Caribe,The Nassau Guardian,https://thenassauguardian.com,Bahamas,BS,Inglês,Jornal
+América Latina e Caribe,Eyewitness News,https://ewnews.com,Bahamas,BS,Inglês,TV / Digital native
+América Latina e Caribe,ZNS Bahamas,https://znsbahamas.com,Bahamas,BS,Inglês,Rádio / TV
+América Latina e Caribe,El Nuevo Día,https://www.elnuevodia.com,Porto Rico,PR,Espanhol,Jornal
+América Latina e Caribe,El Vocero,https://www.elvocero.com,Porto Rico,PR,Espanhol,Jornal
+América Latina e Caribe,Primera Hora,https://www.primerahora.com,Porto Rico,PR,Espanhol,Jornal
+América Latina e Caribe,Centro de Periodismo Investigativo,https://periodismoinvestigativo.com,Porto Rico,PR,Espanhol / Inglês,Investigativo
+América Latina e Caribe,Noticel,https://www.noticel.com,Porto Rico,PR,Espanhol,Digital native
+América Latina e Caribe,France-Antilles,https://www.franceantilles.fr,Guadalupe / Martinica,GP/MQ,Francês,Jornal
+América Latina e Caribe,RCI (Radio Caraïbes International),https://rci.fm,Martinica / Guadalupe,MQ/GP,Francês,Rádio / Portal
+América Latina e Caribe,Martinique la 1ère,https://la1ere.francetvinfo.fr/martinique,Martinica,MQ,Francês,TV / Rádio
+América Latina e Caribe,Guadeloupe la 1ère,https://la1ere.francetvinfo.fr/guadeloupe,Guadalupe,GP,Francês,TV / Rádio
+América Latina e Caribe,Karibinfo,https://www.karibinfo.com,Guadalupe / Martinica,GP/MQ,Francês,Digital native
+América Latina e Caribe,Antilliaans Dagblad,https://www.antilliaansdagblad.com,Curaçao,CW,Holandês,Jornal
+América Latina e Caribe,Amigoe,https://amigoe.com,Curaçao / Aruba,CW/AW,Holandês,Jornal
+América Latina e Caribe,Curaçao Chronicle,https://www.curacaochronicle.com,Curaçao,CW,Inglês / Holandês,Digital native
+América Latina e Caribe,Diario,https://www.diario.aw,Aruba,AW,Papiamento,Jornal
+América Latina e Caribe,Aruba Today,https://www.arubatoday.com,Aruba,AW,Inglês,Jornal
+América Latina e Caribe,The Voice of St Lucia,https://thevoiceslu.com,Santa Lúcia,LC,Inglês,Jornal
+América Latina e Caribe,St Lucia Times,https://stluciatimes.com,Santa Lúcia,LC,Inglês,Digital native
+América Latina e Caribe,The Star (Santa Lúcia),https://www.stluciastar.com,Santa Lúcia,LC,Inglês,Jornal
+América Latina e Caribe,NOW Grenada,https://www.nowgrenada.com,Granada,GD,Inglês,Digital native
+América Latina e Caribe,The New Today,https://thenewtodaygrenada.com,Granada,GD,Inglês,Jornal
+América Latina e Caribe,Antigua Observer,https://antiguaobserver.com,Antígua e Barbuda,AG,Inglês,Jornal / Rádio
+América Latina e Caribe,Antigua News Room,https://antiguanewsroom.com,Antígua e Barbuda,AG,Inglês,Digital native
+América Latina e Caribe,Searchlight,https://searchlight.vc,São Vicente e Granadinas,VC,Inglês,Jornal
+América Latina e Caribe,iWitness News,https://www.iwnsvg.com,São Vicente e Granadinas,VC,Inglês,Digital native
+América Latina e Caribe,The Vincentian,https://thevincentian.com,São Vicente e Granadinas,VC,Inglês,Jornal
+América Latina e Caribe,Dominica News Online,https://dominicanewsonline.com,Dominica,DM,Inglês,Digital native
+América Latina e Caribe,The Sun Dominica,https://sundominica.com,Dominica,DM,Inglês,Jornal
+América Latina e Caribe,SKNVibes,https://www.sknvibes.com,São Cristóvão e Nevis,KN,Inglês,Digital native
+América Latina e Caribe,WINN FM,https://winnmediaskn.com,São Cristóvão e Nevis,KN,Inglês,Rádio
+América Latina e Caribe,ZIZ Broadcasting,https://zizonline.com,São Cristóvão e Nevis,KN,Inglês,TV / Rádio
+América Latina e Caribe,Americas Quarterly,https://americasquarterly.org,Regional (EUA/América Latina),INT,Inglês / Espanhol,Revista
+América Latina e Caribe,Latin America Advisor,https://www.thedialogue.org/latin-america-advisor/,Regional (EUA/América Latina),INT,Inglês,Boletim / Revista
+América Latina e Caribe,LatinNews,https://www.latinnews.com,Regional,INT,Inglês,Agência / Boletim
+América Latina e Caribe,El País América,https://elpais.com/america/,Regional,INT,Espanhol,Jornal
+América Latina e Caribe,Mongabay Latam,https://es.mongabay.com,Regional,INT,Espanhol,Digital native / Investigativo
+América Latina e Caribe,Connectas,https://www.connectas.org,Regional,INT,Espanhol,Investigativo
+América Latina e Caribe,CLIP (Centro Latinoamericano de Investigación Periodística),https://www.elclip.org,Regional,INT,Espanhol,Investigativo
+América Latina e Caribe,InSight Crime,https://insightcrime.org,Regional,INT,Inglês / Espanhol,Investigativo
+América Latina e Caribe,Distintas Latitudes,https://distintaslatitudes.net,Regional,INT,Espanhol,Revista / Digital native
+América Latina e Caribe,LatamChequea,https://latamchequea.com,Regional,INT,Espanhol / Português,Fact-checking
+América Latina e Caribe,Caribbean News Global,https://caribbeannewsglobal.com,Regional (Caribe),INT,Inglês,Digital native
+América Latina e Caribe,Agencia Presentes,https://agenciapresentes.org,Regional,INT,Espanhol,Agência / Digital native
+América Latina e Caribe,IPS Noticias,https://ipsnoticias.net,Regional,INT,Espanhol,Agência
+América Latina e Caribe,TeleSUR,https://www.telesurtv.net,Regional (sede Venezuela),VE,Espanhol / Inglês,TV / Portal
+Europa e América do Norte,The New York Times,https://www.nytimes.com,EUA,US,Inglês,Jornal
+Europa e América do Norte,The Washington Post,https://www.washingtonpost.com,EUA,US,Inglês,Jornal
+Europa e América do Norte,The Wall Street Journal,https://www.wsj.com,EUA,US,Inglês,Jornal
+Europa e América do Norte,Associated Press,https://apnews.com,EUA,US,Inglês (multi),Agência
+Europa e América do Norte,Reuters,https://www.reuters.com,EUA/Reino Unido,US/GB,Inglês (multi),Agência
+Europa e América do Norte,Bloomberg News,https://www.bloomberg.com,EUA,US,Inglês,Agência
+Europa e América do Norte,NPR,https://www.npr.org,EUA,US,Inglês,Rádio
+Europa e América do Norte,PBS NewsHour,https://www.pbs.org/newshour,EUA,US,Inglês,TV
+Europa e América do Norte,USA Today,https://www.usatoday.com,EUA,US,Inglês,Jornal
+Europa e América do Norte,Los Angeles Times,https://www.latimes.com,EUA,US,Inglês,Jornal
+Europa e América do Norte,Chicago Tribune,https://www.chicagotribune.com,EUA,US,Inglês,Jornal
+Europa e América do Norte,The Boston Globe,https://www.bostonglobe.com,EUA,US,Inglês,Jornal
+Europa e América do Norte,Miami Herald,https://www.miamiherald.com,EUA,US,Inglês,Jornal
+Europa e América do Norte,The Texas Tribune,https://www.texastribune.org,EUA,US,Inglês,Digital native
+Europa e América do Norte,The Seattle Times,https://www.seattletimes.com,EUA,US,Inglês,Jornal
+Europa e América do Norte,Star Tribune,https://www.startribune.com,EUA,US,Inglês,Jornal
+Europa e América do Norte,The Philadelphia Inquirer,https://www.inquirer.com,EUA,US,Inglês,Jornal
+Europa e América do Norte,ProPublica,https://www.propublica.org,EUA,US,Inglês,Investigativo
+Europa e América do Norte,The Marshall Project,https://www.themarshallproject.org,EUA,US,Inglês,Investigativo
+Europa e América do Norte,Grist,https://grist.org,EUA,US,Inglês,Digital native
+Europa e América do Norte,STAT News,https://www.statnews.com,EUA,US,Inglês,Digital native
+Europa e América do Norte,Politico,https://www.politico.com,EUA,US,Inglês,Digital native
+Europa e América do Norte,Axios,https://www.axios.com,EUA,US,Inglês,Digital native
+Europa e América do Norte,The Atlantic,https://www.theatlantic.com,EUA,US,Inglês,Revista
+Europa e América do Norte,The New Yorker,https://www.newyorker.com,EUA,US,Inglês,Revista
+Europa e América do Norte,Reason,https://reason.com,EUA,US,Inglês,Revista
+Europa e América do Norte,National Review,https://www.nationalreview.com,EUA,US,Inglês,Revista
+Europa e América do Norte,The Dispatch,https://thedispatch.com,EUA,US,Inglês,Digital native
+Europa e América do Norte,The Hill,https://thehill.com,EUA,US,Inglês,Jornal
+Europa e América do Norte,Roll Call,https://rollcall.com,EUA,US,Inglês,Jornal
+Europa e América do Norte,Military Times,https://www.militarytimes.com,EUA,US,Inglês,Digital native
+Europa e América do Norte,Defense One,https://www.defenseone.com,EUA,US,Inglês,Digital native
+Europa e América do Norte,Semafor,https://www.semafor.com,EUA,US,Inglês,Digital native
+Europa e América do Norte,Puck,https://puck.news,EUA,US,Inglês,Digital native
+Europa e América do Norte,The Information,https://www.theinformation.com,EUA,US,Inglês,Digital native
+Europa e América do Norte,Ars Technica,https://arstechnica.com,EUA,US,Inglês,Digital native
+Europa e América do Norte,WIRED,https://www.wired.com,EUA,US,Inglês,Revista
+Europa e América do Norte,MIT Technology Review,https://www.technologyreview.com,EUA,US,Inglês,Revista
+Europa e América do Norte,PolitiFact,https://www.politifact.com,EUA,US,Inglês,Fact-checking
+Europa e América do Norte,FactCheck.org,https://www.factcheck.org,EUA,US,Inglês,Fact-checking
+Europa e América do Norte,Snopes,https://www.snopes.com,EUA,US,Inglês,Fact-checking
+Europa e América do Norte,Polygraph.info,https://www.polygraph.info,EUA,US,Inglês,Fact-checking
+Europa e América do Norte,Bellingcat,https://www.bellingcat.com,Países Baixos/EUA,NL/US,Inglês,Investigativo
+Europa e América do Norte,The Globe and Mail,https://www.theglobeandmail.com,Canadá,CA,Inglês,Jornal
+Europa e América do Norte,Toronto Star,https://www.thestar.com,Canadá,CA,Inglês,Jornal
+Europa e América do Norte,National Post,https://nationalpost.com,Canadá,CA,Inglês,Jornal
+Europa e América do Norte,CBC News,https://www.cbc.ca,Canadá,CA,Inglês,TV
+Europa e América do Norte,Radio-Canada,https://ici.radio-canada.ca,Canadá,CA,Francês,TV
+Europa e América do Norte,La Presse,https://www.lapresse.ca,Canadá,CA,Francês,Digital native
+Europa e América do Norte,Le Devoir,https://www.ledevoir.com,Canadá,CA,Francês,Jornal
+Europa e América do Norte,Le Soleil,https://www.lesoleil.com,Canadá,CA,Francês,Jornal
+Europa e América do Norte,The Narwhal,https://thenarwhal.ca,Canadá,CA,Inglês,Investigativo
+Europa e América do Norte,The Tyee,https://thetyee.ca,Canadá,CA,Inglês,Digital native
+Europa e América do Norte,The Logic,https://thelogic.co,Canadá,CA,Inglês,Digital native
+Europa e América do Norte,Winnipeg Free Press,https://www.winnipegfreepress.com,Canadá,CA,Inglês,Jornal
+Europa e América do Norte,Nunatsiaq News,https://nunatsiaq.com,Canadá,CA,Inglês/Inuktitut,Jornal
+Europa e América do Norte,BBC News,https://www.bbc.com/news,Reino Unido,GB,Inglês (multi),TV
+Europa e América do Norte,The Guardian,https://www.theguardian.com,Reino Unido,GB,Inglês,Jornal
+Europa e América do Norte,Financial Times,https://www.ft.com,Reino Unido,GB,Inglês,Jornal
+Europa e América do Norte,The Times,https://www.thetimes.co.uk,Reino Unido,GB,Inglês,Jornal
+Europa e América do Norte,The Daily Telegraph,https://www.telegraph.co.uk,Reino Unido,GB,Inglês,Jornal
+Europa e América do Norte,The Independent,https://www.independent.co.uk,Reino Unido,GB,Inglês,Digital native
+Europa e América do Norte,The Economist,https://www.economist.com,Reino Unido,GB,Inglês,Revista
+Europa e América do Norte,Channel 4 News,https://www.channel4.com/news,Reino Unido,GB,Inglês,TV
+Europa e América do Norte,Full Fact,https://fullfact.org,Reino Unido,GB,Inglês,Fact-checking
+Europa e América do Norte,The Irish Times,https://www.irishtimes.com,Irlanda,IE,Inglês,Jornal
+Europa e América do Norte,RTÉ News,https://www.rte.ie,Irlanda,IE,Inglês/Irlandês,TV
+Europa e América do Norte,Irish Independent,https://www.independent.ie,Irlanda,IE,Inglês,Jornal
+Europa e América do Norte,The Journal,https://www.thejournal.ie,Irlanda,IE,Inglês,Digital native
+Europa e América do Norte,Le Monde,https://www.lemonde.fr,França,FR,Francês,Jornal
+Europa e América do Norte,Le Figaro,https://www.lefigaro.fr,França,FR,Francês,Jornal
+Europa e América do Norte,Libération,https://www.liberation.fr,França,FR,Francês,Jornal
+Europa e América do Norte,Mediapart,https://www.mediapart.fr,França,FR,Francês,Investigativo
+Europa e América do Norte,France Info,https://www.franceinfo.fr,França,FR,Francês,Rádio
+Europa e América do Norte,Agence France-Presse,https://www.afp.com,França,FR,Francês (multi),Agência
+Europa e América do Norte,Disclose,https://disclose.ngo,França,FR,Francês,Investigativo
+Europa e América do Norte,Blast,https://www.blast-info.fr,França,FR,Francês,Digital native
+Europa e América do Norte,Contexte,https://www.contexte.com,França,FR,Francês,Digital native
+Europa e América do Norte,Le Monde diplomatique,https://www.monde-diplomatique.fr,França,FR,Francês (multi),Revista
+Europa e América do Norte,Der Spiegel,https://www.spiegel.de,Alemanha,DE,Alemão,Revista
+Europa e América do Norte,Süddeutsche Zeitung,https://www.sueddeutsche.de,Alemanha,DE,Alemão,Jornal
+Europa e América do Norte,Frankfurter Allgemeine Zeitung,https://www.faz.net,Alemanha,DE,Alemão,Jornal
+Europa e América do Norte,Die Zeit,https://www.zeit.de,Alemanha,DE,Alemão,Jornal
+Europa e América do Norte,tagesschau (ARD),https://www.tagesschau.de,Alemanha,DE,Alemão,TV
+Europa e América do Norte,taz,https://taz.de,Alemanha,DE,Alemão,Jornal
+Europa e América do Norte,Correctiv,https://correctiv.org,Alemanha,DE,Alemão,Investigativo
+Europa e América do Norte,Deutsche Welle,https://www.dw.com,Alemanha,DE,Alemão (multi),TV
+Europa e América do Norte,Handelsblatt,https://www.handelsblatt.com,Alemanha,DE,Alemão,Jornal
+Europa e América do Norte,Der Tagesspiegel,https://www.tagesspiegel.de,Alemanha,DE,Alemão,Jornal
+Europa e América do Norte,Die Welt,https://www.welt.de,Alemanha,DE,Alemão,Jornal
+Europa e América do Norte,Der Standard,https://www.derstandard.at,Áustria,AT,Alemão,Jornal
+Europa e América do Norte,Die Presse,https://www.diepresse.com,Áustria,AT,Alemão,Jornal
+Europa e América do Norte,ORF,https://www.orf.at,Áustria,AT,Alemão,TV
+Europa e América do Norte,Falter,https://www.falter.at,Áustria,AT,Alemão,Revista
+Europa e América do Norte,Kontrast.at,https://kontrast.at,Áustria,AT,Alemão,Digital native
+Europa e América do Norte,Neue Zürcher Zeitung,https://www.nzz.ch,Suíça,CH,Alemão,Jornal
+Europa e América do Norte,Tages-Anzeiger,https://www.tagesanzeiger.ch,Suíça,CH,Alemão,Jornal
+Europa e América do Norte,SRF,https://www.srf.ch,Suíça,CH,Alemão,TV
+Europa e América do Norte,Le Temps,https://www.letemps.ch,Suíça,CH,Francês,Jornal
+Europa e América do Norte,SWI swissinfo.ch,https://www.swissinfo.ch,Suíça,CH,Multi-idioma,Portal
+Europa e América do Norte,Republik,https://www.republik.ch,Suíça,CH,Alemão,Digital native
+Europa e América do Norte,WOZ Die Wochenzeitung,https://www.woz.ch,Suíça,CH,Alemão,Jornal
+Europa e América do Norte,NOS,https://nos.nl,Países Baixos,NL,Holandês,TV
+Europa e América do Norte,NRC,https://www.nrc.nl,Países Baixos,NL,Holandês,Jornal
+Europa e América do Norte,de Volkskrant,https://www.volkskrant.nl,Países Baixos,NL,Holandês,Jornal
+Europa e América do Norte,Trouw,https://www.trouw.nl,Países Baixos,NL,Holandês,Jornal
+Europa e América do Norte,Follow the Money,https://www.ftm.nl,Países Baixos,NL,Holandês/Inglês,Investigativo
+Europa e América do Norte,Investico,https://www.platform-investico.nl,Países Baixos,NL,Holandês,Investigativo
+Europa e América do Norte,De Standaard,https://www.standaard.be,Bélgica,BE,Holandês,Jornal
+Europa e América do Norte,Le Soir,https://www.lesoir.be,Bélgica,BE,Francês,Jornal
+Europa e América do Norte,De Morgen,https://www.demorgen.be,Bélgica,BE,Holandês,Jornal
+Europa e América do Norte,VRT NWS,https://www.vrt.be/vrtnws,Bélgica,BE,Holandês,TV
+Europa e América do Norte,RTBF Info,https://www.rtbf.be/info,Bélgica,BE,Francês,TV
+Europa e América do Norte,Knack,https://www.knack.be,Bélgica,BE,Holandês,Revista
+Europa e América do Norte,Apache,https://apache.be,Bélgica,BE,Holandês,Investigativo
+Europa e América do Norte,Luxemburger Wort,https://www.wort.lu,Luxemburgo,LU,Alemão/Francês,Jornal
+Europa e América do Norte,Luxembourg Times,https://www.luxtimes.lu,Luxemburgo,LU,Inglês,Digital native
+Europa e América do Norte,Tageblatt,https://www.tageblatt.lu,Luxemburgo,LU,Alemão/Francês,Jornal
+Europa e América do Norte,Le Quotidien,https://www.lequotidien.lu,Luxemburgo,LU,Francês,Jornal
+Europa e América do Norte,RTL Lëtzebuerg,https://www.rtl.lu,Luxemburgo,LU,Luxemburguês,TV
+Europa e América do Norte,Paperjam,https://paperjam.lu,Luxemburgo,LU,Francês/Inglês,Revista
+Europa e América do Norte,Público,https://www.publico.pt,Portugal,PT,Português,Jornal
+Europa e América do Norte,Expresso,https://expresso.pt,Portugal,PT,Português,Jornal
+Europa e América do Norte,Observador,https://observador.pt,Portugal,PT,Português,Digital native
+Europa e América do Norte,RTP Notícias,https://www.rtp.pt/noticias,Portugal,PT,Português,TV
+Europa e América do Norte,Diário de Notícias,https://www.dn.pt,Portugal,PT,Português,Jornal
+Europa e América do Norte,El País,https://elpais.com,Espanha,ES,Espanhol,Jornal
+Europa e América do Norte,El Mundo,https://www.elmundo.es,Espanha,ES,Espanhol,Jornal
+Europa e América do Norte,La Vanguardia,https://www.lavanguardia.com,Espanha,ES,Espanhol/Catalão,Jornal
+Europa e América do Norte,elDiario.es,https://www.eldiario.es,Espanha,ES,Espanhol,Digital native
+Europa e América do Norte,infoLibre,https://www.infolibre.es,Espanha,ES,Espanhol,Digital native
+Europa e América do Norte,RTVE Noticias,https://www.rtve.es/noticias,Espanha,ES,Espanhol,TV
+Europa e América do Norte,ABC,https://www.abc.es,Espanha,ES,Espanhol,Jornal
+Europa e América do Norte,Newtral,https://www.newtral.es,Espanha,ES,Espanhol,Fact-checking
+Europa e América do Norte,Maldita.es,https://maldita.es,Espanha,ES,Espanhol,Fact-checking
+Europa e América do Norte,Corriere della Sera,https://www.corriere.it,Itália,IT,Italiano,Jornal
+Europa e América do Norte,la Repubblica,https://www.repubblica.it,Itália,IT,Italiano,Jornal
+Europa e América do Norte,Il Sole 24 Ore,https://www.ilsole24ore.com,Itália,IT,Italiano,Jornal
+Europa e América do Norte,La Stampa,https://www.lastampa.it,Itália,IT,Italiano,Jornal
+Europa e América do Norte,Il Fatto Quotidiano,https://www.ilfattoquotidiano.it,Itália,IT,Italiano,Jornal
+Europa e América do Norte,Internazionale,https://www.internazionale.it,Itália,IT,Italiano,Revista
+Europa e América do Norte,ANSA,https://www.ansa.it,Itália,IT,Italiano,Agência
+Europa e América do Norte,IRPI Media,https://irpimedia.irpi.eu,Itália,IT,Italiano,Investigativo
+Europa e América do Norte,Pagella Politica,https://www.pagellapolitica.it,Itália,IT,Italiano,Fact-checking
+Europa e América do Norte,Politiken,https://politiken.dk,Dinamarca,DK,Dinamarquês,Jornal
+Europa e América do Norte,Jyllands-Posten,https://jyllands-posten.dk,Dinamarca,DK,Dinamarquês,Jornal
+Europa e América do Norte,Berlingske,https://www.berlingske.dk,Dinamarca,DK,Dinamarquês,Jornal
+Europa e América do Norte,DR Nyheder,https://www.dr.dk,Dinamarca,DK,Dinamarquês,TV
+Europa e América do Norte,Dagbladet Information,https://www.information.dk,Dinamarca,DK,Dinamarquês,Jornal
+Europa e América do Norte,Zetland,https://www.zetland.dk,Dinamarca,DK,Dinamarquês,Digital native
+Europa e América do Norte,TjekDet,https://www.tjekdet.dk,Dinamarca,DK,Dinamarquês,Fact-checking
+Europa e América do Norte,Dagens Nyheter,https://www.dn.se,Suécia,SE,Sueco,Jornal
+Europa e América do Norte,Svenska Dagbladet,https://www.svd.se,Suécia,SE,Sueco,Jornal
+Europa e América do Norte,SVT Nyheter,https://www.svt.se,Suécia,SE,Sueco,TV
+Europa e América do Norte,Aftonbladet,https://www.aftonbladet.se,Suécia,SE,Sueco,Jornal
+Europa e América do Norte,Expressen,https://www.expressen.se,Suécia,SE,Sueco,Jornal
+Europa e América do Norte,Göteborgs-Posten,https://www.gp.se,Suécia,SE,Sueco,Jornal
+Europa e América do Norte,NRK,https://www.nrk.no,Noruega,NO,Norueguês,TV
+Europa e América do Norte,Aftenposten,https://www.aftenposten.no,Noruega,NO,Norueguês,Jornal
+Europa e América do Norte,Dagens Næringsliv,https://www.dn.no,Noruega,NO,Norueguês,Jornal
+Europa e América do Norte,VG,https://www.vg.no,Noruega,NO,Norueguês,Jornal
+Europa e América do Norte,Klassekampen,https://www.klassekampen.no,Noruega,NO,Norueguês,Jornal
+Europa e América do Norte,Morgenbladet,https://www.morgenbladet.no,Noruega,NO,Norueguês,Jornal
+Europa e América do Norte,Faktisk.no,https://www.faktisk.no,Noruega,NO,Norueguês,Fact-checking
+Europa e América do Norte,Helsingin Sanomat,https://www.hs.fi,Finlândia,FI,Finlandês,Jornal
+Europa e América do Norte,Yle,https://yle.fi,Finlândia,FI,Finlandês/Sueco,TV
+Europa e América do Norte,Ilta-Sanomat,https://www.is.fi,Finlândia,FI,Finlandês,Jornal
+Europa e América do Norte,Kaleva,https://www.kaleva.fi,Finlândia,FI,Finlandês,Jornal
+Europa e América do Norte,Faktabaari,https://faktabaari.fi,Finlândia,FI,Finlandês,Fact-checking
+Europa e América do Norte,RÚV,https://www.ruv.is,Islândia,IS,Islandês,TV
+Europa e América do Norte,Iceland Review,https://icelandreview.com,Islândia,IS,Inglês,Revista
+Europa e América do Norte,The Reykjavík Grapevine,https://grapevine.is,Islândia,IS,Inglês,Revista
+Europa e América do Norte,Times of Malta,https://timesofmalta.com,Malta,MT,Inglês,Jornal
+Europa e América do Norte,The Shift News,https://theshiftnews.com,Malta,MT,Inglês,Investigativo
+Europa e América do Norte,MaltaToday,https://www.maltatoday.com.mt,Malta,MT,Inglês,Jornal
+Europa e América do Norte,Cyprus Mail,https://cyprus-mail.com,Chipre,CY,Inglês,Jornal
+Europa e América do Norte,In-Cyprus (Philenews),https://in-cyprus.philenews.com,Chipre,CY,Inglês,Portal
+Europa e América do Norte,Kathimerini,https://www.kathimerini.gr,Grécia,GR,Grego,Jornal
+Europa e América do Norte,Efimerida ton Syntakton (EfSyn),https://www.efsyn.gr,Grécia,GR,Grego,Jornal
+Europa e América do Norte,To Vima,https://www.tovima.gr,Grécia,GR,Grego,Jornal
+Europa e América do Norte,ERT News,https://www.ertnews.gr,Grécia,GR,Grego,TV
+Europa e América do Norte,Reporters United,https://www.reportersunited.gr,Grécia,GR,Grego,Investigativo
+Europa e América do Norte,Solomon,https://wearesolomon.com,Grécia,GR,Inglês/Grego,Investigativo
+Europa e América do Norte,Gazeta Wyborcza,https://wyborcza.pl,Polônia,PL,Polonês,Jornal
+Europa e América do Norte,Rzeczpospolita,https://www.rp.pl,Polônia,PL,Polonês,Jornal
+Europa e América do Norte,OKO.press,https://oko.press,Polônia,PL,Polonês,Investigativo
+Europa e América do Norte,TVN24,https://tvn24.pl,Polônia,PL,Polonês,TV
+Europa e América do Norte,Polityka,https://www.polityka.pl,Polônia,PL,Polonês,Revista
+Europa e América do Norte,Onet,https://www.onet.pl,Polônia,PL,Polonês,Portal
+Europa e América do Norte,Deník N,https://denikn.cz,Chéquia,CZ,Tcheco,Digital native
+Europa e América do Norte,Respekt,https://www.respekt.cz,Chéquia,CZ,Tcheco,Revista
+Europa e América do Norte,Seznam Zprávy,https://www.seznamzpravy.cz,Chéquia,CZ,Tcheco,Digital native
+Europa e América do Norte,iROZHLAS (Český rozhlas),https://www.irozhlas.cz,Chéquia,CZ,Tcheco,Rádio
+Europa e América do Norte,ČT24,https://www.ceskatelevize.cz/ct24,Chéquia,CZ,Tcheco,TV
+Europa e América do Norte,Demagog.cz,https://demagog.cz,Chéquia,CZ,Tcheco,Fact-checking
+Europa e América do Norte,Denník N,https://dennikn.sk,Eslováquia,SK,Eslovaco,Digital native
+Europa e América do Norte,SME,https://www.sme.sk,Eslováquia,SK,Eslovaco,Jornal
+Europa e América do Norte,The Slovak Spectator,https://spectator.sme.sk,Eslováquia,SK,Inglês,Jornal
+Europa e América do Norte,Investigatívne centrum Jána Kuciaka,https://icjk.sk,Eslováquia,SK,Eslovaco,Investigativo
+Europa e América do Norte,Telex,https://telex.hu,Hungria,HU,Húngaro,Digital native
+Europa e América do Norte,HVG,https://hvg.hu,Hungria,HU,Húngaro,Revista
+Europa e América do Norte,Direkt36,https://www.direkt36.hu,Hungria,HU,Húngaro,Investigativo
+Europa e América do Norte,444.hu,https://444.hu,Hungria,HU,Húngaro,Digital native
+Europa e América do Norte,Lakmusz,https://lakmusz.hu,Hungria,HU,Húngaro,Fact-checking
+Europa e América do Norte,Magyar Nemzet,https://magyarnemzet.hu,Hungria,HU,Húngaro,Jornal
+Europa e América do Norte,HotNews.ro,https://www.hotnews.ro,Romênia,RO,Romeno,Portal
+Europa e América do Norte,Digi24,https://www.digi24.ro,Romênia,RO,Romeno,TV
+Europa e América do Norte,PressOne,https://pressone.ro,Romênia,RO,Romeno,Digital native
+Europa e América do Norte,RISE Project,https://www.riseproject.ro,Romênia,RO,Romeno,Investigativo
+Europa e América do Norte,Libertatea,https://www.libertatea.ro,Romênia,RO,Romeno,Jornal
+Europa e América do Norte,G4Media,https://www.g4media.ro,Romênia,RO,Romeno,Digital native
+Europa e América do Norte,Capital.bg,https://www.capital.bg,Bulgária,BG,Búlgaro,Jornal
+Europa e América do Norte,Dnevnik.bg,https://www.dnevnik.bg,Bulgária,BG,Búlgaro,Digital native
+Europa e América do Norte,Mediapool,https://www.mediapool.bg,Bulgária,BG,Búlgaro,Digital native
+Europa e América do Norte,Bureau for Investigative Reporting and Data (BIRD.bg),https://bird.bg,Bulgária,BG,Búlgaro,Investigativo
+Europa e América do Norte,Jutarnji list,https://www.jutarnji.hr,Croácia,HR,Croata,Jornal
+Europa e América do Norte,Telegram.hr,https://www.telegram.hr,Croácia,HR,Croata,Digital native
+Europa e América do Norte,Index.hr,https://www.index.hr,Croácia,HR,Croata,Portal
+Europa e América do Norte,Faktograf,https://faktograf.hr,Croácia,HR,Croata,Fact-checking
+Europa e América do Norte,Delo,https://www.delo.si,Eslovênia,SI,Esloveno,Jornal
+Europa e América do Norte,RTV Slovenija,https://www.rtvslo.si,Eslovênia,SI,Esloveno,TV
+Europa e América do Norte,Dnevnik,https://www.dnevnik.si,Eslovênia,SI,Esloveno,Jornal
+Europa e América do Norte,Pod črto,https://podcrto.si,Eslovênia,SI,Esloveno,Investigativo
+Europa e América do Norte,Danas,https://www.danas.rs,Sérvia,RS,Sérvio,Jornal
+Europa e América do Norte,KRIK,https://www.krik.rs,Sérvia,RS,Sérvio,Investigativo
+Europa e América do Norte,CINS,https://www.cins.rs,Sérvia,RS,Sérvio,Investigativo
+Europa e América do Norte,N1 Srbija,https://n1info.rs,Sérvia,RS,Sérvio,TV
+Europa e América do Norte,Vreme,https://www.vreme.com,Sérvia,RS,Sérvio,Revista
+Europa e América do Norte,Istinomer,https://www.istinomer.rs,Sérvia,RS,Sérvio,Fact-checking
+Europa e América do Norte,Detektor,https://detektor.ba,Bósnia e Herzegovina,BA,Bósnio,Investigativo
+Europa e América do Norte,Centar za istraživačko novinarstvo (CIN),https://www.cin.ba,Bósnia e Herzegovina,BA,Bósnio,Investigativo
+Europa e América do Norte,Oslobođenje,https://oslobodjenje.ba,Bósnia e Herzegovina,BA,Bósnio,Jornal
+Europa e América do Norte,Raskrinkavanje,https://raskrinkavanje.ba,Bósnia e Herzegovina,BA,Bósnio,Fact-checking
+Europa e América do Norte,Vijesti,https://www.vijesti.me,Montenegro,ME,Montenegrino,Jornal
+Europa e América do Norte,MANS,https://www.mans.co.me,Montenegro,ME,Montenegrino,Investigativo
+Europa e América do Norte,CDM,https://cdm.me,Montenegro,ME,Montenegrino,Portal
+Europa e América do Norte,Sloboden Pečat,https://www.slobodenpecat.mk,Macedônia do Norte,MK,Macedônio,Jornal
+Europa e América do Norte,Prizma,https://prizma.mk,Macedônia do Norte,MK,Macedônio,Investigativo
+Europa e América do Norte,SDK.mk,https://sdk.mk,Macedônia do Norte,MK,Macedônio,Digital native
+Europa e América do Norte,Reporter.al (BIRN Albânia),https://www.reporter.al,Albânia,AL,Albanês,Investigativo
+Europa e América do Norte,Exit.al,https://exit.al,Albânia,AL,Albanês/Inglês,Digital native
+Europa e América do Norte,Citizens Channel,https://citizens-channel.com,Albânia,AL,Albanês,Digital native
+Europa e América do Norte,Faktoje,https://faktoje.al,Albânia,AL,Albanês,Fact-checking
+Europa e América do Norte,Kallxo,https://kallxo.com,Kosovo,XK,Albanês,Investigativo
+Europa e América do Norte,Prishtina Insight,https://prishtinainsight.com,Kosovo,XK,Inglês,Digital native
+Europa e América do Norte,KoSSev,https://kossev.info,Kosovo,XK,Sérvio/Albanês,Digital native
+Europa e América do Norte,ERR News,https://news.err.ee,Estônia,EE,Inglês,Portal
+Europa e América do Norte,ERR,https://www.err.ee,Estônia,EE,Estoniano,TV
+Europa e América do Norte,Postimees,https://www.postimees.ee,Estônia,EE,Estoniano,Jornal
+Europa e América do Norte,Eesti Ekspress,https://ekspress.delfi.ee,Estônia,EE,Estoniano,Jornal
+Europa e América do Norte,LSM.lv (English),https://eng.lsm.lv,Letônia,LV,Inglês,Portal
+Europa e América do Norte,Delfi Latvia,https://www.delfi.lv,Letônia,LV,Letão,Portal
+Europa e América do Norte,Re:Baltica,https://rebaltica.lv,Letônia,LV,Letão/Inglês,Investigativo
+Europa e América do Norte,Diena,https://www.diena.lv,Letônia,LV,Letão,Jornal
+Europa e América do Norte,LRT,https://www.lrt.lt,Lituânia,LT,Lituano,TV
+Europa e América do Norte,Delfi Lietuva,https://www.delfi.lt,Lituânia,LT,Lituano,Portal
+Europa e América do Norte,15min,https://www.15min.lt,Lituânia,LT,Lituano,Portal
+Europa e América do Norte,Lietuvos rytas,https://www.lrytas.lt,Lituânia,LT,Lituano,Jornal
+Europa e América do Norte,The Kyiv Independent,https://kyivindependent.com,Ucrânia,UA,Inglês,Digital native
+Europa e América do Norte,Ukrainska Pravda,https://www.pravda.com.ua,Ucrânia,UA,Ucraniano,Digital native
+Europa e América do Norte,Hromadske,https://hromadske.ua,Ucrânia,UA,Ucraniano,TV
+Europa e América do Norte,Bihus.Info,https://bihus.info,Ucrânia,UA,Ucraniano,Investigativo
+Europa e América do Norte,Slidstvo.Info,https://www.slidstvo.info,Ucrânia,UA,Ucraniano,Investigativo
+Europa e América do Norte,Texty.org.ua,https://texty.org.ua,Ucrânia,UA,Ucraniano,Digital native
+Europa e América do Norte,Ukrinform,https://www.ukrinform.net,Ucrânia,UA,Multi-idioma,Agência
+Europa e América do Norte,ZN.ua,https://zn.ua,Ucrânia,UA,Ucraniano,Jornal
+Europa e América do Norte,Belsat TV,https://belsat.eu,Belarus (exílio),BY,Belarusso,TV
+Europa e América do Norte,Zerkalo,https://news.zerkalo.io,Belarus (exílio),BY,Russo/Belarusso,Digital native
+Europa e América do Norte,Reform.news,https://reform.news,Belarus (exílio),BY,Russo/Belarusso,Digital native
+Europa e América do Norte,Meduza,https://meduza.io,Rússia (exílio),RU,Russo/Inglês,Digital native
+Europa e América do Norte,Novaya Gazeta Europe,https://novayagazeta.eu,Rússia (exílio),RU,Russo/Inglês,Digital native
+Europa e América do Norte,The Insider,https://theins.ru,Rússia (exílio),RU,Russo/Inglês,Investigativo
+Europa e América do Norte,Agentstvo,https://www.agents.media,Rússia (exílio),RU,Russo,Digital native
+Europa e América do Norte,IStories (Важные истории),https://istories.media,Rússia (exílio),RU,Russo/Inglês,Investigativo
+Europa e América do Norte,Mediazona,https://zona.media,Rússia (exílio),RU,Russo,Digital native
+Europa e América do Norte,The Moscow Times,https://www.themoscowtimes.com,Rússia (exílio),RU,Inglês/Russo,Jornal
+Europa e América do Norte,Verstka,https://verstka.media,Rússia (exílio),RU,Russo,Digital native
+Europa e América do Norte,Holod,https://holod.media,Rússia (exílio),RU,Russo,Revista
+Europa e América do Norte,7x7,https://www.7x7-journal.ru,Rússia,RU,Russo,Digital native
+Europa e América do Norte,OVD-Info,https://ovd.info,Rússia,RU,Russo,Digital native
+Europa e América do Norte,Radio Svoboda,https://www.svoboda.org,Rússia (exílio),RU,Russo,Rádio
+Europa e América do Norte,TV Rain (Dozhd),https://www.tvrain.tv,Rússia (exílio),RU,Russo,TV
+Europa e América do Norte,Kommersant,https://www.kommersant.ru,Rússia,RU,Russo,Jornal
+Europa e América do Norte,RBC,https://www.rbc.ru,Rússia,RU,Russo,Portal
+Europa e América do Norte,Interfax,https://www.interfax.ru,Rússia,RU,Russo,Agência
+Europa e América do Norte,TASS,https://tass.com,Rússia,RU,Multi-idioma,Agência
+Europa e América do Norte,RT,https://www.rt.com,Rússia,RU,Multi-idioma,TV
+Europa e América do Norte,Sputnik,https://sputnikglobe.com,Rússia,RU,Multi-idioma,Portal
+Europa e América do Norte,Ziarul de Gardă,https://www.zdg.md,Moldávia,MD,Romeno,Investigativo
+Europa e América do Norte,NewsMaker,https://newsmaker.md,Moldávia,MD,Russo/Romeno,Digital native
+Europa e América do Norte,Radio Europa Liberă Moldova,https://moldova.europalibera.org,Moldávia,MD,Romeno,Rádio
+Europa e América do Norte,Civil.ge,https://civil.ge,Geórgia,GE,Inglês/Georgiano,Digital native
+Europa e América do Norte,OC Media,https://oc-media.org,Geórgia,GE,Inglês,Digital native
+Europa e América do Norte,iFact,https://ifact.ge,Geórgia,GE,Georgiano,Investigativo
+Europa e América do Norte,FactCheck Georgia,https://factcheck.ge,Geórgia,GE,Georgiano/Inglês,Fact-checking
+Europa e América do Norte,JAMnews,https://jam-news.net,Geórgia,GE,Multi-idioma,Digital native
+Europa e América do Norte,Hetq,https://hetq.am,Armênia,AM,Armênio/Inglês,Investigativo
+Europa e América do Norte,Azatutyun (RFE/RL Armênia),https://www.azatutyun.am,Armênia,AM,Armênio,Rádio
+Europa e América do Norte,CivilNet,https://civilnet.am,Armênia,AM,Armênio/Inglês,Digital native
+Europa e América do Norte,Meydan TV,https://www.meydan.tv,Azerbaijão (exílio),AZ,Azeri/Inglês,Digital native
+Europa e América do Norte,Abzas Media,https://abzas.info,Azerbaijão,AZ,Azeri,Investigativo
+Europa e América do Norte,Cumhuriyet,https://www.cumhuriyet.com.tr,Turquia,TR,Turco,Jornal
+Europa e América do Norte,Bianet,https://bianet.org,Turquia,TR,Turco/Inglês,Digital native
+Europa e América do Norte,T24,https://t24.com.tr,Turquia,TR,Turco,Digital native
+Europa e América do Norte,Gazete Duvar English,https://www.duvarenglish.com,Turquia,TR,Inglês,Digital native
+Europa e América do Norte,Diken,https://www.diken.com.tr,Turquia,TR,Turco,Digital native
+Europa e América do Norte,Anadolu Agency,https://www.aa.com.tr,Turquia,TR,Multi-idioma,Agência
+Europa e América do Norte,TRT World,https://www.trtworld.com,Turquia,TR,Inglês,TV
+Europa e América do Norte,Daily Sabah,https://www.dailysabah.com,Turquia,TR,Inglês,Jornal
+Europa e América do Norte,Hürriyet Daily News,https://www.hurriyetdailynews.com,Turquia,TR,Inglês,Jornal
+Europa e América do Norte,Politico Europe,https://www.politico.eu,Bélgica,BE,Inglês,Digital native
+Europa e América do Norte,EUobserver,https://euobserver.com,Bélgica,BE,Inglês,Digital native
+Europa e América do Norte,Euractiv,https://www.euractiv.com,Bélgica,BE,Multi-idioma,Digital native
+Europa e América do Norte,Investigate Europe,https://www.investigate-europe.eu,Alemanha/Europa,DE,Multi-idioma,Investigativo
+Europa e América do Norte,Balkan Insight (BIRN),https://balkaninsight.com,Bósnia/Sérvia,BA/RS,Inglês,Investigativo
+Europa e América do Norte,VSquare,https://vsquare.org,Chéquia/Polônia,CZ/PL,Inglês,Investigativo
+Europa e América do Norte,OCCRP,https://www.occrp.org,Global/Europa,INT,Inglês,Investigativo
+Europa e América do Norte,ICIJ,https://www.icij.org,EUA/Global,US,Inglês,Investigativo
+Europa e América do Norte,RFE/RL,https://www.rferl.org,EUA/Chéquia,US/CZ,Multi-idioma,Rádio
+Europa e América do Norte,The Local (Alemanha),https://www.thelocal.de,Alemanha,DE,Inglês,Digital native
+Europa e América do Norte,The Local (Suécia),https://www.thelocal.se,Suécia,SE,Inglês,Digital native
+Europa e América do Norte,EUfactcheck,https://www.eufactcheck.eu,Europa,EU,Inglês,Fact-checking
+Europa e América do Norte,Verificat,https://verificat.cat,Espanha,ES,Catalão/Espanhol,Fact-checking
+Ásia e Oceania,Asahi Shimbun,https://www.asahi.com/,Japão,JP,Japonês,Jornal
+Ásia e Oceania,Yomiuri Shimbun,https://www.yomiuri.co.jp/,Japão,JP,Japonês,Jornal
+Ásia e Oceania,The Japan News (Yomiuri),https://japannews.yomiuri.co.jp/,Japão,JP,Inglês,Jornal
+Ásia e Oceania,Mainichi Shimbun,https://mainichi.jp/,Japão,JP,Japonês,Jornal
+Ásia e Oceania,Nikkei (Nihon Keizai Shimbun),https://www.nikkei.com/,Japão,JP,Japonês,Jornal
+Ásia e Oceania,Nikkei Asia,https://asia.nikkei.com/,Japão,JP,Inglês,Revista
+Ásia e Oceania,The Japan Times,https://www.japantimes.co.jp/,Japão,JP,Inglês,Jornal
+Ásia e Oceania,NHK,https://www3.nhk.or.jp/,Japão,JP,Japonês / Inglês,TV
+Ásia e Oceania,Kyodo News,https://english.kyodonews.net/,Japão,JP,Inglês / Japonês,Agência
+Ásia e Oceania,Sankei Shimbun,https://www.sankei.com/,Japão,JP,Japonês,Jornal
+Ásia e Oceania,Tokyo Shimbun,https://www.tokyo-np.co.jp/,Japão,JP,Japonês,Jornal
+Ásia e Oceania,Toyo Keizai,https://toyokeizai.net/,Japão,JP,Japonês,Revista
+Ásia e Oceania,Tansa (Tokyo Investigative Newsroom),https://tansajp.org/,Japão,JP,Japonês / Inglês,Investigativo
+Ásia e Oceania,Chosun Ilbo,https://www.chosun.com/,Coreia do Sul,KR,Coreano,Jornal
+Ásia e Oceania,JoongAng Ilbo,https://www.joongang.co.kr/,Coreia do Sul,KR,Coreano,Jornal
+Ásia e Oceania,Hankyoreh,https://www.hani.co.kr/,Coreia do Sul,KR,Coreano,Jornal
+Ásia e Oceania,Hankyoreh English,https://english.hani.co.kr/,Coreia do Sul,KR,Inglês,Jornal
+Ásia e Oceania,The Korea Herald,https://www.koreaherald.com/,Coreia do Sul,KR,Inglês,Jornal
+Ásia e Oceania,KBS World,https://world.kbs.co.kr/,Coreia do Sul,KR,Multilíngue,Rádio
+Ásia e Oceania,Yonhap News Agency,https://www.yna.co.kr/,Coreia do Sul,KR,Coreano,Agência
+Ásia e Oceania,Yonhap News (English),https://en.yna.co.kr/,Coreia do Sul,KR,Inglês,Agência
+Ásia e Oceania,Dong-A Ilbo,https://www.donga.com/,Coreia do Sul,KR,Coreano,Jornal
+Ásia e Oceania,Hankook Ilbo,https://www.hankookilbo.com/,Coreia do Sul,KR,Coreano,Jornal
+Ásia e Oceania,Pressian,https://www.pressian.com/,Coreia do Sul,KR,Coreano,Digital native
+Ásia e Oceania,Newsis,https://www.newsis.com/,Coreia do Sul,KR,Coreano,Agência
+Ásia e Oceania,Newstapa (Korea Center for Investigative Journalism),https://newstapa.org/,Coreia do Sul,KR,Coreano,Investigativo
+Ásia e Oceania,KCNA (via KCNA Watch),https://kcnawatch.org/,Coreia do Norte,KP,Coreano / Inglês,Agência
+Ásia e Oceania,NK News,https://www.nknews.org/,Coreia do Norte (cobertura),KP,Inglês,Digital native
+Ásia e Oceania,Daily NK,https://www.dailynk.com/,Coreia do Norte (cobertura),KP,Coreano / Inglês,Digital native
+Ásia e Oceania,38 North,https://www.38north.org/,Coreia do Norte (cobertura),KP,Inglês,Investigativo
+Ásia e Oceania,Xinhua (English),https://english.news.cn/,China,CN,Inglês / Chinês,Agência
+Ásia e Oceania,People's Daily (English),https://en.people.cn/,China,CN,Inglês / Chinês,Jornal
+Ásia e Oceania,Global Times,https://www.globaltimes.cn/,China,CN,Inglês,Jornal
+Ásia e Oceania,China Daily,https://www.chinadaily.com.cn/,China,CN,Inglês,Jornal
+Ásia e Oceania,CCTV / CGTN English,https://english.cctv.com/,China,CN,Inglês / Chinês,TV
+Ásia e Oceania,Caixin,https://www.caixin.com/,China,CN,Chinês,Portal
+Ásia e Oceania,Caixin Global,https://www.caixinglobal.com/,China,CN,Inglês,Portal
+Ásia e Oceania,Yicai (China Business News),https://www.yicai.com/,China,CN,Chinês,Portal
+Ásia e Oceania,The Paper (Pengpai),https://www.thepaper.cn/,China,CN,Chinês,Digital native
+Ásia e Oceania,Sixth Tone,https://www.sixthtone.com/,China,CN,Inglês,Digital native
+Ásia e Oceania,The Initium,https://theinitium.com/,China / Hong Kong,CN/HK,Chinês,Digital native
+Ásia e Oceania,Wainao,https://www.wainao.me/,China (cobertura),CN,Chinês,Digital native
+Ásia e Oceania,China Digital Times,https://chinadigitaltimes.net/,China (cobertura),CN,Inglês / Chinês,Digital native
+Ásia e Oceania,ChinaFile,https://www.chinafile.com/,China (cobertura),CN,Inglês,Revista
+Ásia e Oceania,South China Morning Post,https://www.scmp.com/,Hong Kong,HK,Inglês,Jornal
+Ásia e Oceania,Hong Kong Free Press,https://hongkongfp.com/,Hong Kong,HK,Inglês,Digital native
+Ásia e Oceania,Ming Pao,https://www.mingpao.com/,Hong Kong,HK,Chinês,Jornal
+Ásia e Oceania,InMedia HK,https://www.inmediahk.net/,Hong Kong,HK,Chinês,Digital native
+Ásia e Oceania,HK01,https://www.hk01.com/,Hong Kong,HK,Chinês,Digital native
+Ásia e Oceania,Photon Media,https://photonmedia.net/,Hong Kong,HK,Chinês,Digital native
+Ásia e Oceania,Taipei Times,https://www.taipeitimes.com/,Taiwan,TW,Inglês,Jornal
+Ásia e Oceania,Liberty Times,https://www.ltn.com.tw/,Taiwan,TW,Chinês,Jornal
+Ásia e Oceania,United Daily News,https://udn.com/,Taiwan,TW,Chinês,Jornal
+Ásia e Oceania,Focus Taiwan (CNA English),https://focustaiwan.tw/,Taiwan,TW,Inglês,Agência
+Ásia e Oceania,Central News Agency (CNA),https://www.cna.com.tw/,Taiwan,TW,Chinês,Agência
+Ásia e Oceania,The Reporter,https://www.twreporter.org/,Taiwan,TW,Chinês,Investigativo
+Ásia e Oceania,Taiwan FactCheck Center,https://tfc-taiwan.org.tw/,Taiwan,TW,Chinês,Fact-checking
+Ásia e Oceania,Storm Media,https://www.storm.mg/,Taiwan,TW,Chinês,Digital native
+Ásia e Oceania,Mirror Media,https://www.mirrormedia.mg/,Taiwan,TW,Chinês,Revista
+Ásia e Oceania,Taiwan News,https://www.taiwannews.com.tw/,Taiwan,TW,Inglês,Portal
+Ásia e Oceania,Montsame News Agency,https://montsame.mn/en/,Mongólia,MN,Mongol / Inglês,Agência
+Ásia e Oceania,The UB Post,https://www.ubpost.mn/,Mongólia,MN,Inglês,Jornal
+Ásia e Oceania,News.mn,https://www.news.mn/,Mongólia,MN,Mongol,Portal
+Ásia e Oceania,GoGo.mn,https://gogo.mn/,Mongólia,MN,Mongol / Inglês,Portal
+Ásia e Oceania,The Straits Times,https://www.straitstimes.com/,Singapura,SG,Inglês,Jornal
+Ásia e Oceania,CNA (Channel NewsAsia),https://www.channelnewsasia.com/,Singapura,SG,Inglês,TV
+Ásia e Oceania,The Business Times,https://www.businesstimes.com.sg/,Singapura,SG,Inglês,Jornal
+Ásia e Oceania,TODAY (Mediacorp),https://www.todayonline.com/,Singapura,SG,Inglês,Digital native
+Ásia e Oceania,Mothership,https://mothership.sg/,Singapura,SG,Inglês,Digital native
+Ásia e Oceania,Rice Media,https://www.ricemedia.co/,Singapura,SG,Inglês,Digital native
+Ásia e Oceania,Malaysiakini,https://www.malaysiakini.com/,Malásia,MY,Malaio / Inglês / Chinês / Tâmil,Digital native
+Ásia e Oceania,The Star (Malásia),https://www.thestar.com.my/,Malásia,MY,Inglês,Jornal
+Ásia e Oceania,New Straits Times,https://www.nst.com.my/,Malásia,MY,Inglês,Jornal
+Ásia e Oceania,Free Malaysia Today,https://www.freemalaysiatoday.com/,Malásia,MY,Inglês / Malaio,Digital native
+Ásia e Oceania,The Edge Malaysia,https://theedgemalaysia.com/,Malásia,MY,Inglês,Jornal
+Ásia e Oceania,Malay Mail,https://www.malaymail.com/,Malásia,MY,Inglês,Digital native
+Ásia e Oceania,Sinar Harian,https://www.sinarharian.com.my/,Malásia,MY,Malaio,Jornal
+Ásia e Oceania,Kompas,https://www.kompas.com/,Indonésia,ID,Indonésio,Jornal
+Ásia e Oceania,Tempo,https://tempo.co/,Indonésia,ID,Indonésio / Inglês,Revista
+Ásia e Oceania,The Jakarta Post,https://www.thejakartapost.com/,Indonésia,ID,Inglês,Jornal
+Ásia e Oceania,Tirto.id,https://tirto.id/,Indonésia,ID,Indonésio,Digital native
+Ásia e Oceania,CNN Indonesia,https://www.cnnindonesia.com/,Indonésia,ID,Indonésio,Portal
+Ásia e Oceania,Katadata,https://katadata.co.id/,Indonésia,ID,Indonésio,Digital native
+Ásia e Oceania,Antara,https://www.antaranews.com/,Indonésia,ID,Indonésio / Inglês,Agência
+Ásia e Oceania,Project Multatuli,https://projectmultatuli.org/,Indonésia,ID,Indonésio / Inglês,Investigativo
+Ásia e Oceania,Rappler,https://www.rappler.com/,Filipinas,PH,Inglês / Filipino,Digital native
+Ásia e Oceania,Philippine Daily Inquirer,https://www.inquirer.net/,Filipinas,PH,Inglês,Jornal
+Ásia e Oceania,The Philippine Star,https://www.philstar.com/,Filipinas,PH,Inglês,Jornal
+Ásia e Oceania,ABS-CBN News,https://news.abs-cbn.com/,Filipinas,PH,Inglês / Filipino,TV
+Ásia e Oceania,PCIJ,https://pcij.org/,Filipinas,PH,Inglês,Investigativo
+Ásia e Oceania,VERA Files,https://verafiles.org/,Filipinas,PH,Inglês / Filipino,Fact-checking
+Ásia e Oceania,GMA News,https://www.gmanetwork.com/news/,Filipinas,PH,Filipino / Inglês,TV
+Ásia e Oceania,BusinessWorld,https://www.bworldonline.com/,Filipinas,PH,Inglês,Jornal
+Ásia e Oceania,MindaNews,https://www.mindanews.com/,Filipinas,PH,Inglês,Digital native
+Ásia e Oceania,SunStar,https://www.sunstar.com.ph/,Filipinas,PH,Inglês,Jornal
+Ásia e Oceania,Bangkok Post,https://www.bangkokpost.com/,Tailândia,TH,Inglês,Jornal
+Ásia e Oceania,The Nation Thailand,https://www.nationthailand.com/,Tailândia,TH,Inglês,Digital native
+Ásia e Oceania,Prachatai,https://prachatai.com/,Tailândia,TH,Tailandês / Inglês,Digital native
+Ásia e Oceania,Thai PBS,https://www.thaipbs.or.th/,Tailândia,TH,Tailandês,TV
+Ásia e Oceania,Thai PBS World,https://www.thaipbsworld.com/,Tailândia,TH,Inglês,Digital native
+Ásia e Oceania,Thai Enquirer,https://www.thaienquirer.com/,Tailândia,TH,Inglês,Digital native
+Ásia e Oceania,The Isaan Record,https://theisaanrecord.co/,Tailândia,TH,Inglês / Tailandês,Digital native
+Ásia e Oceania,Matichon,https://www.matichon.co.th/,Tailândia,TH,Tailandês,Jornal
+Ásia e Oceania,VnExpress,https://vnexpress.net/,Vietnã,VN,Vietnamita / Inglês,Portal
+Ásia e Oceania,Tuoi Tre,https://tuoitre.vn/,Vietnã,VN,Vietnamita,Jornal
+Ásia e Oceania,VietnamNet,https://vietnamnet.vn/,Vietnã,VN,Vietnamita / Inglês,Portal
+Ásia e Oceania,Vietnam News Agency / VietnamPlus,https://en.vietnamplus.vn/,Vietnã,VN,Inglês,Agência
+Ásia e Oceania,CamboJA News,https://cambojanews.com/,Camboja,KH,Inglês / Khmer,Digital native
+Ásia e Oceania,Khmer Times,https://www.khmertimeskh.com/,Camboja,KH,Inglês / Khmer,Jornal
+Ásia e Oceania,VOD English (Voice of Democracy),https://vodenglish.news/,Camboja,KH,Inglês,Digital native
+Ásia e Oceania,The Phnom Penh Post,https://www.phnompenhpost.com/,Camboja,KH,Inglês / Khmer,Jornal
+Ásia e Oceania,VOA Khmer,https://www.voacambodia.com/,Camboja,KH,Khmer / Inglês,Rádio
+Ásia e Oceania,Laotian Times,https://laotiantimes.com/,Laos,LA,Inglês,Digital native
+Ásia e Oceania,Vientiane Times,https://www.vientianetimes.org.la/,Laos,LA,Inglês,Jornal
+Ásia e Oceania,The Irrawaddy,https://www.irrawaddy.com/,Myanmar,MM,Inglês / Birmanês,Digital native
+Ásia e Oceania,Frontier Myanmar,https://www.frontiermyanmar.net/,Myanmar,MM,Inglês / Birmanês,Revista
+Ásia e Oceania,Myanmar Now,https://myanmar-now.org/en/,Myanmar,MM,Inglês / Birmanês,Investigativo
+Ásia e Oceania,Mizzima,https://mizzima.com/,Myanmar,MM,Inglês / Birmanês,Digital native
+Ásia e Oceania,Radio Free Asia,https://www.rfa.org/english/,Ásia (cobertura regional),INT,Multilíngue,Rádio
+Ásia e Oceania,Borneo Bulletin,https://borneobulletin.com.bn/,Brunei,BN,Inglês,Jornal
+Ásia e Oceania,The Scoop,https://thescoop.co/,Brunei,BN,Inglês,Digital native
+Ásia e Oceania,Tatoli,https://tatoli.tl/,Timor-Leste,TL,Tétum / Português / Inglês,Agência
+Ásia e Oceania,The Hindu,https://www.thehindu.com/,Índia,IN,Inglês,Jornal
+Ásia e Oceania,Frontline (The Hindu),https://frontline.thehindu.com/,Índia,IN,Inglês,Revista
+Ásia e Oceania,The Indian Express,https://indianexpress.com/,Índia,IN,Inglês,Jornal
+Ásia e Oceania,The Times of India,https://timesofindia.indiatimes.com/,Índia,IN,Inglês,Jornal
+Ásia e Oceania,Hindustan Times,https://www.hindustantimes.com/,Índia,IN,Inglês,Jornal
+Ásia e Oceania,Mint,https://www.livemint.com/,Índia,IN,Inglês,Jornal
+Ásia e Oceania,Business Standard,https://www.business-standard.com/,Índia,IN,Inglês,Jornal
+Ásia e Oceania,The Wire,https://thewire.in/,Índia,IN,Inglês / Hindi,Digital native
+Ásia e Oceania,Scroll.in,https://scroll.in/,Índia,IN,Inglês,Digital native
+Ásia e Oceania,Newslaundry,https://www.newslaundry.com/,Índia,IN,Inglês / Hindi,Digital native
+Ásia e Oceania,ThePrint,https://theprint.in/,Índia,IN,Inglês,Digital native
+Ásia e Oceania,The Caravan,https://caravanmagazine.in/,Índia,IN,Inglês,Revista
+Ásia e Oceania,Article 14,https://article-14.com/,Índia,IN,Inglês,Investigativo
+Ásia e Oceania,Alt News,https://www.altnews.in/,Índia,IN,Inglês / Hindi,Fact-checking
+Ásia e Oceania,BOOM Live,https://www.boomlive.in/,Índia,IN,Inglês / Hindi / Bengali,Fact-checking
+Ásia e Oceania,Factly,https://factly.in/,Índia,IN,Inglês / Telugo,Fact-checking
+Ásia e Oceania,Press Trust of India,https://www.ptinews.com/,Índia,IN,Inglês / Hindi,Agência
+Ásia e Oceania,ANI,https://www.aninews.in/,Índia,IN,Inglês,Agência
+Ásia e Oceania,Deccan Herald,https://www.deccanherald.com/,Índia,IN,Inglês,Jornal
+Ásia e Oceania,The Telegraph India,https://www.telegraphindia.com/,Índia,IN,Inglês,Jornal
+Ásia e Oceania,The Quint,https://www.thequint.com/,Índia,IN,Inglês / Hindi,Digital native
+Ásia e Oceania,NewsClick,https://www.newsclick.in/,Índia,IN,Inglês / Hindi,Digital native
+Ásia e Oceania,Sabrang India,https://sabrangindia.in/,Índia,IN,Inglês,Digital native
+Ásia e Oceania,Dawn,https://www.dawn.com/,Paquistão,PK,Inglês,Jornal
+Ásia e Oceania,The News International,https://www.thenews.com.pk/,Paquistão,PK,Inglês,Jornal
+Ásia e Oceania,The Express Tribune,https://tribune.com.pk/,Paquistão,PK,Inglês,Jornal
+Ásia e Oceania,Geo News,https://www.geo.tv/,Paquistão,PK,Urdu / Inglês,TV
+Ásia e Oceania,Business Recorder,https://www.brecorder.com/,Paquistão,PK,Inglês,Jornal
+Ásia e Oceania,Lok Sujag,https://sujag.org/,Paquistão,PK,Urdu / Inglês,Investigativo
+Ásia e Oceania,The Daily Star,https://www.thedailystar.net/,Bangladesh,BD,Inglês,Jornal
+Ásia e Oceania,Prothom Alo,https://www.prothomalo.com/,Bangladesh,BD,Bengali,Jornal
+Ásia e Oceania,Netra News,https://netra.news/,Bangladesh,BD,Bengali / Inglês,Investigativo
+Ásia e Oceania,bdnews24,https://bdnews24.com/,Bangladesh,BD,Bengali / Inglês,Digital native
+Ásia e Oceania,New Age,https://www.newagebd.net/,Bangladesh,BD,Inglês,Jornal
+Ásia e Oceania,Dhaka Tribune,https://www.dhakatribune.com/,Bangladesh,BD,Inglês,Jornal
+Ásia e Oceania,Daily Mirror,https://www.dailymirror.lk/,Sri Lanka,LK,Inglês,Jornal
+Ásia e Oceania,The Island,https://island.lk/,Sri Lanka,LK,Inglês,Jornal
+Ásia e Oceania,Daily FT,https://www.ft.lk/,Sri Lanka,LK,Inglês,Jornal
+Ásia e Oceania,Groundviews,https://groundviews.org/,Sri Lanka,LK,Inglês,Digital native
+Ásia e Oceania,EconomyNext,https://economynext.com/,Sri Lanka,LK,Inglês,Digital native
+Ásia e Oceania,Ada Derana,https://www.adaderana.lk/,Sri Lanka,LK,Cingalês / Inglês,Portal
+Ásia e Oceania,The Kathmandu Post,https://kathmandupost.com/,Nepal,NP,Inglês,Jornal
+Ásia e Oceania,Nepali Times,https://nepalitimes.com/,Nepal,NP,Inglês,Jornal
+Ásia e Oceania,Setopati,https://www.setopati.com/,Nepal,NP,Nepali / Inglês,Digital native
+Ásia e Oceania,Online Khabar (English),https://english.onlinekhabar.com/,Nepal,NP,Inglês / Nepali,Digital native
+Ásia e Oceania,Himal Khabar,https://www.himalkhabar.com/,Nepal,NP,Nepali,Revista
+Ásia e Oceania,Ratopati,https://ratopati.com/,Nepal,NP,Nepali,Portal
+Ásia e Oceania,CIJ Nepal,https://cijnepal.org.np/,Nepal,NP,Nepali / Inglês,Investigativo
+Ásia e Oceania,Kuensel,https://kuenselonline.com/,Butão,BT,Inglês / Dzongkha,Jornal
+Ásia e Oceania,The Bhutanese,https://thebhutanese.bt/,Butão,BT,Inglês,Jornal
+Ásia e Oceania,BBS (Bhutan Broadcasting Service),https://www.bbs.bt/news/,Butão,BT,Dzongkha / Inglês,TV
+Ásia e Oceania,Mihaaru,https://mihaaru.com/,Maldivas,MV,Dhivehi / Inglês,Jornal
+Ásia e Oceania,Maldives Independent,https://maldivesindependent.com/,Maldivas,MV,Inglês,Digital native
+Ásia e Oceania,Sun Online,https://sun.mv/,Maldivas,MV,Dhivehi / Inglês,Portal
+Ásia e Oceania,Adhadhu,https://adhadhu.com/,Maldivas,MV,Dhivehi / Inglês,Digital native
+Ásia e Oceania,Etilaatroz,https://www.etilaatroz.com/,Afeganistão,AF,Dari / Inglês,Jornal
+Ásia e Oceania,Hasht-e Subh (8AM Media),https://8am.media/,Afeganistão,AF,Dari / Pashto / Inglês,Jornal
+Ásia e Oceania,Afghanistan International,https://www.afintl.com/,Afeganistão,AF,Dari / Pashto / Inglês,TV
+Ásia e Oceania,Zan Times,https://zantimes.com/,Afeganistão,AF,Dari / Inglês,Investigativo
+Ásia e Oceania,Pajhwok Afghan News,https://pajhwok.com/,Afeganistão,AF,Dari / Pashto / Inglês,Agência
+Ásia e Oceania,KabulNow,https://kabulnow.com/,Afeganistão,AF,Inglês / Dari,Digital native
+Ásia e Oceania,Amu TV,https://amu.tv/,Afeganistão,AF,Dari / Pashto / Inglês,TV
+Ásia e Oceania,The Astana Times,https://astanatimes.com/,Cazaquistão,KZ,Inglês,Jornal
+Ásia e Oceania,Vlast.kz,https://vlast.kz/,Cazaquistão,KZ,Russo / Cazaque,Digital native
+Ásia e Oceania,Orda.kz,https://orda.kz/,Cazaquistão,KZ,Russo / Cazaque,Digital native
+Ásia e Oceania,Kursiv Media,https://kz.kursiv.media/,Cazaquistão,KZ,Russo / Cazaque,Digital native
+Ásia e Oceania,Gazeta.uz,https://www.gazeta.uz/,Uzbequistão,UZ,Uzbeque / Russo,Digital native
+Ásia e Oceania,Kun.uz,https://kun.uz/,Uzbequistão,UZ,Uzbeque / Russo / Inglês,Digital native
+Ásia e Oceania,Hook Report,https://www.hook.report/,Uzbequistão,UZ,Russo / Inglês,Digital native
+Ásia e Oceania,Kloop,https://kloop.asia/,Quirguistão,KG,Russo / Quirguiz / Inglês,Investigativo
+Ásia e Oceania,Kaktus Media,https://kaktus.media/,Quirguistão,KG,Russo / Quirguiz,Digital native
+Ásia e Oceania,24.kg,https://24.kg/,Quirguistão,KG,Russo / Quirguiz / Inglês,Agência
+Ásia e Oceania,Asia-Plus,https://asiaplustj.info/,Tajiquistão,TJ,Russo / Tajique / Inglês,Agência
+Ásia e Oceania,Radio Ozodi (RFE/RL Tajiquistão),https://rus.ozodi.org/,Tajiquistão,TJ,Tajique / Russo,Rádio
+Ásia e Oceania,Turkmen.news,https://turkmen.news/,Turcomenistão,TM,Russo / Turcomeno / Inglês,Investigativo
+Ásia e Oceania,Chronicles of Turkmenistan,https://hronikatm.com/,Turcomenistão,TM,Russo / Turcomeno / Inglês,Digital native
+Ásia e Oceania,Azattyk (RFE/RL Quirguistão),https://www.azattyk.org/,Quirguistão,KG,Quirguiz / Russo,Rádio
+Ásia e Oceania,CABAR.asia,https://cabar.asia/en,Ásia Central (regional),INT,Inglês / Russo,Digital native
+Ásia e Oceania,Eurasianet,https://www.eurasianet.org/,Ásia Central (regional),INT,Inglês / Russo,Digital native
+Ásia e Oceania,The Times of Central Asia,https://timesca.com/,Ásia Central (regional),INT,Inglês,Digital native
+Ásia e Oceania,ABC News (Australia),https://www.abc.net.au/news,Austrália,AU,Inglês,TV
+Ásia e Oceania,The Sydney Morning Herald,https://www.smh.com.au/,Austrália,AU,Inglês,Jornal
+Ásia e Oceania,The Age,https://www.theage.com.au/,Austrália,AU,Inglês,Jornal
+Ásia e Oceania,The Australian,https://www.theaustralian.com.au/,Austrália,AU,Inglês,Jornal
+Ásia e Oceania,Australian Financial Review,https://www.afr.com/,Austrália,AU,Inglês,Jornal
+Ásia e Oceania,Guardian Australia,https://www.theguardian.com/au,Austrália,AU,Inglês,Digital native
+Ásia e Oceania,Crikey,https://www.crikey.com.au/,Austrália,AU,Inglês,Digital native
+Ásia e Oceania,The Conversation (Australia),https://theconversation.com/au,Austrália,AU,Inglês,Digital native
+Ásia e Oceania,The Saturday Paper,https://www.thesaturdaypaper.com.au/,Austrália,AU,Inglês,Jornal
+Ásia e Oceania,Michael West Media,https://michaelwest.com.au/,Austrália,AU,Inglês,Investigativo
+Ásia e Oceania,SBS News,https://www.sbs.com.au/news/,Austrália,AU,Inglês / multilíngue,TV
+Ásia e Oceania,RNZ (Radio New Zealand),https://www.rnz.co.nz/,Nova Zelândia,NZ,Inglês / Māori,Rádio
+Ásia e Oceania,The New Zealand Herald,https://www.nzherald.co.nz/,Nova Zelândia,NZ,Inglês,Jornal
+Ásia e Oceania,Stuff,https://www.stuff.co.nz/,Nova Zelândia,NZ,Inglês,Portal
+Ásia e Oceania,Newsroom,https://newsroom.co.nz/,Nova Zelândia,NZ,Inglês,Digital native
+Ásia e Oceania,The Spinoff,https://thespinoff.co.nz/,Nova Zelândia,NZ,Inglês,Digital native
+Ásia e Oceania,The Post,https://www.thepost.co.nz/,Nova Zelândia,NZ,Inglês,Jornal
+Ásia e Oceania,1News (TVNZ),https://www.1news.co.nz/,Nova Zelândia,NZ,Inglês,TV
+Ásia e Oceania,Post-Courier,https://www.postcourier.com.pg/,Papua-Nova Guiné,PG,Inglês / Tok Pisin,Jornal
+Ásia e Oceania,The National (PNG),https://www.thenational.com.pg/,Papua-Nova Guiné,PG,Inglês,Jornal
+Ásia e Oceania,The Fiji Times,https://www.fijitimes.com/,Fiji,FJ,Inglês,Jornal
+Ásia e Oceania,Fiji Sun,https://fijisun.com.fj/,Fiji,FJ,Inglês,Jornal
+Ásia e Oceania,FBC News,https://www.fbcnews.com.fj/,Fiji,FJ,Inglês / Fijiano / Hindi,TV
+Ásia e Oceania,Fijivillage,https://fijivillage.com/,Fiji,FJ,Inglês,Portal
+Ásia e Oceania,Samoa Observer,https://samoaobserver.ws/,Samoa,WS,Inglês / Samoano,Jornal
+Ásia e Oceania,Talamua Online,https://www.talamua.com/,Samoa,WS,Inglês / Samoano,Digital native
+Ásia e Oceania,Matangi Tonga,https://matangitonga.to/,Tonga,TO,Inglês,Digital native
+Ásia e Oceania,Kaniva Tonga,https://kanivatonga.nz/,Tonga,TO,Inglês / Tonganês,Digital native
+Ásia e Oceania,Vanuatu Daily Post,https://www.dailypost.vu/,Vanuatu,VU,Inglês / Bislama / Francês,Jornal
+Ásia e Oceania,Solomon Star,https://www.solomonstarnews.com/,Ilhas Salomão,SB,Inglês,Jornal
+Ásia e Oceania,In-depth Solomons,https://indepthsolomons.com.sb/,Ilhas Salomão,SB,Inglês,Investigativo
+Ásia e Oceania,Nouvelle-Calédonie la 1ère,https://la1ere.francetvinfo.fr/nouvellecaledonie/,Nova Caledônia,NC,Francês,TV
+Ásia e Oceania,Les Nouvelles Calédoniennes,https://www.lnc.nc/,Nova Caledônia,NC,Francês,Jornal
+Ásia e Oceania,Polynésie la 1ère,https://la1ere.francetvinfo.fr/polynesie/,Polinésia Francesa,PF,Francês / Taitiano,TV
+Ásia e Oceania,Tahiti Infos,https://www.tahiti-infos.com/,Polinésia Francesa,PF,Francês,Digital native
+Ásia e Oceania,The Guam Daily Post,https://www.postguam.com/,Guam,GU,Inglês,Jornal
+Ásia e Oceania,Marianas Variety,https://www.mvariety.com/,Ilhas Marianas do Norte / Guam,MP/GU,Inglês,Jornal
+Ásia e Oceania,Island Times,https://islandtimes.org/,Palau,PW,Inglês,Jornal
+Ásia e Oceania,The Kaselehlie Press,https://kpress.info/,Micronésia (FSM),FM,Inglês,Jornal
+Ásia e Oceania,The Marshall Islands Journal,https://marshallislandsjournal.com/,Ilhas Marshall,MH,Inglês / Marshalês,Jornal
+Ásia e Oceania,Tuvalu News,https://tuvalu-news.tv/,Tuvalu,TV,Inglês / Tuvaluano,Portal
+Ásia e Oceania,Government of Nauru (Nauru Bulletin),https://www.nauru.gov.nr/,Nauru,NR,Inglês,Portal
+Ásia e Oceania,Cook Islands News,https://www.cookislandsnews.com/,Ilhas Cook,CK,Inglês / Maori das Cook,Jornal
+Ásia e Oceania,Islands Business,https://islandsbusiness.com/,Pacífico (regional),INT,Inglês,Revista
+Ásia e Oceania,Pacific Island Times,https://pacificislandtimes.com/,Pacífico (regional),INT,Inglês,Revista
+Ásia e Oceania,RNZ Pacific,https://www.rnz.co.nz/international/pacific-news,Pacífico (regional),INT,Inglês / línguas do Pacífico,Rádio
+Ásia e Oceania,ABC Pacific,https://www.abc.net.au/pacific,Pacífico (regional),INT,Inglês / Tok Pisin,TV
+Ásia e Oceania,Pacific Islands News Association (PACNEWS),https://pina.com.fj/,Pacífico (regional),INT,Inglês,Agência
+Ásia e Oceania,Pacific Islands Report,https://www.pireport.org/,Pacífico (regional),INT,Inglês,Portal
+Ásia e Oceania,BenarNews,https://www.benarnews.org/,Ásia-Pacífico (regional),INT,Inglês / línguas locais,Digital native
+Ásia e Oceania,The Diplomat,https://thediplomat.com/,Ásia-Pacífico (regional),INT,Inglês,Revista
+África e Oriente Médio,Ahram Online,https://english.ahram.org.eg,Egito,EG,Inglês,Portal
+África e Oriente Médio,Al-Ahram,https://www.ahram.org.eg,Egito,EG,Árabe,Jornal
+África e Oriente Médio,Egyptian Streets,https://egyptianstreets.com,Egito,EG,Inglês,Digital native
+África e Oriente Médio,Daily News Egypt,https://www.dailynewsegypt.com,Egito,EG,Inglês,Jornal
+África e Oriente Médio,Al-Masry Al-Youm,https://www.almasryalyoum.com,Egito,EG,Árabe,Jornal
+África e Oriente Médio,Egypt Independent,https://www.egyptindependent.com,Egito,EG,Inglês,Digital native
+África e Oriente Médio,Sudan Tribune,https://sudantribune.com,Sudão,SD,Inglês/Árabe,Digital native
+África e Oriente Médio,Radio Dabanga,https://www.dabangasudan.org,Sudão,SD,Árabe/Inglês,Rádio
+África e Oriente Médio,Ayin Network,https://3ayin.com,Sudão,SD,Árabe/Inglês,Investigativo
+África e Oriente Médio,Sudan War Monitor,https://sudanwarmonitor.com,Sudão,SD,Inglês,Digital native
+África e Oriente Médio,SUNA,https://suna-sd.net,Sudão,SD,Árabe/Inglês,Agência
+África e Oriente Médio,Radio Tamazuj,https://www.radiotamazuj.org,Sudão do Sul,SS,Inglês/Árabe,Rádio
+África e Oriente Médio,Eye Radio,https://www.eyeradio.org,Sudão do Sul,SS,Inglês/Árabe de Juba,Rádio
+África e Oriente Médio,Sudans Post,https://www.sudanspost.com,Sudão do Sul,SS,Inglês,Digital native
+África e Oriente Médio,The City Review,https://www.cityreviewss.com,Sudão do Sul,SS,Inglês,Jornal
+África e Oriente Médio,Sahara Media,https://saharamedias.net,Mauritânia,MR,Árabe/Francês,Portal
+África e Oriente Médio,Alakhbar,https://www.alakhbar.info,Mauritânia,MR,Árabe/Francês,Agência
+África e Oriente Médio,Le Calame,https://www.lecalame.info,Mauritânia,MR,Francês/Árabe,Jornal
+África e Oriente Médio,Premium Times,https://www.premiumtimesng.com,Nigéria,NG,Inglês,Investigativo
+África e Oriente Médio,The Punch,https://punchng.com,Nigéria,NG,Inglês,Jornal
+África e Oriente Médio,Vanguard,https://www.vanguardngr.com,Nigéria,NG,Inglês,Jornal
+África e Oriente Médio,ThisDay,https://www.thisdaylive.com,Nigéria,NG,Inglês,Jornal
+África e Oriente Médio,Daily Trust,https://dailytrust.com,Nigéria,NG,Inglês,Jornal
+África e Oriente Médio,TheCable,https://www.thecable.ng,Nigéria,NG,Inglês,Digital native
+África e Oriente Médio,Sahara Reporters,https://saharareporters.com,Nigéria,NG,Inglês,Investigativo
+África e Oriente Médio,Dubawa,https://dubawa.org,Nigéria,NG,Inglês,Fact-checking
+África e Oriente Médio,HumAngle,https://humangle.org,Nigéria,NG,Inglês,Investigativo
+África e Oriente Médio,ICIR,https://www.icirnigeria.org,Nigéria,NG,Inglês,Investigativo
+África e Oriente Médio,The Republic,https://rpublc.com,Nigéria,NG,Inglês,Revista
+África e Oriente Médio,Ghanaweb,https://www.ghanaweb.com,Gana,GH,Inglês,Portal
+África e Oriente Médio,Graphic Online (Daily Graphic),https://www.graphic.com.gh,Gana,GH,Inglês,Jornal
+África e Oriente Médio,MyJoyOnline,https://www.myjoyonline.com,Gana,GH,Inglês,Portal
+África e Oriente Médio,The Fourth Estate,https://thefourthestategh.com,Gana,GH,Inglês,Investigativo
+África e Oriente Médio,Le Soleil,https://lesoleil.sn,Senegal,SN,Francês,Jornal
+África e Oriente Médio,Seneweb,https://www.seneweb.com,Senegal,SN,Francês,Portal
+África e Oriente Médio,APS – Agence de Presse Sénégalaise,https://aps.sn,Senegal,SN,Francês,Agência
+África e Oriente Médio,EnQuête+,https://www.enqueteplus.com,Senegal,SN,Francês,Jornal
+África e Oriente Médio,Le Quotidien,https://lequotidien.sn,Senegal,SN,Francês,Jornal
+África e Oriente Médio,Dakaractu,https://www.dakaractu.com,Senegal,SN,Francês,Digital native
+África e Oriente Médio,Fraternité Matin,https://www.fratmat.info,Costa do Marfim,CI,Francês,Jornal
+África e Oriente Médio,Abidjan.net,https://news.abidjan.net,Costa do Marfim,CI,Francês,Portal
+África e Oriente Médio,AIP – Agence Ivoirienne de Presse,https://www.aip.ci,Costa do Marfim,CI,Francês,Agência
+África e Oriente Médio,Linfodrome,https://www.linfodrome.com,Costa do Marfim,CI,Francês,Digital native
+África e Oriente Médio,L'Intelligent d'Abidjan,https://www.lintelligentdabidjan.info,Costa do Marfim,CI,Francês,Jornal
+África e Oriente Médio,Maliweb,https://www.maliweb.net,Mali,ML,Francês,Portal
+África e Oriente Médio,Studio Tamani,https://www.studiotamani.org,Mali,ML,Francês/Bambara/Peul/Songhoy,Rádio
+África e Oriente Médio,L'Essor,https://www.lessor.ml,Mali,ML,Francês,Jornal
+África e Oriente Médio,Malijet,https://malijet.com,Mali,ML,Francês,Portal
+África e Oriente Médio,Lefaso.net,https://lefaso.net,Burkina Faso,BF,Francês,Digital native
+África e Oriente Médio,L'Observateur Paalga,https://lobservateur.bf,Burkina Faso,BF,Francês,Jornal
+África e Oriente Médio,Burkina24,https://burkina24.com,Burkina Faso,BF,Francês,Digital native
+África e Oriente Médio,Sidwaya,https://www.sidwaya.info,Burkina Faso,BF,Francês,Jornal
+África e Oriente Médio,CENOZO,https://cenozo.org,Burkina Faso,BF,Francês,Investigativo
+África e Oriente Médio,ActuNiger,https://www.actuniger.com,Níger,NE,Francês,Digital native
+África e Oriente Médio,Studio Kalangou,https://www.studiokalangou.org,Níger,NE,Francês/Hausa/Zarma/Fulfulde/Tamasheq,Rádio
+África e Oriente Médio,Air Info,https://airinfoagadez.com,Níger,NE,Francês,Jornal
+África e Oriente Médio,Le Sahel,https://www.lesahel.org,Níger,NE,Francês,Jornal
+África e Oriente Médio,Guinéenews,https://guineenews.org,Guiné,GN,Francês,Digital native
+África e Oriente Médio,Mosaïque Guinée,https://mosaiqueguinee.com,Guiné,GN,Francês,Digital native
+África e Oriente Médio,Ledjely,https://ledjely.com,Guiné,GN,Francês,Digital native
+África e Oriente Médio,Aminata.com,https://aminata.com,Guiné,GN,Francês,Digital native
+África e Oriente Médio,Politico SL,https://www.politicosl.com,Serra Leoa,SL,Inglês,Jornal
+África e Oriente Médio,The Sierra Leone Telegraph,https://www.thesierraleonetelegraph.com,Serra Leoa,SL,Inglês,Digital native
+África e Oriente Médio,Africanist Press,https://africanistpress.com,Serra Leoa,SL,Inglês,Investigativo
+África e Oriente Médio,FrontPage Africa,https://fpa.news,Libéria,LR,Inglês,Investigativo
+África e Oriente Médio,Daily Observer,https://www.liberianobserver.com,Libéria,LR,Inglês,Jornal
+África e Oriente Médio,The New Dawn,https://www.thenewdawnliberia.com,Libéria,LR,Inglês,Jornal
+África e Oriente Médio,The Liberian Investigator,https://liberianinvestigator.com,Libéria,LR,Inglês,Investigativo
+África e Oriente Médio,Togo-Presse,https://togopresse.tg,Togo,TG,Francês,Jornal
+África e Oriente Médio,Icilome,https://icilome.com,Togo,TG,Francês,Portal
+África e Oriente Médio,Togo Actualité,https://togoactualite.com,Togo,TG,Francês,Digital native
+África e Oriente Médio,Le Temps,https://letempstg.com,Togo,TG,Francês,Jornal
+África e Oriente Médio,République Togolaise,https://www.republicoftogo.com,Togo,TG,Francês,Portal
+África e Oriente Médio,Banouto,https://banouto.bj,Benim,BJ,Francês,Investigativo
+África e Oriente Médio,24 Heures au Bénin,https://www.24haubenin.info,Benim,BJ,Francês,Digital native
+África e Oriente Médio,Matin Libre,https://matinlibre.com,Benim,BJ,Francês,Jornal
+África e Oriente Médio,La Nation,https://lanation.bj,Benim,BJ,Francês,Jornal
+África e Oriente Médio,The Point,https://thepoint.gm,Gâmbia,GM,Inglês,Jornal
+África e Oriente Médio,Foroyaa,https://foroyaa.net,Gâmbia,GM,Inglês,Jornal
+África e Oriente Médio,The Standard,https://standard.gm,Gâmbia,GM,Inglês,Jornal
+África e Oriente Médio,Kerr Fatou,https://www.kerrfatou.com,Gâmbia,GM,Inglês,TV
+África e Oriente Médio,Malagen,https://malagen.org,Gâmbia,GM,Inglês,Investigativo
+África e Oriente Médio,O Democrata GB,https://www.odemocratagb.com,Guiné-Bissau,GW,Português,Digital native
+África e Oriente Médio,ANG – Agência de Notícias da Guiné,https://ang.gw,Guiné-Bissau,GW,Português,Agência
+África e Oriente Médio,Jornal Nô Pintcha,https://jornalnopintcha.gw,Guiné-Bissau,GW,Português,Jornal
+África e Oriente Médio,Expresso das Ilhas,https://expressodasilhas.cv,Cabo Verde,CV,Português,Jornal
+África e Oriente Médio,A Nação,https://www.anacao.cv,Cabo Verde,CV,Português,Jornal
+África e Oriente Médio,RTC,https://www.rtc.cv,Cabo Verde,CV,Português,TV
+África e Oriente Médio,Santiago Magazine,https://santiagomagazine.cv,Cabo Verde,CV,Português,Revista
+África e Oriente Médio,Téla Nón,https://www.telanon.info,São Tomé e Príncipe,ST,Português,Digital native
+África e Oriente Médio,Jornal Tropical,https://www.jornaltropical.st,São Tomé e Príncipe,ST,Português,Digital native
+África e Oriente Médio,Mimi Mefo Info,https://mimimefoinfos.com,Camarões,CM,Inglês,Digital native
+África e Oriente Médio,Data Cameroon,https://datacameroon.com,Camarões,CM,Francês,Investigativo
+África e Oriente Médio,Museba Journalism Project,https://www.themusebaproject.org,Camarões,CM,Francês,Investigativo
+África e Oriente Médio,Journal du Cameroun,https://fr.journalducameroun.com,Camarões,CM,Francês,Portal
+África e Oriente Médio,Cameroon Tribune,https://www.cameroon-tribune.cm,Camarões,CM,Francês/Inglês,Jornal
+África e Oriente Médio,Data-Check,https://data-check.org,Camarões,CM,Francês,Fact-checking
+África e Oriente Médio,Alwihda Info,https://www.alwihdainfo.com,Chade,TD,Francês/Árabe,Portal
+África e Oriente Médio,Tchadinfos,https://tchadinfos.com,Chade,TD,Francês,Digital native
+África e Oriente Médio,Le Pays,https://www.lepaystchad.com,Chade,TD,Francês,Jornal
+África e Oriente Médio,Radio Ndeke Luka,https://www.radiondekeluka.org,República Centro-Africana,CF,Francês/Sango,Rádio
+África e Oriente Médio,Corbeau News Centrafrique,https://corbeaunews-centrafrique.org,República Centro-Africana,CF,Francês,Investigativo
+África e Oriente Médio,Oubangui Médias,https://oubanguimedias.com,República Centro-Africana,CF,Francês,Digital native
+África e Oriente Médio,Gabonreview,https://www.gabonreview.com,Gabão,GA,Francês,Portal
+África e Oriente Médio,Gabon Media Time,https://gabonmediatime.com,Gabão,GA,Francês,Portal
+África e Oriente Médio,Gabonactu,https://gabonactu.com,Gabão,GA,Francês,Portal
+África e Oriente Médio,Info241,https://www.info241.com,Gabão,GA,Francês,Investigativo
+África e Oriente Médio,Les Dépêches de Brazzaville,https://www.lesdepechesdebrazzaville.fr,Congo-Brazzaville,CG,Francês,Jornal
+África e Oriente Médio,ADIAC-Congo,https://www.adiac-congo.com,Congo-Brazzaville,CG,Francês,Agência
+África e Oriente Médio,Vox Congo,https://www.vox.cg,Congo-Brazzaville,CG,Francês,Portal
+África e Oriente Médio,Actualite.cd,https://actualite.cd,RD Congo,CD,Francês,Digital native
+África e Oriente Médio,Radio Okapi,https://www.radiookapi.net,RD Congo,CD,Francês/Lingala/Suaíli/Kikongo/Tshiluba,Rádio
+África e Oriente Médio,7sur7.cd,https://7sur7.cd,RD Congo,CD,Francês,Digital native
+África e Oriente Médio,Balobaki Check,https://balobakicheck.com,RD Congo,CD,Francês,Fact-checking
+África e Oriente Médio,RTNC,https://rtnc.cd,RD Congo,CD,Francês,TV
+África e Oriente Médio,Diario Rombe,https://diariorombe.es,Guiné Equatorial,GQ,Espanhol,Digital native
+África e Oriente Médio,Radio Macuto,https://radiomacuto.org,Guiné Equatorial,GQ,Espanhol,Digital native
+África e Oriente Médio,Guinea Ecuatorial Press,https://www.guineaecuatorialpress.com,Guiné Equatorial,GQ,Espanhol,Portal
+África e Oriente Médio,Nation Africa (Daily Nation),https://nation.africa/kenya,Quênia,KE,Inglês,Jornal
+África e Oriente Médio,The Standard,https://www.standardmedia.co.ke,Quênia,KE,Inglês,Jornal
+África e Oriente Médio,The EastAfrican,https://www.theeastafrican.co.ke/tea,Quênia,KE,Inglês,Jornal
+África e Oriente Médio,Africa Uncensored,https://africauncensored.online,Quênia,KE,Inglês,Investigativo
+África e Oriente Médio,The Star,https://www.the-star.co.ke,Quênia,KE,Inglês,Jornal
+África e Oriente Médio,Citizen Digital,https://citizen.digital,Quênia,KE,Inglês/Suaíli,TV
+África e Oriente Médio,The Elephant,https://www.theelephant.info,Quênia,KE,Inglês,Revista
+África e Oriente Médio,PesaCheck,https://pesacheck.org,Quênia,KE,Inglês/Francês/Suaíli,Fact-checking
+África e Oriente Médio,The Citizen,https://www.thecitizen.co.tz/tanzania,Tanzânia,TZ,Inglês,Jornal
+África e Oriente Médio,Mwananchi,https://www.mwananchi.co.tz/mw,Tanzânia,TZ,Suaíli,Jornal
+África e Oriente Médio,Daily News,https://dailynews.co.tz,Tanzânia,TZ,Inglês,Jornal
+África e Oriente Médio,HabariLeo,https://habarileo.co.tz,Tanzânia,TZ,Suaíli,Jornal
+África e Oriente Médio,Daily Monitor,https://www.monitor.co.ug/uganda,Uganda,UG,Inglês,Jornal
+África e Oriente Médio,New Vision,https://www.newvision.co.ug,Uganda,UG,Inglês,Jornal
+África e Oriente Médio,The Observer,https://observer.ug,Uganda,UG,Inglês,Jornal
+África e Oriente Médio,InfoNile,https://infonile.org,Uganda,UG,Inglês,Investigativo
+África e Oriente Médio,African Centre for Media Excellence,https://acme-ug.org,Uganda,UG,Inglês,Investigativo
+África e Oriente Médio,The New Times,https://www.newtimes.co.rw,Ruanda,RW,Inglês,Jornal
+África e Oriente Médio,The Chronicles,https://www.chronicles.rw,Ruanda,RW,Inglês,Digital native
+África e Oriente Médio,IGIHE,https://www.igihe.com,Ruanda,RW,Kinyarwanda/Inglês/Francês,Portal
+África e Oriente Médio,M28 Investigates,https://m28investigates.com,Ruanda,RW,Inglês,Investigativo
+África e Oriente Médio,Iwacu,https://www.iwacu-burundi.org,Burundi,BI,Francês/Kirundi/Inglês,Jornal
+África e Oriente Médio,SOS Médias Burundi,https://www.sosmediasburundi.org,Burundi,BI,Francês/Kirundi/Inglês,Digital native
+África e Oriente Médio,Addis Standard,https://addisstandard.com,Etiópia,ET,Inglês,Revista
+África e Oriente Médio,Ethiopia Insight,https://www.ethiopia-insight.com,Etiópia,ET,Inglês,Digital native
+África e Oriente Médio,The Reporter,https://www.thereporterethiopia.com,Etiópia,ET,Inglês,Jornal
+África e Oriente Médio,HaqCheck,https://haqcheck.org,Etiópia,ET,Inglês/Amárico/Oromo/Tigrínio,Fact-checking
+África e Oriente Médio,Shabait (Ministério da Informação),https://shabait.com,Eritreia,ER,Tigrínio/Inglês/Árabe,Portal
+África e Oriente Médio,Radio Erena,https://erena.org,Eritreia,ER,Tigrínio/Árabe,Rádio
+África e Oriente Médio,Assenna (ASENA TV),https://asenatv.com,Eritreia,ER,Tigrínio/Inglês,Digital native
+África e Oriente Médio,Awate,https://awate.com,Eritreia,ER,Inglês/Tigrínio,Digital native
+África e Oriente Médio,Erigazette,https://www.erigazette.org,Eritreia,ER,Inglês/Tigrínio,Digital native
+África e Oriente Médio,Hiiraan Online,https://www.hiiraan.com,Somália,SO,Somali/Inglês,Portal
+África e Oriente Médio,Garowe Online,https://www.garoweonline.com/en,Somália,SO,Inglês/Somali,Digital native
+África e Oriente Médio,Somali Guardian,https://www.somaliguardian.com,Somália,SO,Inglês,Digital native
+África e Oriente Médio,Goobjoog,https://goobjoog.com,Somália,SO,Somali/Inglês,Rádio
+África e Oriente Médio,SONNA,https://sonna.so/en,Somália,SO,Somali/Inglês/Árabe,Agência
+África e Oriente Médio,La Nation,https://www.lanation.dj,Djibuti,DJ,Francês,Jornal
+África e Oriente Médio,ADI – Agence Djiboutienne d'Information,https://www.adi.dj,Djibuti,DJ,Francês/Árabe,Agência
+África e Oriente Médio,RTD,https://rtd.dj,Djibuti,DJ,Francês/Árabe/Somali/Afar,TV
+África e Oriente Médio,Daily Maverick,https://www.dailymaverick.co.za,África do Sul,ZA,Inglês,Digital native
+África e Oriente Médio,Scorpio (Daily Maverick),https://www.dailymaverick.co.za/section/scorpio,África do Sul,ZA,Inglês,Investigativo
+África e Oriente Médio,News24,https://www.news24.com,África do Sul,ZA,Inglês,Portal
+África e Oriente Médio,Mail & Guardian,https://mg.co.za,África do Sul,ZA,Inglês,Jornal
+África e Oriente Médio,Business Day,https://www.businessday.co.za,África do Sul,ZA,Inglês,Jornal
+África e Oriente Médio,amaBhungane,https://amabhungane.org,África do Sul,ZA,Inglês,Investigativo
+África e Oriente Médio,GroundUp,https://groundup.org.za,África do Sul,ZA,Inglês,Digital native
+África e Oriente Médio,Africa Check,https://africacheck.org,África do Sul,ZA,Inglês/Francês,Fact-checking
+África e Oriente Médio,SABC News,https://www.sabcnews.com,África do Sul,ZA,Inglês e línguas oficiais,TV
+África e Oriente Médio,The Citizen,https://www.citizen.co.za,África do Sul,ZA,Inglês,Jornal
+África e Oriente Médio,IOL,https://iol.co.za,África do Sul,ZA,Inglês,Portal
+África e Oriente Médio,Oxpeckers,https://oxpeckers.org,África do Sul,ZA,Inglês,Investigativo
+África e Oriente Médio,Viewfinder,https://viewfinder.org.za,África do Sul,ZA,Inglês,Investigativo
+África e Oriente Médio,NewsDay,https://www.newsday.co.zw,Zimbábue,ZW,Inglês,Jornal
+África e Oriente Médio,ZimLive,https://www.zimlive.com,Zimbábue,ZW,Inglês,Digital native
+África e Oriente Médio,The Herald,https://www.herald.co.zw,Zimbábue,ZW,Inglês,Jornal
+África e Oriente Médio,Zimbabwe Independent,https://www.theindependent.co.zw,Zimbábue,ZW,Inglês,Jornal
+África e Oriente Médio,The Standard,https://www.thestandard.co.zw,Zimbábue,ZW,Inglês,Jornal
+África e Oriente Médio,CITE,https://cite.org.zw,Zimbábue,ZW,Inglês/Ndebele,Digital native
+África e Oriente Médio,ZimFact,https://zimfact.org,Zimbábue,ZW,Inglês,Fact-checking
+África e Oriente Médio,News Diggers!,https://diggers.news,Zâmbia,ZM,Inglês,Jornal
+África e Oriente Médio,Lusaka Times,https://www.lusakatimes.com,Zâmbia,ZM,Inglês,Portal
+África e Oriente Médio,Zambia Daily Mail,https://www.daily-mail.co.zm,Zâmbia,ZM,Inglês,Jornal
+África e Oriente Médio,The Mast,https://mastmediazm.com,Zâmbia,ZM,Inglês,Jornal
+África e Oriente Médio,MakanDay,https://makanday.org,Zâmbia,ZM,Inglês,Investigativo
+África e Oriente Médio,Zitamar News,https://www.zitamar.com,Moçambique,MZ,Inglês/Português,Digital native
+África e Oriente Médio,Carta de Moçambique,https://cartamz.com,Moçambique,MZ,Português,Digital native
+África e Oriente Médio,Savana,https://savana.co.mz,Moçambique,MZ,Português,Jornal
+África e Oriente Médio,@Verdade,https://verdade.co.mz,Moçambique,MZ,Português,Jornal
+África e Oriente Médio,Notícias,https://jornalnoticias.co.mz,Moçambique,MZ,Português,Jornal
+África e Oriente Médio,CIP – Centro de Integridade Pública,https://www.cipmoz.org,Moçambique,MZ,Português,Investigativo
+África e Oriente Médio,Mídia Lab,https://midialab.org,Moçambique,MZ,Português,Investigativo
+África e Oriente Médio,Novo Jornal,https://www.novojornal.co.ao,Angola,AO,Português,Jornal
+África e Oriente Médio,Expansão,https://www.expansao.co.ao,Angola,AO,Português,Jornal
+África e Oriente Médio,Maka Angola,https://www.makaangola.org,Angola,AO,Português/Inglês,Investigativo
+África e Oriente Médio,Jornal de Angola,https://www.jornaldeangola.ao,Angola,AO,Português,Jornal
+África e Oriente Médio,VOA Português,https://www.voaportugues.com,Angola,AO,Português,Rádio
+África e Oriente Médio,Rádio Angola,https://radioangola.org,Angola,AO,Português,Portal
+África e Oriente Médio,Nation Online,https://mwnation.com,Malaui,MW,Inglês/Chichewa,Jornal
+África e Oriente Médio,Times Group,https://times.mw,Malaui,MW,Inglês,Jornal
+África e Oriente Médio,Malawi24,https://malawi24.com,Malaui,MW,Inglês,Digital native
+África e Oriente Médio,PIJ Malawi,https://www.pijmalawi.org,Malaui,MW,Inglês,Investigativo
+África e Oriente Médio,CIJM,https://www.investigative-malawi.org,Malaui,MW,Inglês,Investigativo
+África e Oriente Médio,Mmegi,https://www.mmegi.bw,Botsuana,BW,Inglês/Setswana,Jornal
+África e Oriente Médio,Sunday Standard,https://www.sundaystandard.info,Botsuana,BW,Inglês,Jornal
+África e Oriente Médio,Botswana Guardian,https://guardiansun.co.bw,Botsuana,BW,Inglês,Jornal
+África e Oriente Médio,The Namibian,https://www.namibian.com.na,Namíbia,NA,Inglês/Oshiwambo,Jornal
+África e Oriente Médio,Namibian Sun,https://www.namibiansun.com,Namíbia,NA,Inglês,Jornal
+África e Oriente Médio,New Era,https://neweralive.na,Namíbia,NA,Inglês,Jornal
+África e Oriente Médio,Confidente,https://www.confidentenamibia.com,Namíbia,NA,Inglês/Oshiwambo,Jornal
+África e Oriente Médio,Lesotho Times,https://lestimes.com,Lesoto,LS,Inglês,Jornal
+África e Oriente Médio,Public Eye,https://publiceyenews.com,Lesoto,LS,Inglês,Jornal
+África e Oriente Médio,MNN Centre for Investigative Journalism,https://lescij.org,Lesoto,LS,Inglês,Investigativo
+África e Oriente Médio,Times of Eswatini,https://times.co.sz,Essuatíni,SZ,Inglês/siSwati,Jornal
+África e Oriente Médio,Eswatini Observer,https://www.eswatiniobserver.com,Essuatíni,SZ,Inglês,Jornal
+África e Oriente Médio,Swaziland News,https://swazilandnews.co.za,Essuatíni,SZ,Inglês,Digital native
+África e Oriente Médio,Inhlase Centre for Investigative Journalism,https://inhlase.com,Essuatíni,SZ,Inglês,Investigativo
+África e Oriente Médio,L'Express de Madagascar,https://www.lexpress.mg,Madagascar,MG,Francês,Jornal
+África e Oriente Médio,Midi Madagasikara,https://midi-madagasikara.mg,Madagascar,MG,Francês/Malgaxe,Jornal
+África e Oriente Médio,Madagascar Tribune,https://www.madagascar-tribune.com,Madagascar,MG,Francês,Jornal
+África e Oriente Médio,L'Express,https://lexpress.mu,Maurício,MU,Francês/Inglês/Crioulo,Jornal
+África e Oriente Médio,Le Mauricien,https://www.lemauricien.com,Maurício,MU,Francês,Jornal
+África e Oriente Médio,Défi Media,https://defimedia.info,Maurício,MU,Francês/Crioulo/Inglês,Portal
+África e Oriente Médio,Seychelles Nation,https://www.nation.sc,Seicheles,SC,Inglês/Francês/Seselwa,Jornal
+África e Oriente Médio,Seychelles News Agency,https://www.seychellesnewsagency.com,Seicheles,SC,Inglês/Francês,Agência
+África e Oriente Médio,Al-Watwan,https://alwatwan.net,Comores,KM,Francês/Comoriano,Jornal
+África e Oriente Médio,La Gazette des Comores,https://lagazettedescomores.com,Comores,KM,Francês,Jornal
+África e Oriente Médio,Comores Infos,https://www.comoresinfos.net,Comores,KM,Francês/Comoriano,Portal
+África e Oriente Médio,Haaretz,https://www.haaretz.com,Israel,IL,Inglês/Hebraico,Jornal
+África e Oriente Médio,The Times of Israel,https://www.timesofisrael.com,Israel,IL,Inglês,Digital native
+África e Oriente Médio,The Jerusalem Post,https://www.jpost.com,Israel,IL,Inglês,Jornal
+África e Oriente Médio,Ynetnews,https://www.ynetnews.com,Israel,IL,Inglês,Portal
+África e Oriente Médio,+972 Magazine,https://www.972mag.com,Israel,IL,Inglês,Revista
+África e Oriente Médio,Local Call (Sicha Mekomit),https://www.mekomit.co.il,Israel,IL,Hebraico,Digital native
+África e Oriente Médio,Calcalist,https://www.calcalist.co.il,Israel,IL,Hebraico,Jornal
+África e Oriente Médio,Shomrim,https://www.shomrim.news,Israel,IL,Hebraico/Inglês,Investigativo
+África e Oriente Médio,Al-Quds,https://www.alquds.com,Palestina,PS,Árabe,Jornal
+África e Oriente Médio,Ma'an News Agency,https://www.maannews.net,Palestina,PS,Árabe,Agência
+África e Oriente Médio,WAFA,https://www.wafa.ps,Palestina,PS,Árabe/Inglês/Francês/Hebraico,Agência
+África e Oriente Médio,Metras,https://metras.co,Palestina,PS,Árabe,Revista
+África e Oriente Médio,L'Orient-Le Jour,https://www.lorientlejour.com,Líbano,LB,Francês,Jornal
+África e Oriente Médio,L'Orient Today,https://today.lorientlejour.com,Líbano,LB,Inglês,Digital native
+África e Oriente Médio,Megaphone,https://megaphone.news,Líbano,LB,Árabe/Inglês,Digital native
+África e Oriente Médio,Daraj,https://daraj.media,Líbano,LB,Árabe/Inglês,Investigativo
+África e Oriente Médio,Syria Direct,https://syriadirect.org,Síria,SY,Inglês/Árabe,Investigativo
+África e Oriente Médio,Enab Baladi,https://enabbaladi.net,Síria,SY,Árabe/Inglês,Jornal
+África e Oriente Médio,SANA,https://sana.sy,Síria,SY,Árabe/Inglês/Francês/Russo,Agência
+África e Oriente Médio,The Syrian Observer,https://syrianobserver.com,Síria,SY,Inglês,Digital native
+África e Oriente Médio,The Jordan Times,https://jordantimes.com,Jordânia,JO,Inglês,Jornal
+África e Oriente Médio,7iber,https://www.7iber.com,Jordânia,JO,Árabe/Inglês,Investigativo
+África e Oriente Médio,Roya News,https://en.royanews.tv,Jordânia,JO,Inglês/Árabe,TV
+África e Oriente Médio,Rudaw,https://www.rudaw.net,Iraque,IQ,Curdo/Árabe/Inglês,TV
+África e Oriente Médio,Kurdistan24,https://www.kurdistan24.net,Iraque,IQ,Curdo/Árabe/Inglês/Turco,TV
+África e Oriente Médio,Iraq Oil Report,https://www.iraqoilreport.com,Iraque,IQ,Inglês,Digital native
+África e Oriente Médio,Shafaq News,https://shafaq.com,Iraque,IQ,Árabe/Inglês/Curdo/Turco,Agência
+África e Oriente Médio,IranWire,https://iranwire.com,Irã,IR,Persa/Inglês,Investigativo
+África e Oriente Médio,Radio Farda,https://www.radiofarda.com,Irã,IR,Persa,Rádio
+África e Oriente Médio,Iran International,https://www.iranintl.com,Irã,IR,Persa/Inglês,TV
+África e Oriente Médio,IRNA,https://www.irna.ir,Irã,IR,Persa/Árabe/Inglês,Agência
+África e Oriente Médio,Fars News,https://farsnews.ir,Irã,IR,Persa/Árabe/Inglês,Agência
+África e Oriente Médio,Tasnim News,https://www.tasnimnews.ir,Irã,IR,Persa/Árabe/Inglês/Turco/Hebraico,Agência
+África e Oriente Médio,Arab News,https://www.arabnews.com,Arábia Saudita,SA,Inglês,Jornal
+África e Oriente Médio,Al Arabiya English,https://english.alarabiya.net,Arábia Saudita,SA,Inglês/Árabe,TV
+África e Oriente Médio,Saudi Gazette,https://saudigazette.com.sa,Arábia Saudita,SA,Inglês,Jornal
+África e Oriente Médio,SPA – Saudi Press Agency,https://www.spa.gov.sa,Arábia Saudita,SA,Árabe/Inglês,Agência
+África e Oriente Médio,The National,https://www.thenationalnews.com,Emirados Árabes Unidos,AE,Inglês,Jornal
+África e Oriente Médio,Gulf News,https://gulfnews.com,Emirados Árabes Unidos,AE,Inglês,Jornal
+África e Oriente Médio,Khaleej Times,https://www.khaleejtimes.com,Emirados Árabes Unidos,AE,Inglês,Jornal
+África e Oriente Médio,WAM – Emirates News Agency,https://www.wam.ae,Emirados Árabes Unidos,AE,Árabe/Inglês,Agência
+África e Oriente Médio,Al Jazeera English,https://www.aljazeera.com,Catar,QA,Inglês,TV
+África e Oriente Médio,Al Jazeera Arabic,https://www.aljazeera.net,Catar,QA,Árabe,TV
+África e Oriente Médio,Doha News,https://dohanews.co,Catar,QA,Inglês,Digital native
+África e Oriente Médio,The Peninsula,https://thepeninsulaqatar.com,Catar,QA,Inglês,Jornal
+África e Oriente Médio,Arab Times,https://www.arabtimesonline.com,Kuwait,KW,Inglês,Jornal
+África e Oriente Médio,Kuwait Times,https://kuwaittimes.com,Kuwait,KW,Inglês,Jornal
+África e Oriente Médio,KUNA,https://www.kuna.net.kw,Kuwait,KW,Árabe/Inglês,Agência
+África e Oriente Médio,Gulf Daily News,https://www.gdnonline.com,Barém,BH,Inglês,Jornal
+África e Oriente Médio,Bahrain Mirror,https://bahrainmirror.com,Barém,BH,Árabe/Inglês,Digital native
+África e Oriente Médio,Times of Oman,https://timesofoman.com,Omã,OM,Inglês,Jornal
+África e Oriente Médio,Muscat Daily,https://www.muscatdaily.com,Omã,OM,Inglês,Jornal
+África e Oriente Médio,Oman Observer,https://www.omanobserver.om,Omã,OM,Inglês,Jornal
+África e Oriente Médio,Sanaa Center for Strategic Studies,https://sanaacenter.org,Iêmen,YE,Inglês/Árabe,Revista
+África e Oriente Médio,Yemen Online,https://www.yemenonline.info,Iêmen,YE,Árabe/Inglês,Portal
+África e Oriente Médio,Al-Masdar Online,https://almasdaronline.com,Iêmen,YE,Árabe/Inglês,Digital native
+África e Oriente Médio,Saba (Sanaa),https://www.saba.ye,Iêmen,YE,Árabe/Inglês,Agência
+África e Oriente Médio,Saba (Áden),https://www.sabanew.net,Iêmen,YE,Árabe/Inglês,Agência
+África e Oriente Médio,Gazete Duvar,https://www.gazeteduvar.com.tr,Turquia,TR,Turco,Digital native
+África e Oriente Médio,Medyascope,https://medyascope.tv,Turquia,TR,Turco/Inglês,Digital native
+África e Oriente Médio,Politis,https://www.politis.com.cy,Chipre,CY,Grego,Jornal
+África e Oriente Médio,In-Cyprus,https://in-cyprus.philenews.com,Chipre,CY,Inglês,Digital native
+África e Oriente Médio,Kıbrıs Postası,https://www.kibrispostasi.com,Chipre,CY,Turco,Portal
+África e Oriente Médio,Yenidüzen,https://www.yeniduzen.com,Chipre,CY,Turco,Jornal
+África e Oriente Médio,Al-Monitor,https://www.al-monitor.com,Regional MENA,INT,Inglês,Digital native
+África e Oriente Médio,Middle East Eye,https://www.middleeasteye.net,Regional MENA,INT,Inglês/Francês/Turco/Árabe,Digital native
+África e Oriente Médio,The New Arab,https://www.newarab.com,Regional MENA,INT,Inglês,Digital native
+África e Oriente Médio,Middle East Institute,https://www.mei.edu,Regional MENA,INT,Inglês,Revista
+África e Oriente Médio,Amwaj Media,https://amwaj.media,Regional Golfo/Irã,INT,Inglês,Digital native
+África e Oriente Médio,ARIJ,https://arij.net,Regional MENA,INT,Árabe/Inglês,Investigativo
+África e Oriente Médio,The Africa Report,https://www.theafricareport.com,Regional África,INT,Inglês,Revista
+África e Oriente Médio,Jeune Afrique,https://www.jeuneafrique.com,Regional África,INT,Francês,Revista
+África e Oriente Médio,RFI Afrique,https://www.rfi.fr/fr/afrique,Regional África,INT,Francês (+16 idiomas),Rádio
+África e Oriente Médio,BBC News Africa,https://www.bbc.com/news/world/africa,Regional África,INT,Inglês,TV
+África e Oriente Médio,African Arguments,https://africanarguments.org,Regional África,INT,Inglês,Revista
+África e Oriente Médio,ISS Africa,https://issafrica.org,Regional África,INT,Inglês/Francês,Revista
+África e Oriente Médio,The Continent,https://www.thecontinent.org,Regional África,INT,Inglês,Revista
+África e Oriente Médio,Africa Confidential,https://www.africa-confidential.com,Regional África,INT,Inglês,Revista
+África e Oriente Médio,The Conversation Africa,https://theconversation.com/africa,Regional África,INT,Inglês/Francês,Portal
+África e Oriente Médio,ZAM Magazine,https://www.zammagazine.com,Regional África,INT,Inglês/Holandês,Revista
+África e Oriente Médio,ANCIR,https://investigativecenters.org,Regional África,INT,Inglês,Investigativo
+África e Oriente Médio,Africa Intelligence,https://www.africaintelligence.com,Regional África,INT,Francês/Inglês,Revista
+África e Oriente Médio,Semafor Africa,https://www.semafor.com/newsletters/africa,Regional África,INT,Inglês,Digital native
+África e Oriente Médio,Africanews,https://www.africanews.com,Regional África,INT,Inglês/Francês/Português,TV
+África e Oriente Médio,AllAfrica,https://allafrica.com,Regional África,INT,Inglês/Francês,Portal
+África e Oriente Médio,APA News,https://apanews.net,Regional África,INT,Francês/Inglês,Agência
+África e Oriente Médio,PANA Press,https://www.panapress.com,Regional África,INT,Inglês/Francês/Português/Árabe,Agência
+África e Oriente Médio,Code for Africa,https://codeforafrica.org,Regional África,INT,Inglês,Investigativo
+Global / Agências e Redes,AP Noticias,https://apnews.com/hub/noticias,EUA,US,Espanhol,Agência de notícias
+Global / Agências e Redes,AFP Factual,https://factual.afp.com,França,FR,Espanhol,Fact-checking
+Global / Agências e Redes,AFP Checamos,https://checamos.afp.com,França,FR,Português,Fact-checking
+Global / Agências e Redes,EFE,https://efe.com,Espanha,ES,"Espanhol, português, catalão, galego, inglês",Agência de notícias
+Global / Agências e Redes,Yonhap News Agency,https://en.yna.co.kr,Coreia do Sul,KR,"Coreano, inglês, japonês, chinês, espanhol, francês, árabe",Agência de notícias
+Global / Agências e Redes,dpa Deutsche Presse-Agentur,https://www.dpa.com,Alemanha,DE,"Alemão, inglês, espanhol, árabe",Agência de notícias
+Global / Agências e Redes,Xinhua,https://english.news.cn,China,CN,"Chinês, inglês, espanhol, português, árabe, francês, russo",Agência de notícias
+Global / Agências e Redes,Agência Brasil (EBC),https://agenciabrasil.ebc.com.br,Brasil,BR,"Português, espanhol, inglês",Agência de notícias
+Global / Agências e Redes,Lusa,https://www.lusa.pt,Portugal,PT,Português,Agência de notícias
+Global / Agências e Redes,BBC World Service,https://www.bbc.co.uk/worldservice,Reino Unido,GB,"Mais de 40 idiomas, incl. português e espanhol",Broadcaster
+Global / Agências e Redes,France 24,https://www.france24.com,França,FR,"Francês, inglês, espanhol, árabe",Broadcaster
+Global / Agências e Redes,RFI,https://www.rfi.fr,França,FR,"Francês, português, espanhol, inglês e outros",Broadcaster
+Global / Agências e Redes,Euronews,https://www.euronews.com,França/UE,FR/EU,"12 idiomas, incl. português",Broadcaster
+Global / Agências e Redes,NHK World-Japan,https://www3.nhk.or.jp/nhkworld/,Japão,JP,"Japonês, inglês, português, espanhol e outros",Broadcaster
+Global / Agências e Redes,Folha de S.Paulo,https://www1.folha.uol.com.br,Brasil,BR,Português,Jornal
+Global / Agências e Redes,Estadão,https://www.estadao.com.br,Brasil,BR,Português,Jornal
+Global / Agências e Redes,Der Spiegel International,https://www.spiegel.de/international,Alemanha,DE,"Alemão, inglês",Revista
+Global / Agências e Redes,Foreign Affairs,https://www.foreignaffairs.com,EUA,US,Inglês,Revista
+Global / Agências e Redes,Foreign Policy,https://foreignpolicy.com,EUA,US,Inglês,Revista
+Global / Agências e Redes,Nature,https://www.nature.com,Reino Unido,GB,Inglês,Revista científica
+Global / Agências e Redes,Science,https://www.science.org,EUA,US,Inglês,Revista científica
+Global / Agências e Redes,Nieman Lab,https://www.niemanlab.org,EUA,US,Inglês,Digital native
+Global / Agências e Redes,Columbia Journalism Review,https://www.cjr.org,EUA,US,Inglês,Revista
+Global / Agências e Redes,Poynter Institute,https://www.poynter.org,EUA,US,"Inglês, espanhol",Digital native
+Global / Agências e Redes,Reuters Institute for the Study of Journalism,https://reutersinstitute.politics.ox.ac.uk,Reino Unido,GB,Inglês,Digital native (pesquisa)
+Global / Agências e Redes,GIJN,https://gijn.org,Rede internacional,INT,"Inglês, espanhol, português, russo, árabe, chinês",Investigativo (rede)
+Global / Agências e Redes,Forbidden Stories,https://forbiddenstories.org,França,FR,"Francês, inglês",Investigativo
+Global / Agências e Redes,Rest of World,https://restofworld.org,EUA,US,Inglês,Digital native
+Global / Agências e Redes,Devex,https://www.devex.com,EUA,US,Inglês,Digital native
+Global / Agências e Redes,The Conversation,https://theconversation.com,Austrália,AU,"Inglês, francês, espanhol, português, indonésio",Digital native
+Global / Agências e Redes,Global Voices,https://globalvoices.org,Rede internacional,INT,Mais de 50 idiomas,Digital native
+Global / Agências e Redes,Agência Lupa,https://lupa.uol.com.br,Brasil,BR,Português,Fact-checking
+Global / Agências e Redes,UN News,https://news.un.org/en/,Multilateral (ONU),UN,Seis idiomas oficiais mais português,Digital native institucional
+Global / Agências e Redes,World Bank Blogs,https://blogs.worldbank.org,Multilateral,INT,"Inglês, espanhol, francês, árabe",Digital native institucional
+Global / Agências e Redes,OECD,https://www.oecd.org,Multilateral,INT,"Inglês, francês",Digital native institucional
+Global / Agências e Redes,WHO Newsroom,https://www.who.int/news-room,Multilateral,INT,Seis idiomas oficiais,Digital native institucional
+Global / Agências e Redes,ReliefWeb (OCHA),https://reliefweb.int,Multilateral,INT,"Inglês, francês, espanhol, árabe",Digital native institucional

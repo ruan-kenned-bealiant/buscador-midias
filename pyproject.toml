@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "buscador-midias"
+version = "0.1.0"
+description = "POC: varredura proativa de sitemaps de fontes confiáveis para alimentar o corpus de Mídias IA."
+requires-python = ">=3.12"
+dependencies = ["httpx>=0.27", "lxml>=5", "unidecode>=1.3"]
+
+[project.optional-dependencies]
+# Consulta somente leitura ao corpus de Mídias IA (Postgres); import tardio em corpus/index.py.
+corpus = ["psycopg[binary]>=3.1"]
+# Armazenamento da evidência em S3/MinIO; import tardio em evidence/s3_storage.py.
+s3 = ["boto3>=1.34"]
+dev = ["pytest>=8", "ruff>=0.5", "mypy>=1.10", "lxml-stubs>=0.5", "psycopg[binary]>=3.1"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"buscador_midias.dashboard" = ["index.html"]
+"buscador_midias.labeling" = ["index.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "SIM", "D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
+"tests/sites/test_seed_import.py" = ["D", "E501"]  # fixture espelha o formato real do seed
+"tests/extraction/**" = ["D", "E501"]  # fixtures de HTML em linha única
+"tests/evidence/**" = ["D", "E501"]  # fixtures de HTML em linha única
+"tests/analysis/**" = ["D", "E501"]  # fixtures de JSON em linha única
+"tests/enrich/**" = ["D", "E501"]  # fixtures de HTML e JSON em linha única
+"tests/test_cli_enrich.py" = ["D", "E501"]  # fixtures de HTML em linha única
+"tests/labeling/**" = ["D", "E501"]  # fixtures de CSV e estado
+"tests/corpus/**" = ["D", "E501"]  # SQL de fixtures em linha única
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src", "scripts"]
+
+[[tool.mypy.overrides]]
+module = ["boto3", "boto3.*", "botocore", "botocore.*"]
+ignore_missing_imports = true  # extra opcional "s3", sem stubs

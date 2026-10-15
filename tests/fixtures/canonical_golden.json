@@ -1,0 +1,317 @@
+{
+    "php_version": "8.3.6",
+    "cases": [
+        {
+            "url": "http://noticia.com/artigo",
+            "canonical": "https://noticia.com/artigo",
+            "hash": "b005d14c8201f2400b612aaaed849b96bce3cf24023d925f1ff1c67c2107d979",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://WWW.Noticia.com/Artigo-Com-Maiuscula",
+            "canonical": "https://noticia.com/Artigo-Com-Maiuscula",
+            "hash": "3580e6d5c5be35809ac896047fdb12f2319bc9060df68292fb0594d5a19bade6",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://www2.noticia.com/artigo",
+            "canonical": "https://noticia.com/artigo",
+            "hash": "b005d14c8201f2400b612aaaed849b96bce3cf24023d925f1ff1c67c2107d979",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://www12.noticia.com/artigo",
+            "canonical": "https://noticia.com/artigo",
+            "hash": "b005d14c8201f2400b612aaaed849b96bce3cf24023d925f1ff1c67c2107d979",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://www1.folha.uol.com.br/mundo/2026/10/materia.shtml",
+            "canonical": "https://folha.uol.com.br/mundo/2026/10/materia.shtml",
+            "hash": "b6bcefbb942d572b327d86c0184fc795436cdb5acca680f05d734bcb27c585bb",
+            "domain": "folha.uol.com.br"
+        },
+        {
+            "url": "https://wwwx.noticia.com/artigo",
+            "canonical": "https://wwwx.noticia.com/artigo",
+            "hash": "0f6e96d48703e9e66e38c2732b0858cde23e7a61ed0d22e25170a797d1529b59",
+            "domain": "wwwx.noticia.com"
+        },
+        {
+            "url": "https://noticia.com",
+            "canonical": "https://noticia.com/",
+            "hash": "6dff49091a81885cfc2a8269f9d5596a101a3c18e36219f0cc8802ae4696831c",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/",
+            "canonical": "https://noticia.com/",
+            "hash": "6dff49091a81885cfc2a8269f9d5596a101a3c18e36219f0cc8802ae4696831c",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/artigo/",
+            "canonical": "https://noticia.com/artigo",
+            "hash": "b005d14c8201f2400b612aaaed849b96bce3cf24023d925f1ff1c67c2107d979",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/artigo//",
+            "canonical": "https://noticia.com/artigo",
+            "hash": "b005d14c8201f2400b612aaaed849b96bce3cf24023d925f1ff1c67c2107d979",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com:8080/artigo",
+            "canonical": "https://noticia.com/artigo",
+            "hash": "b005d14c8201f2400b612aaaed849b96bce3cf24023d925f1ff1c67c2107d979",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com./artigo",
+            "canonical": "https://noticia.com/artigo",
+            "hash": "b005d14c8201f2400b612aaaed849b96bce3cf24023d925f1ff1c67c2107d979",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/artigo#secao",
+            "canonical": "https://noticia.com/artigo",
+            "hash": "b005d14c8201f2400b612aaaed849b96bce3cf24023d925f1ff1c67c2107d979",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/artigo?utm_source=newsletter&page=2&ref=home&id=5",
+            "canonical": "https://noticia.com/artigo?id=5&page=2",
+            "hash": "af34ea6d3ec629ad4e0bed18d87920206dda0c5f0011c1d14c3e7f2badfe482b",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/artigo?msclkid=abc123",
+            "canonical": "https://noticia.com/artigo?msclkid=abc123",
+            "hash": "76d5f90af76bf7adae3975198ce4149c79b75b9b2b973f8f1856de96e512d114",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "http://WWW.Noticia.com/artigo/?utm_source=x&ref=y",
+            "canonical": "https://noticia.com/artigo",
+            "hash": "b005d14c8201f2400b612aaaed849b96bce3cf24023d925f1ff1c67c2107d979",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/a?b&c=&d=1",
+            "canonical": "https://noticia.com/a?d=1",
+            "hash": "93730ab846f22b999a690fca469e966110873d3b7311b96a2d046d6ab973cfe1",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/a?tag=b&tag=a",
+            "canonical": "https://noticia.com/a?tag=b&tag=a",
+            "hash": "af98f85966cfca9a7a4caa532c18ed507ebb3288d58b2fe433476f8291fd26f6",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/a?q=a b",
+            "canonical": "https://noticia.com/a?q=a+b",
+            "hash": "6736fe3bc1f9572967c6421ff3a8b5213e847385ed9043f55e8aabfe7f1dbe2e",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/a?q=a%20b",
+            "canonical": "https://noticia.com/a?q=a+b",
+            "hash": "6736fe3bc1f9572967c6421ff3a8b5213e847385ed9043f55e8aabfe7f1dbe2e",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/a?q=a+b",
+            "canonical": "https://noticia.com/a?q=a+b",
+            "hash": "6736fe3bc1f9572967c6421ff3a8b5213e847385ed9043f55e8aabfe7f1dbe2e",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/a?q=%7E",
+            "canonical": "https://noticia.com/a?q=%7E",
+            "hash": "bfca3b0fe4e448f29a53a40d5be4ecf1ef4abfe98db008d87c48f566040aa01f",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/a?q=~",
+            "canonical": "https://noticia.com/a?q=%7E",
+            "hash": "bfca3b0fe4e448f29a53a40d5be4ecf1ef4abfe98db008d87c48f566040aa01f",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/a?q=%2B",
+            "canonical": "https://noticia.com/a?q=%2B",
+            "hash": "e5a90d1f2e5c4c256f7c7449514a9487f9d0d28e21a4bb7bc433c1c4c31c9b2d",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/a?q=ação",
+            "canonical": "https://noticia.com/a?q=a%C3%A7%C3%A3o",
+            "hash": "89f946ee728bb261a93b836a1bcc7ea6f6d8e855b372492255b27ee268f7fdeb",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/a?q=a%E7",
+            "canonical": "https://noticia.com/a?q=a%E7",
+            "hash": "944d00d537147dff6d4876ef39c48dacb324f4c9189ca8a7b09c2db5325cba21",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/a?10=b&9=a",
+            "canonical": "https://noticia.com/a?9=a&10=b",
+            "hash": "939f1f10ca6a2c9fa94bffb4d02eeed11e1a6fdf1080aeda4402255ab9835d27",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/a?b=1&A=2",
+            "canonical": "https://noticia.com/a?A=2&b=1",
+            "hash": "e7558f1c785d600aa43b356888c68cca15fc651013e1401e622a2a4f7ab6043d",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/a?UTM_Source=x&S=y&Via=z&ref=1&source=2&fbclid=3&gclid=4&id=7",
+            "canonical": "https://noticia.com/a?id=7",
+            "hash": "ebd158d1fff4c3a431ab9845c2ff16d00fbe6b0618a23e3f0bd71579db140634",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/a?%75tm_source=x&id=1",
+            "canonical": "https://noticia.com/a?id=1",
+            "hash": "6c5c98e5a37a28c00d1e7fe1ab380e3c2a1f63e1dd299e688a28a8a0b0fb27db",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/a?a=1&&b=2",
+            "canonical": "https://noticia.com/a?a=1&b=2",
+            "hash": "c14a5ed9d101abdf13af1cedfefc7e10f5b1acce710ac5cb2d7030f265ac01d5",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/a?a=1=2",
+            "canonical": "https://noticia.com/a?a=1%3D2",
+            "hash": "c1a9ac34a3ad51754230a4b82516e4993bafb730a49a0e1d5e27c9bcc820d754",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/a?a[]=1&a[]=2",
+            "canonical": "https://noticia.com/a?a%5B%5D=1&a%5B%5D=2",
+            "hash": "eefa9d06df0977830d300bb958125ac069d75325a1521698018421a344deb675",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/a?a%5B%5D=1",
+            "canonical": "https://noticia.com/a?a%5B%5D=1",
+            "hash": "631d32fc2a7ab49c30fed9778ac4400152e73c2db51ce977dfc7e55018519481",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://ÉPOCA.com/x",
+            "canonical": "https://Época.com/x",
+            "hash": "b0fef74a6b6e8ecc6fe95a516bc395c588ef41fcc547f509e4b37fb93ec8cee7",
+            "domain": "Época.com"
+        },
+        {
+            "url": "https://user:pw@noticia.com/a",
+            "canonical": "https://noticia.com/a",
+            "hash": "539428da63c0f62d979bcdeaa1f26258a23bc0436471737c273ff7c100442ded",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/Ação/notícia-é-boa",
+            "canonical": "https://noticia.com/Ação/notícia-é-boa",
+            "hash": "7a1d012755c047247db19b7b1ba672ac27be0c74bb31f4ee77edb7543426fe25",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/a%20b/c",
+            "canonical": "https://noticia.com/a%20b/c",
+            "hash": "4d2a62d82786cb5119c41db4643ffb6b03099173fb7844b29ffa8720132d62c6",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "HTTPS://NOTICIA.COM/A",
+            "canonical": "https://noticia.com/A",
+            "hash": "5eb043a5f272b479fad86208d832e466a0b51ef878447210c4b250f4de78363c",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "//noticia.com/a",
+            "canonical": "https://noticia.com/a",
+            "hash": "539428da63c0f62d979bcdeaa1f26258a23bc0436471737c273ff7c100442ded",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "noticia.com/artigo",
+            "canonical": "https://noticia.com/artigo",
+            "hash": "b005d14c8201f2400b612aaaed849b96bce3cf24023d925f1ff1c67c2107d979",
+            "domain": null
+        },
+        {
+            "url": "mailto:alguem@noticia.com",
+            "canonical": "https://alguem@noticia.com",
+            "hash": "be85e52ea40dee9c581fb017479d8118c63736c6a08c6ebecdffcd5083c606f7",
+            "domain": null
+        },
+        {
+            "url": "https://[::1]/a",
+            "canonical": "https://[::1]/a",
+            "hash": "5b4f8a3a91aa8c84bbe137cbafb09694a3ede00706db4ae3434cf2775c9b0449",
+            "domain": "[::1]"
+        },
+        {
+            "url": "https://noticia.com/a?x=1#frag?y=2",
+            "canonical": "https://noticia.com/a?x=1",
+            "hash": "3cc87374df97f0aa5774f2bedbed935aad4e69941598e83c6dd91a026e078d9a",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "   https://noticia.com/a",
+            "canonical": "https://noticia.com/a",
+            "hash": "539428da63c0f62d979bcdeaa1f26258a23bc0436471737c273ff7c100442ded",
+            "domain": null
+        },
+        {
+            "url": "https://noticia.com/0",
+            "canonical": "https://noticia.com/0",
+            "hash": "88af946b43615349dbc60f04423c8ba243cb11dfac4a92d825868a239fd59da0",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/a?z=0&y=00",
+            "canonical": "https://noticia.com/a?y=00&z=0",
+            "hash": "8a24028f1fa4904198014af869d6bbf9e49a770c3747c0d2977c42c78591d1c7",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "http:///x",
+            "canonical": "http:///x",
+            "hash": "1cd859942b49a9b98dbac11a46ad6628e8ad6b2a67e588fa92a2124adfdf3c89",
+            "domain": null
+        },
+        {
+            "url": "https://noticia.com?x=1",
+            "canonical": "https://noticia.com/?x=1",
+            "hash": "f64a441e3e368812feeb9b7feeee5951a94e132f49e819ae2f3b8c0076451492",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/?x=1",
+            "canonical": "https://noticia.com/?x=1",
+            "hash": "f64a441e3e368812feeb9b7feeee5951a94e132f49e819ae2f3b8c0076451492",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://noticia.com/a?id=-5&id=3&x=-10",
+            "canonical": "https://noticia.com/a?id=-5&id=3&x=-10",
+            "hash": "e82cdaf614203798c81215516da89c75ba0a1bfd212a77041e968a30f16f1e47",
+            "domain": "noticia.com"
+        },
+        {
+            "url": "https://www.noticia.com.br/politica/2026/10/materia.shtml?cmpid=copiaecola",
+            "canonical": "https://noticia.com.br/politica/2026/10/materia.shtml?cmpid=copiaecola",
+            "hash": "0622af54cba78abf5ed64a6b1eceb3a1fb14c36702a1e9252e8583e5d98ac8ec",
+            "domain": "noticia.com.br"
+        }
+    ]
+}

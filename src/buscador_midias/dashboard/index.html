@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Buscador de Mídias</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --ink: #1b1f27; --muted: #5d6675; --line: #e2e5ea;
+    --blue: #2563eb; --green: #15803d; --amber: #b45309; --red: #b91c1c; --grey: #6b7280;
+    --blue-bg: #e8effd; --green-bg: #e3f4e8; --amber-bg: #fcf0dc; --red-bg: #fbe5e5; --grey-bg: #eceef1;
+    --bar: #2563eb; --bar-keep: #16a34a; --bar-discard: #9ca3af;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1218; --panel: #171b23; --ink: #e8ebf0; --muted: #9aa3b2; --line: #272d38;
+      --blue: #6ea0ff; --green: #4ade80; --amber: #fbbf24; --red: #f87171; --grey: #9ca3af;
+      --blue-bg: #17284a; --green-bg: #15301f; --amber-bg: #3a2c10; --red-bg: #3d1a1a; --grey-bg: #232834;
+      --bar: #6ea0ff; --bar-keep: #4ade80; --bar-discard: #6b7280;
+      --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center;
+           justify-content: space-between; padding: 14px 20px; background: var(--panel);
+           border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+  h1 { font-size: 17px; margin: 0; font-weight: 650; }
+  h1 small { color: var(--muted); font-weight: 400; margin-left: 8px; }
+  h2 { font-size: 13px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .05em;
+       color: var(--muted); font-weight: 650; }
+  main { padding: 16px 20px 40px; max-width: 1500px; margin: 0 auto; display: grid; gap: 16px; }
+  .live { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green);
+         box-shadow: 0 0 0 0 rgba(21, 128, 61, .5); animation: pulse 2s infinite; }
+  .dot.off { background: var(--red); animation: none; }
+  .dot.paused { background: var(--amber); animation: none; }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 7px rgba(21, 128, 61, 0); } 100% { box-shadow: 0 0 0 0 rgba(21, 128, 61, 0); } }
+  @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
+  button { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+           border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  .grid { display: grid; gap: 16px; }
+  .cards { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+  .two { grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+           padding: 14px 16px; box-shadow: var(--shadow); min-width: 0; }
+  .big { font-size: 26px; font-weight: 700; line-height: 1.1; }
+  .sub { color: var(--muted); font-size: 12.5px; margin-top: 4px; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px;
+           font-weight: 600; white-space: nowrap; }
+  .b-ok { background: var(--green-bg); color: var(--green); }
+  .b-run { background: var(--blue-bg); color: var(--blue); }
+  .b-warn { background: var(--amber-bg); color: var(--amber); }
+  .b-bad { background: var(--red-bg); color: var(--red); }
+  .b-off { background: var(--grey-bg); color: var(--grey); }
+  .progress { height: 8px; background: var(--grey-bg); border-radius: 99px; overflow: hidden; margin-top: 10px; }
+  .progress > span { display: block; height: 100%; background: var(--blue); transition: width .6s; }
+  .rows { display: grid; gap: 7px; }
+  .row { display: grid; grid-template-columns: 150px 1fr 90px; gap: 10px; align-items: center; font-size: 13px; }
+  .row .track { height: 14px; background: var(--grey-bg); border-radius: 4px; overflow: hidden; }
+  .row .fill { height: 100%; background: var(--bar); border-radius: 4px; min-width: 2px; }
+  .row .num { text-align: right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 520px) { .row { grid-template-columns: 105px 1fr 64px; } main { padding: 12px; } }
+  .row.keep .fill { background: var(--bar-keep); }
+  .row.discard .fill { background: var(--bar-discard); }
+  .row.pend .fill { background: var(--amber); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; padding: 6px 8px;
+       border-bottom: 1px solid var(--line); white-space: nowrap; position: sticky; top: 0; background: var(--panel); }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+  .scroll { overflow: auto; max-height: 420px; }
+  .headline { max-width: 560px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { background: var(--grey-bg); border-radius: 6px; padding: 2px 8px; font-size: 12.5px; }
+  .tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 8px; }
+  input[type=search] { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+                       border-radius: 6px; padding: 4px 10px; min-width: 200px; }
+  svg text { fill: var(--muted); font-size: 10px; }
+  .banner { background: var(--red-bg); color: var(--red); padding: 8px 20px; display: none; font-weight: 600; }
+  .banner.show { display: block; }
+  .empty { color: var(--muted); font-style: italic; padding: 8px 0; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+</style>
+</head>
+<body>
+<div id="banner" class="banner" role="alert">Sem conexão com o servidor do painel. Tentando de novo…</div>
+<header>
+  <h1>Buscador de Mídias <small>painel do fluxo</small></h1>
+  <div class="live" aria-live="polite">
+    <span id="dot" class="dot off"></span>
+    <span id="updated">conectando…</span>
+    <button id="pause" type="button">Pausar</button>
+  </div>
+</header>
+<main>
+  <section class="grid cards" id="cards"></section>
+  <section class="panel">
+    <h2>Agenda e linha do tempo</h2>
+    <div id="timeline"></div>
+    <div class="scroll" id="schedule"></div>
+    <div class="sub" id="scheduleNote"></div>
+  </section>
+  <section class="grid two">
+    <div class="panel"><h2>Funil acumulado</h2><div id="funnel"></div></div>
+    <div class="panel"><h2>Temas citados e descartes do L0</h2><div id="themes"></div></div>
+  </section>
+  <section class="panel"><h2>Atividade por hora (no seu fuso)</h2><div id="charts" class="grid two"></div></section>
+  <section class="panel"><h2>Rodadas de descoberta</h2><div class="scroll" id="runs"></div></section>
+  <section class="panel"><h2>Triagem por LLM</h2><div class="scroll" id="triage"></div></section>
+  <section class="panel">
+    <h2>Últimos achados adversos (análise de contexto)</h2>
+    <div class="scroll" id="findings"></div>
+  </section>
+  <section class="panel"><h2>Enriquecimento: texto, contexto e evidência</h2><div class="scroll" id="enrich"></div></section>
+  <section class="panel"><h2>Gravação no corpus de Mídias IA</h2><div class="scroll" id="corpus"></div></section>
+  <section class="panel"><h2>Por que o HTML direto não foi reaproveitado</h2><div id="reasons"></div></section>
+  <section class="panel">
+    <h2>Fontes</h2>
+    <div class="tools">
+      <input id="siteFilter" type="search" placeholder="Filtrar fonte…" aria-label="Filtrar fonte">
+      <label><input id="onlyProblems" type="checkbox"> só com problema</label>
+      <span class="sub" id="siteCount"></span>
+    </div>
+    <div class="scroll" id="sites"></div>
+    <div class="sub" id="fallback"></div>
+  </section>
+  <section class="panel"><h2>Últimas URLs novas</h2><div class="scroll" id="recent"></div></section>
+</main>
+<script>
+"use strict";
+const REFRESH_MS = 5000;
+const nf = new Intl.NumberFormat("pt-BR");
+const dtf = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+const hf = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" });
+const state = { data: null, paused: false, lastOk: 0 };
+
+/* Monta o DOM só com nós de texto: títulos e URLs vêm de sites de terceiros, nunca como HTML. */
+function h(tag, attrs, ...children) {
+  const el = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs || {})) {
+    if (value === null || value === undefined || value === false) continue;
+    if (key === "class") el.className = value;
+    else el.setAttribute(key, value);
+  }
+  for (const child of children.flat()) {
+    if (child === null || child === undefined || child === false) continue;
+    el.append(child.nodeType ? child : document.createTextNode(String(child)));
+  }
+  return el;
+}
+const svgNS = "http://www.w3.org/2000/svg";
+function s(tag, attrs, ...children) {
+  const el = document.createElementNS(svgNS, tag);
+  for (const [key, value] of Object.entries(attrs || {})) el.setAttribute(key, value);
+  for (const child of children) if (child) el.append(typeof child === "string" ? document.createTextNode(child) : child);
+  return el;
+}
+const num = (n) => (n === null || n === undefined ? "–" : nf.format(n));
+const when = (iso) => (iso ? dtf.format(new Date(iso)) : "–");
+function ago(iso, now) {
+  if (!iso) return "–";
+  const sec = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000));
+  if (sec < 60) return `há ${sec}s`;
+  if (sec < 3600) return `há ${Math.floor(sec / 60)} min`;
+  if (sec < 86400) return `há ${Math.floor(sec / 3600)} h ${Math.floor((sec % 3600) / 60)} min`;
+  return `há ${Math.floor(sec / 86400)} d`;
+}
+function duration(sec) {
+  if (sec === null || sec === undefined) return "–";
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  return m < 60 ? `${m} min ${sec % 60}s` : `${Math.floor(m / 60)} h ${m % 60} min`;
+}
+const usd = (v, digits = 4) => (v === null || v === undefined ? "n/i" : `US$ ${v.toFixed(digits)}`);
+const safeHref = (url) => (/^https?:\/\//i.test(url) ? url : null);
+const empty = (text) => h("div", { class: "empty" }, text);
+
+const STATUS_LABEL = { ok: "ok", blocked: "bloqueado", error: "erro", no_sitemap: "sem sitemap", robots_disallowed: "robots" };
+function statusBadge(status) {
+  const cls = status === "ok" ? "b-ok" : status === "blocked" || status === "error" ? "b-bad" : "b-warn";
+  return h("span", { class: `badge ${cls}` }, STATUS_LABEL[status] || status);
+}
+function decisionBadge(decision) {
+  if (decision === "keep") return h("span", { class: "badge b-ok" }, "mantida");
+  if (decision === "discard") return h("span", { class: "badge b-off" }, "descartada");
+  return h("span", { class: "badge b-warn" }, "aguardando");
+}
+function stateBadge(st) {
+  const map = { running: ["b-run", "em execução"], idle: ["b-ok", "ociosa"], stale: ["b-bad", "interrompida?"], never: ["b-off", "nunca rodou"] };
+  const [cls, label] = map[st] || ["b-off", st];
+  return h("span", { class: `badge ${cls}` }, label);
+}
+
+function table(head, rows, numericFrom, numericTo) {
+  const isNum = (i) => i >= numericFrom && i <= (numericTo ?? 99);
+  return h("table", {}, h("thead", {}, h("tr", {}, head.map((t, i) => h("th", { class: isNum(i) ? "n" : "" }, t)))), h("tbody", {}, rows));
+}
+
+function renderCards(d, now) {
+  const disc = d.status.discovery, tri = d.status.triage;
+  const last24 = d.hourly.slice(-24).reduce((a, x) => a + x.new, 0);
+  const pct = disc.sites_expected ? Math.min(100, Math.round((disc.sites_done / disc.sites_expected) * 100)) : null;
+  const t = d.totals.triage;
+  const decided = t.keep + t.discard;
+  const running = disc.state === "running" || disc.state === "stale";
+  const cards = [
+    h("div", { class: "panel" }, h("h2", {}, "Descoberta"),
+      h("div", { class: "big" }, stateBadge(disc.state)),
+      running
+        ? [h("div", { class: "sub" }, `Rodada ${disc.run_id}: ${num(disc.sites_done)}${disc.sites_expected ? ` de ~${num(disc.sites_expected)}` : ""} fontes · ${duration(disc.elapsed_seconds)}`),
+           pct !== null ? h("div", { class: "progress", role: "progressbar", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, h("span", { style: `width:${pct}%` })) : null]
+        : h("div", { class: "sub" }, `Última concluída ${ago(d.status.last_discovery_finished_at, now)}`)),
+    h("div", { class: "panel" }, h("h2", {}, "Triagem por LLM"),
+      h("div", { class: "big" }, stateBadge(tri.state)),
+      h("div", { class: "sub" }, tri.state === "running" ? `Execução ${tri.run_id} · ${duration(tri.elapsed_seconds)}` : `Última concluída ${ago(d.status.last_triage_finished_at, now)}`),
+      h("div", { class: "sub" }, `${num(t.pending)} novas aguardando veredito`)),
+    h("div", { class: "panel" }, h("h2", {}, "Novas nas últimas 24 h"),
+      h("div", { class: "big" }, num(last24)),
+      h("div", { class: "sub" }, `${num(d.totals.by_kind.new || 0)} no total · ${num(d.totals.urls)} URLs vistas`)),
+    h("div", { class: "panel" }, h("h2", {}, "Mantidas pelo LLM"),
+      h("div", { class: "big" }, decided ? `${Math.round((t.keep / decided) * 100)}%` : "–"),
+      h("div", { class: "sub" }, `${num(t.keep)} mantidas · ${num(t.discard)} descartadas`)),
+    h("div", { class: "panel" }, h("h2", {}, "Custo do LLM"),
+      h("div", { class: "big" }, usd(d.triage.cost_total_usd)),
+      h("div", { class: "sub" }, d.triage.cost_per_1000_usd === null ? "sem execuções com custo" : `${usd(d.triage.cost_per_1000_usd)} por 1000 manchetes`)),
+    h("div", { class: "panel" }, h("h2", {}, "Enriquecimento"),
+      h("div", { class: "big" }, stateBadge(d.status.enrich.state)),
+      h("div", { class: "sub" }, d.status.enrich.state === "running" ? `Execução ${d.status.enrich.run_id} · ${duration(d.status.enrich.elapsed_seconds)}` : `Última concluída ${ago(d.status.last_enrich_finished_at, now)}`),
+      h("div", { class: "sub" }, `${num(d.enrich.counts.pending_enrichment)} URLs aguardando análise`)),
+    h("div", { class: "panel" }, h("h2", {}, "Com entidade"),
+      h("div", { class: "big" }, num(d.enrich.counts.analysis.relevant)),
+      h("div", { class: "sub" }, `${num(d.enrich.counts.analysis.findings)} adversos · ${num(d.enrich.counts.analysis.findings + d.enrich.counts.analysis.no_finding)} analisadas · ${num(d.enrich.counts.analysis.headline_only)} só pela manchete`)),
+    h("div", { class: "panel" }, h("h2", {}, "Evidência reaproveitada"),
+      h("div", { class: "big" }, d.enrich.reuse_rate === null ? "–" : `${Math.round(d.enrich.reuse_rate * 100)}%`),
+      h("div", { class: "sub" }, `direto ${num(d.enrich.counts.evidence["captured:direct"] || 0)} · Bright Data ${num(d.enrich.counts.evidence["captured:brightdata"] || 0)} · aguardando ${num(d.enrich.counts.pending_evidence)}`)),
+    h("div", { class: "panel" }, h("h2", {}, "No corpus"),
+      h("div", { class: "big" }, num(d.corpus.written)),
+      h("div", { class: "sub" }, `${num(d.corpus.created)} criados por nós · ${num(d.corpus.withheld)} retidos pelas regras`)),
+    h("div", { class: "panel" }, h("h2", {}, "Custo da análise"),
+      h("div", { class: "big" }, usd(d.enrich.cost_total_usd)),
+      h("div", { class: "sub" }, "análise de contexto (OpenRouter)")),
+    h("div", { class: "panel" }, h("h2", {}, "Bright Data (pago)"),
+      h("div", { class: "big" }, num(d.totals.bright_data_requests)),
+      h("div", { class: "sub" }, `chamadas acumuladas · ${num(d.fallback_hosts.length)} host(s) em fallback`)),
+    h("div", { class: "panel" }, h("h2", {}, "Latência de publicação"),
+      h("div", { class: "big" }, d.latency ? `${d.latency.median_hours.toFixed(1)} h` : "–"),
+      h("div", { class: "sub" }, d.latency ? `mediana · p90 ${d.latency.p90_hours.toFixed(1)} h (n=${num(d.latency.count)})` : "só com news sitemap")),
+  ];
+  document.getElementById("cards").replaceChildren(...cards);
+}
+
+function funnelRow(label, value, max, cls) {
+  const width = max ? Math.max(0, Math.min(100, (value / max) * 100)) : 0;
+  return h("div", { class: `row ${cls || ""}` }, h("span", {}, label),
+    h("div", { class: "track" }, h("div", { class: "fill", style: `width:${width}%` })), h("span", { class: "num" }, num(value)));
+}
+function renderFunnel(d) {
+  const flow = d.funnel.find((x) => x.key === "analyzed");
+  const v = Object.fromEntries(d.funnel.map((x) => [x.key, x.value]));
+  const label = Object.fromEntries(d.funnel.map((x) => [x.key, x.label]));
+  document.getElementById("funnel").replaceChildren(
+    h("div", { class: "sub" }, "Estoque (escala própria)"),
+    h("div", { class: "rows" }, ["urls", "baseline", "backlog", "known", "filtered"].map((k) => funnelRow(label[k], v[k], Math.max(v.urls, 1)))),
+    h("div", { class: "sub", style: "margin-top:14px" }, "Fluxo ativo: das novas ao veredito"),
+    h("div", { class: "rows" },
+      funnelRow(label.new, v.new, Math.max(v.new, 1)),
+      funnelRow(label.keep, v.keep, Math.max(v.new, 1), "keep"),
+      funnelRow(label.discard, v.discard, Math.max(v.new, 1), "discard"),
+      funnelRow(label.pending, v.pending, Math.max(v.new, 1), "pend")),
+    h("div", { class: "sub", style: "margin-top:14px" }, "Enriquecimento: das mantidas ao achado e à evidência"),
+    h("div", { class: "rows" },
+      funnelRow(label.analyzed, v.analyzed, Math.max(v.keep, v.analyzed, 1)),
+      funnelRow(label.relevant, v.relevant, Math.max(v.keep, v.analyzed, 1), "keep"),
+      funnelRow(label.findings, v.findings, Math.max(v.keep, v.analyzed, 1), "keep"),
+      funnelRow(label.evidence, v.evidence, Math.max(v.keep, v.analyzed, 1), "keep"),
+      funnelRow(label.corpus, v.corpus, Math.max(v.keep, v.analyzed, 1), "keep")));
+}
+
+const hourDate = (p) => new Date(p.hour + ":00:00Z");
+function barChart(series, key, title, colors) {
+  const W = 640, H = 120, padL = 30, padB = 18, n = series.length;
+  const keys = Array.isArray(key) ? key : [key];
+  const max = Math.max(1, ...series.map((p) => keys.reduce((a, k) => a + p[k], 0)));
+  const bw = (W - padL) / n;
+  const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", "aria-label": title });
+  svg.append(s("text", { x: 0, y: 10 }, num(max)), s("text", { x: 0, y: H - padB }, "0"));
+  svg.append(s("line", { x1: padL, x2: W, y1: H - padB, y2: H - padB, stroke: "var(--line)" }));
+  series.forEach((p, i) => {
+    let y = H - padB;
+    keys.forEach((k, j) => {
+      const hgt = (p[k] / max) * (H - padB - 8);
+      if (hgt <= 0) return;
+      y -= hgt;
+      const rect = s("rect", { x: padL + i * bw + 1, y, width: Math.max(bw - 2, 1), height: hgt, fill: colors[j], rx: 1 });
+      rect.append(s("title", {}, `${hf.format(hourDate(p))} · ${k}: ${p[k]}`));
+      svg.append(rect);
+    });
+    if (i % 6 === 0) svg.append(s("text", { x: padL + i * bw, y: H - 4 }, hf.format(hourDate(p))));
+  });
+  return svg;
+}
+function legend(items) {
+  return h("div", { class: "legend" }, items.map(([color, text]) => h("span", {}, h("i", { style: `background:${color}` }), text)));
+}
+function renderCharts(d) {
+  document.getElementById("charts").replaceChildren(
+    h("div", {}, h("div", { class: "sub" }, "Novas URLs descobertas"),
+      barChart(d.hourly, "new", "Novas URLs por hora", ["var(--bar)"])),
+    h("div", {}, h("div", { class: "sub" }, "Vereditos do LLM"),
+      barChart(d.hourly, ["keep", "discard"], "Vereditos por hora", ["var(--bar-keep)", "var(--bar-discard)"]),
+      legend([["var(--bar-keep)", "mantidas"], ["var(--bar-discard)", "descartadas"]])));
+}
+
+function renderRuns(d) {
+  const root = document.getElementById("runs");
+  if (!d.runs.length) return root.replaceChildren(empty("Nenhuma rodada registrada."));
+  const head = ["Rodada", "Início", "Duração", "Fontes (ok/falha)", "Novas", "Filtradas", "Backlog", "No corpus", "Linha de base", "Sitemaps lidos/pulados", "Leitura parcial", "Bright Data"];
+  const rows = d.runs.slice().reverse().map((r) => h("tr", {},
+    h("td", {}, `#${r.id}`), h("td", {}, when(r.started_at)),
+    h("td", {}, r.finished_at ? duration(r.duration_seconds) : h("span", { class: "badge b-run" }, "em curso")),
+    h("td", {}, `${num(r.sites_done)} (${num(r.ok)}/${num(r.failed)})`),
+    h("td", { class: "n" }, num(r.new)), h("td", { class: "n" }, num(r.filtered)), h("td", { class: "n" }, num(r.backlog)),
+    h("td", { class: "n" }, num(r.known)), h("td", { class: "n" }, num(r.baseline)),
+    h("td", { class: "n" }, `${num(r.sitemaps_fetched)} / ${num(r.sitemaps_skipped)}`),
+    h("td", { class: "n" }, r.partial_sites ? h("span", { class: "badge b-warn" }, `${r.partial_sites} fonte(s)`) : "–"),
+    h("td", { class: "n" }, r.bright_data_requests ? `${num(r.bright_data_requests)} req` : "–")));
+  root.replaceChildren(table(head, rows, 4));
+}
+
+function renderTriage(d) {
+  const root = document.getElementById("triage");
+  if (!d.triage.runs.length) return root.replaceChildren(empty("Nenhuma execução da triagem ainda."));
+  const head = ["#", "Início", "Modelo", "Manchetes", "Mantidas", "Descartadas", "Pendentes", "Tokens (ent./saída)", "Custo", "Erros"];
+  const rows = d.triage.runs.slice().reverse().map((r) => h("tr", {},
+    h("td", {}, `#${r.id}`), h("td", {}, when(r.started_at)),
+    h("td", { title: r.prompt_version }, r.model),
+    h("td", { class: "n" }, num(r.headlines)), h("td", { class: "n" }, num(r.kept)), h("td", { class: "n" }, num(r.discarded)),
+    h("td", { class: "n" }, r.pending ? h("span", { class: "badge b-warn" }, num(r.pending)) : "0"),
+    h("td", { class: "n" }, `${num(r.prompt_tokens)} / ${num(r.completion_tokens)}`),
+    h("td", { class: "n" }, usd(r.cost_usd)),
+    h("td", { class: "n" }, r.errors ? h("span", { class: "badge b-bad" }, `${r.errors} (${r.retries} retries)`) : r.retries ? `0 (${r.retries} retries)` : "0")));
+  root.replaceChildren(table(head, rows, 3));
+}
+
+function listRows(map, emptyText) {
+  const entries = Object.entries(map).sort((a, b) => b[1] - a[1]);
+  if (!entries.length) return empty(emptyText);
+  const max = Math.max(...entries.map((e) => e[1]), 1);
+  return h("div", { class: "rows" }, entries.map(([k, v]) => funnelRow(k, v, max)));
+}
+function renderThemes(d) {
+  document.getElementById("themes").replaceChildren(
+    h("div", { class: "sub" }, "Temas das URLs mantidas pelo LLM"),
+    listRows(d.triage.themes, "Sem URLs mantidas ainda."),
+    h("div", { class: "sub", style: "margin-top:14px" }, "URLs descartadas no L0/L1, por motivo"),
+    listRows(d.filter_reasons, "Nada descartado ainda."));
+}
+
+function renderSites(d, now) {
+  const root = document.getElementById("sites");
+  const q = document.getElementById("siteFilter").value.trim().toLowerCase();
+  const onlyProblems = document.getElementById("onlyProblems").checked;
+  const list = d.sites.filter((x) => (!q || x.site.toLowerCase().includes(q)) && (!onlyProblems || x.status !== "ok" || x.partial_failed > 0));
+  document.getElementById("siteCount").textContent = `${num(list.length)} de ${num(d.sites_total)} fontes`;
+  document.getElementById("fallback").textContent = d.fallback_hosts.length ? `Hosts em fallback (Bright Data): ${d.fallback_hosts.join(", ")}` : "";
+  if (!list.length) return root.replaceChildren(empty("Nenhuma fonte para mostrar."));
+  const head = ["Fonte", "Último desfecho", "Novas", "Vistas", "Filtradas", "Backlog", "Última nova", "Detalhe"];
+  const rows = list.map((x) => h("tr", {},
+    h("td", {}, x.site, x.fallback ? h("span", { class: "chip", style: "margin-left:6px", title: "acessada via Bright Data" }, "BD") : null),
+    h("td", {}, statusBadge(x.status), x.partial_failed ? h("span", { class: "badge b-warn", style: "margin-left:6px", title: "alguns sitemaps falharam" }, `parcial ${x.partial_failed}`) : null),
+    h("td", { class: "n" }, num(x.new)),
+    h("td", { class: "n" }, num(Object.values(x.urls).reduce((a, b) => a + b, 0))),
+    h("td", { class: "n" }, num(x.urls.filtered || 0)), h("td", { class: "n" }, num(x.urls.backlog || 0)),
+    h("td", {}, x.last_new_at ? ago(x.last_new_at, now) : "–"),
+    h("td", { class: "headline", title: x.detail }, x.detail || "")));
+  root.replaceChildren(table(head, rows, 2, 5));
+}
+
+function renderRecent(d) {
+  const root = document.getElementById("recent");
+  if (!d.recent.length) return root.replaceChildren(empty("Nenhuma URL nova ainda."));
+  const head = ["Quando", "Fonte", "Manchete", "Veredito", "Temas", "Motivo"];
+  const rows = d.recent.map((x) => {
+    const href = safeHref(x.url);
+    const text = x.headline || x.url;
+    return h("tr", {},
+      h("td", {}, when(x.first_seen_at)), h("td", {}, x.site),
+      h("td", { class: "headline", title: text }, href ? h("a", { href, target: "_blank", rel: "noopener noreferrer" }, text) : text),
+      h("td", {}, decisionBadge(x.decision)),
+      h("td", {}, x.themes.length ? h("span", { class: "chips" }, x.themes.map((t) => h("span", { class: "chip" }, t))) : "–"),
+      h("td", {}, x.reason));
+  });
+  root.replaceChildren(table(head, rows, 99));
+}
+
+const JOB_STATE = { upcoming: ["b-run", "agendada"], due: ["b-warn", "no horário"], overdue: ["b-bad", "atrasada"], done: ["b-ok", "concluída"] };
+const KIND_LABEL = { discovery: "descoberta", triage: "triagem", enrich: "enriquecimento", corpus: "corpus" };
+const LANE_Y = { discovery: 24, triage: 50, enrich: 76, corpus: 102 };
+function countdown(sec) {
+  const abs = Math.abs(sec);
+  const text = abs < 60 ? `${abs}s` : abs < 3600 ? `${Math.floor(abs / 60)} min` : `${Math.floor(abs / 3600)} h ${Math.floor((abs % 3600) / 60)} min`;
+  return sec >= 0 ? `em ${text}` : `há ${text}`;
+}
+function timelineSvg(d, now) {
+  const past = [
+    ...d.runs.map((r) => ({ at: new Date(r.started_at).getTime(), kind: "discovery", label: `Rodada #${r.id}`, done: true })),
+    ...d.triage.runs.map((r) => ({ at: new Date(r.started_at).getTime(), kind: "triage", label: `Triagem #${r.id}`, done: true })),
+    ...d.enrich.runs.map((r) => ({ at: new Date(r.started_at).getTime(), kind: "enrich", label: `Enriquecimento #${r.id}`, done: true })),
+    ...d.corpus.runs.map((r) => ({ at: new Date(r.started_at).getTime(), kind: "corpus", label: `Corpus #${r.id}`, done: true })),
+  ];
+  const future = d.schedule.jobs.filter((j) => j.state !== "done").map((j) => ({ at: new Date(j.at).getTime(), kind: j.kind, label: j.name, done: false, state: j.state }));
+  const points = [...past, ...future];
+  const HOUR = 3600000;
+  const lo = Math.min(now - 6 * HOUR, ...points.map((p) => p.at)) - 0.25 * HOUR;
+  const hi = Math.max(now + 2 * HOUR, ...points.map((p) => p.at)) + 0.25 * HOUR;
+  const W = 1000, H = 130, padX = 14, y1 = LANE_Y.discovery, y2 = LANE_Y.triage, y3 = LANE_Y.enrich, y4 = LANE_Y.corpus;
+  const x = (t) => padX + ((t - lo) / (hi - lo)) * (W - 2 * padX);
+  const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", "aria-label": "Linha do tempo das execuções" });
+  for (const y of [y1, y2, y3, y4]) svg.append(s("line", { x1: padX, x2: W - padX, y1: y, y2: y, stroke: "var(--line)" }));
+  svg.append(s("text", { x: 2, y: y1 - 8 }, "descoberta"), s("text", { x: 2, y: y2 - 8 }, "triagem"), s("text", { x: 2, y: y3 - 8 }, "enriquecimento"), s("text", { x: 2, y: y4 - 8 }, "corpus"));
+  const step = hi - lo > 24 * HOUR ? 6 * HOUR : 2 * HOUR;
+  for (let t = Math.ceil(lo / step) * step; t < hi; t += step) {
+    svg.append(s("line", { x1: x(t), x2: x(t), y1: 6, y2: H - 14, stroke: "var(--line)", "stroke-dasharray": "2 4" }),
+      s("text", { x: x(t) - 14, y: H - 3 }, hf.format(new Date(t))));
+  }
+  const color = (p) => (p.state === "overdue" ? "var(--red)" : p.kind === "triage" ? "var(--bar-keep)" : p.kind === "enrich" ? "var(--amber)" : p.kind === "corpus" ? "var(--green)" : "var(--bar)");
+  for (const p of points) {
+    const cy = LANE_Y[p.kind] || y1;
+    const dot = s("circle", { cx: x(p.at), cy, r: 6, fill: p.done ? color(p) : "var(--panel)", stroke: color(p), "stroke-width": 2 });
+    dot.append(s("title", {}, `${p.label} · ${dtf.format(new Date(p.at))}${p.done ? "" : " (prevista)"}`));
+    svg.append(dot);
+  }
+  svg.append(s("line", { x1: x(now), x2: x(now), y1: 2, y2: H - 14, stroke: "var(--amber)", "stroke-width": 2 }), s("text", { x: x(now) + 4, y: 11 }, "agora"));
+  return svg;
+}
+function renderSchedule(d, now) {
+  const jobs = d.schedule.jobs;
+  document.getElementById("timeline").replaceChildren(timelineSvg(d, now));
+  const root = document.getElementById("schedule");
+  const note = document.getElementById("scheduleNote");
+  if (!jobs.length) {
+    root.replaceChildren(empty("Sem execuções previstas. Aponte um JSON com --schedule ou deixe o painel estimar pela cadência (3+ rodadas espaçadas)."));
+    note.textContent = "";
+    return;
+  }
+  note.textContent = d.schedule.source === "estimado" ? "Estimativa pela cadência observada das rodadas, não uma agenda real." : "Agenda lida do arquivo informado em --schedule.";
+  const rows = jobs.map((j) => {
+    const [cls, label] = JOB_STATE[j.state] || ["b-off", j.state];
+    return h("tr", {}, h("td", {}, j.name), h("td", {}, KIND_LABEL[j.kind] || j.kind), h("td", {}, when(j.at)),
+      h("td", {}, h("span", { class: `badge ${cls}` }, label)), h("td", {}, j.state === "done" ? "–" : countdown(j.seconds_until)), h("td", {}, j.note));
+  });
+  root.replaceChildren(table(["Tarefa", "Tipo", "Horário previsto", "Estado", "Falta", "Observação"], rows, 99));
+}
+
+function evidenceBadge(status, provider) {
+  if (status === "captured") return h("span", { class: `badge ${provider === "direct" ? "b-ok" : "b-run"}` }, provider === "direct" ? "HTML direto" : "Bright Data");
+  if (status === "failed") return h("span", { class: "badge b-bad" }, "falhou");
+  return h("span", { class: "badge b-warn" }, "pendente");
+}
+function renderFindings(d) {
+  const root = document.getElementById("findings");
+  if (!d.enrich.findings.length) return root.replaceChildren(empty("Nenhum achado ainda. Rode `enrich` para analisar as URLs mantidas."));
+  const head = ["Quando", "Fonte", "Matéria", "Entidades adversas", "Temas", "Fato adverso", "Confiança", "Evidência"];
+  const rows = d.enrich.findings.map((f) => {
+    const href = safeHref(f.url);
+    const text = f.headline || f.url;
+    return h("tr", {},
+      h("td", {}, when(f.analyzed_at)), h("td", {}, f.site),
+      h("td", { class: "headline", style: "max-width:280px", title: text }, href ? h("a", { href, target: "_blank", rel: "noopener noreferrer" }, text) : text),
+      h("td", {}, h("span", { class: "chips" }, f.adverse_entities.map((n) => h("span", { class: "chip" }, n)))),
+      h("td", {}, h("span", { class: "chips" }, f.themes.map((t) => h("span", { class: "chip" }, t)))),
+      h("td", { class: "headline", style: "max-width:260px", title: f.adverse_fact }, f.adverse_fact),
+      h("td", { class: "n" }, `${Math.round(f.confidence * 100)}%${f.basis === "headline" ? " (manchete)" : ""}`),
+      h("td", {}, evidenceBadge(f.evidence_status, f.evidence_provider)));
+  });
+  root.replaceChildren(table(head, rows, 6, 6));
+}
+function renderEnrich(d) {
+  const root = document.getElementById("enrich");
+  if (!d.enrich.runs.length) return root.replaceChildren(empty("Nenhuma execução do enriquecimento ainda."));
+  const head = ["#", "Início", "Modelo", "URLs", "Baixadas ok", "Bloq.", "Analisadas", "Achados", "Evid. direto", "Evid. BD", "Evid. falha", "BD req.", "Custo"];
+  const rows = d.enrich.runs.slice().reverse().map((r) => h("tr", {},
+    h("td", {}, `#${r.id}`), h("td", {}, when(r.started_at)), h("td", { title: `${r.prompt_version} · ${r.evidence_mode}` }, r.model),
+    h("td", { class: "n" }, num(r.urls)), h("td", { class: "n" }, num(r.fetched_ok)), h("td", { class: "n" }, num(r.fetched_blocked)),
+    h("td", { class: "n" }, num(r.analyzed)), h("td", { class: "n" }, num(r.findings)),
+    h("td", { class: "n" }, num(r.evidence_reused)), h("td", { class: "n" }, num(r.evidence_brightdata)),
+    h("td", { class: "n" }, r.evidence_failed ? h("span", { class: "badge b-bad" }, num(r.evidence_failed)) : "0"),
+    h("td", { class: "n" }, num(r.bright_data_requests)), h("td", { class: "n" }, usd(r.cost_usd))));
+  root.replaceChildren(table(head, rows, 3));
+}
+function renderCorpus(d) {
+  const root = document.getElementById("corpus");
+  if (!d.corpus.runs.length) return root.replaceChildren(empty("Nenhuma gravação no corpus ainda. Rode `corpus-sync`."));
+  const head = ["#", "Início", "Candidatos", "Criados", "Já existiam", "Evid. atualizada", "Entidades", "Temas", "Retidos", "Refeitos", "Falhas"];
+  const rows = d.corpus.runs.slice().reverse().map((r) => h("tr", {},
+    h("td", {}, `#${r.id}`), h("td", {}, when(r.started_at)),
+    h("td", { class: "n" }, num(r.candidates)), h("td", { class: "n" }, num(r.created)), h("td", { class: "n" }, num(r.existing)),
+    h("td", { class: "n" }, num(r.evidence_updated)), h("td", { class: "n" }, num(r.entities)), h("td", { class: "n" }, num(r.keywords)),
+    h("td", { class: "n" }, num(r.withheld)), h("td", { class: "n" }, num(r.rewritten)),
+    h("td", { class: "n" }, r.failed ? h("span", { class: "badge b-bad" }, num(r.failed)) : "0")));
+  root.replaceChildren(table(head, rows, 2));
+}
+function renderReasons(d) {
+  const counts = d.enrich.counts;
+  document.getElementById("reasons").replaceChildren(
+    h("div", { class: "sub" }, "Evidências em que o HTML direto foi rejeitado, por critério"),
+    listRows(d.enrich.evidence_reasons, "Nenhuma rejeição registrada: o HTML direto serviu sempre."),
+    h("div", { class: "sub", style: "margin-top:14px" }, "Conteúdo baixado, por desfecho"),
+    listRows(counts.content, "Nada baixado ainda."));
+}
+
+function renderAll() {
+  if (!state.data) return;
+  const now = Date.now(), d = state.data;
+  renderCards(d, now); renderSchedule(d, now); renderFunnel(d); renderFindings(d); renderEnrich(d); renderCorpus(d); renderReasons(d); renderCharts(d); renderRuns(d); renderTriage(d);
+  renderThemes(d); renderSites(d, now); renderRecent(d);
+}
+function renderClock() {
+  if (!state.lastOk) return;
+  const sec = Math.round((Date.now() - state.lastOk) / 1000);
+  document.getElementById("updated").textContent = `atualizado ${sec < 2 ? "agora" : `há ${sec}s`}${state.paused ? " · pausado" : ""}`;
+  document.getElementById("dot").className = `dot${state.paused ? " paused" : sec > (REFRESH_MS / 1000) * 3 ? " off" : ""}`;
+}
+
+async function refresh() {
+  if (state.paused) return;
+  try {
+    const response = await fetch("/api/snapshot", { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    state.data = await response.json();
+    state.lastOk = Date.now();
+    document.getElementById("banner").classList.remove("show");
+    renderAll();
+  } catch (error) {
+    document.getElementById("banner").classList.add("show");
+    document.getElementById("dot").className = "dot off";
+  }
+}
+
+document.getElementById("pause").addEventListener("click", (event) => {
+  state.paused = !state.paused;
+  event.target.textContent = state.paused ? "Retomar" : "Pausar";
+  if (!state.paused) refresh();
+  renderClock();
+});
+document.getElementById("siteFilter").addEventListener("input", renderAll);
+document.getElementById("onlyProblems").addEventListener("change", renderAll);
+refresh();
+setInterval(refresh, REFRESH_MS);
+setInterval(renderClock, 1000);
+</script>
+</body>
+</html>
