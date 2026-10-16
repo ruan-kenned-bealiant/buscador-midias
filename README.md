@@ -316,6 +316,8 @@ tail -f var/run.log                                      # saída das execuçõe
   arquivo. O corpus é o Postgres local (`CORPUS_DB_HOST` troca o `127.0.0.1`).
 - Tetos de custo por execução: `--discovery-bright-data-max` (60 chamadas) e
   `--enrich-bright-data-max` (100). `--no-bright-data` desliga o pago em tudo.
+- `--enrich-workers` (padrão 8) paraleliza downloads e chamadas ao LLM; a fila de análise intercala as
+  fontes para o intervalo de 1 s por host não travar um bloco (cerca de 90 URLs por minuto).
 - `install_cron.sh` reescreve só o bloco `# >>> buscador-midias >>>` do crontab e grava
   `var/schedule.json` (`{"daily": [...]}`) para a agenda do painel.
 - **Escopo:** o cron usa a amostra da POC (`data/poc_sample.txt`, 125 fontes). Ampliar para as 1294
