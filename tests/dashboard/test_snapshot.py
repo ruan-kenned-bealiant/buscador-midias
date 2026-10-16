@@ -346,9 +346,17 @@ def test_funil_ganha_analisadas_achados_e_evidencia():
     assert funnel["pending"] == 0
 
 
-def test_estado_do_enriquecimento_ocioso_em_execucao_e_nunca():
+def test_estado_do_enriquecimento_ocioso():
     idle = build_snapshot(with_enrichment(), now=NOW)["status"]["enrich"]
-    never = build_snapshot(seeded(), now=NOW)["status"]["enrich"]
+
+    assert idle["state"] == "idle"
+
+
+def test_estado_do_enriquecimento_nunca_rodou():
+    assert build_snapshot(seeded(), now=NOW)["status"]["enrich"]["state"] == "never"
+
+
+def test_estado_do_enriquecimento_em_execucao():
     store = with_enrichment()
     store.start_enrich_run(
         NOW - timedelta(seconds=40), model="m", prompt_version="v", evidence_mode="auto"
@@ -356,8 +364,6 @@ def test_estado_do_enriquecimento_ocioso_em_execucao_e_nunca():
 
     running = build_snapshot(store, now=NOW)["status"]["enrich"]
 
-    assert idle["state"] == "idle"
-    assert never["state"] == "never"
     assert running["state"] == "running" and running["elapsed_seconds"] == 40
 
 
@@ -365,10 +371,21 @@ def test_taxa_de_reaproveitamento_e_nula_sem_evidencias():
     assert build_snapshot(seeded(), now=NOW)["enrich"]["reuse_rate"] is None
 
 
+def add_url(store: StateStore, url_hash: str) -> None:
+    """Registra a URL (a análise exige que ela exista) como ``new`` já vista na rodada 2."""
+    store.record_urls(
+        [DiscoveredUrl(f"https://a.com/{url_hash}", url_hash, "a.com", "s", None, None, None)],
+        run_id=2,
+        now=NOW,
+        kind=UrlKind.NEW,
+    )
+
+
 def with_corpus() -> StateStore:
     from buscador_midias.state.store import AnalysisRecord, CorpusTotals
 
     store = with_enrichment()
+    add_url(store, "hash-so-manchete")
     store.record_analysis(  # análise só da manchete: não atende ao critério
         AnalysisRecord("hash-so-manchete", True, ("fiscal",), (), "x", "y", 0.8, "headline"),
         enrich_run_id=1,
@@ -420,6 +437,7 @@ def test_funil_separa_materias_com_entidade_dos_achados_adversos():
     from buscador_midias.state.store import AnalysisRecord
 
     store = with_enrichment()  # 1 achado adverso (com entidade) e 1 matéria sem entidade
+    add_url(store, "hash-neutra")
     store.record_analysis(
         AnalysisRecord(
             "hash-neutra",

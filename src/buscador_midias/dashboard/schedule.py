@@ -51,7 +51,11 @@ class ScheduledJob:
 
 
 def load_schedule(
-    path: Path | None, *, now: datetime | None = None, tz: tzinfo | None = None
+    path: Path | None,
+    *,
+    now: datetime | None = None,
+    tz: tzinfo | None = None,
+    not_before: datetime | None = None,
 ) -> list[ScheduledJob]:
     """Lê as execuções previstas; arquivo ausente ou inválido vira lista vazia.
 
@@ -62,6 +66,8 @@ def load_schedule(
         now: Instante de referência, para expandir os horários diários (sem ele, eles são
             ignorados).
         tz: Fuso dos horários diários (padrão: o da máquina, como o cron).
+        not_before: Descarta os horários diários anteriores a este instante (a primeira rodada
+            do estado): o que veio antes de o estado existir não é "atrasado".
 
     Returns:
         As execuções válidas: as avulsas, na ordem do arquivo, depois as diárias, por data.
@@ -79,7 +85,11 @@ def load_schedule(
     loaded = [job for job in jobs if job is not None]
     daily = payload.get("daily")
     if now is not None and isinstance(daily, list):
-        loaded.extend(_daily_jobs(daily, now, tz or now.astimezone().tzinfo))
+        loaded.extend(
+            job
+            for job in _daily_jobs(daily, now, tz or now.astimezone().tzinfo)
+            if not_before is None or job.at >= not_before
+        )
     return loaded
 
 
@@ -109,7 +119,8 @@ def build_schedule(
     Returns:
         ``{"source": "arquivo" | "estimado" | None, "jobs": [...]}``.
     """
-    jobs = load_schedule(path, now=now, tz=tz)
+    first_run = min((run.started_at for run in discovery_runs), default=None)
+    jobs = load_schedule(path, now=now, tz=tz, not_before=first_run - GRACE if first_run else None)
     source: str | None = "arquivo" if jobs else None
     if not jobs:
         estimate = _estimate_next(discovery_runs)

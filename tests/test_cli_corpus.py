@@ -1,5 +1,4 @@
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 
@@ -54,9 +53,8 @@ class FakeWriter:
         self.closed = True
 
 
-def make_db(tmp_path: Path, basis: str = "text") -> Path:
-    path = tmp_path / "estado.db"
-    store = StateStore(path)
+def make_db(basis: str = "text") -> None:
+    store = StateStore()
     run = store.start_run(NOW)
     enrich = store.start_enrich_run(NOW, model="m", prompt_version="v", evidence_mode="auto")
     store.record_urls(
@@ -104,11 +102,10 @@ def make_db(tmp_path: Path, basis: str = "text") -> Path:
         now=NOW,
     )
     store.close()
-    return path
 
 
-def corpus_sync(db: Path, *extra: str, writer=None):
-    return main(["corpus-sync", "--db", str(db), *extra], now=NOW, corpus_writer=writer)
+def corpus_sync(*extra: str, writer=None):
+    return main(["corpus-sync", *extra], now=NOW, corpus_writer=writer)
 
 
 def test_parser_tem_padroes():
@@ -116,51 +113,46 @@ def test_parser_tem_padroes():
 
     assert args.batch_size == 50
     assert args.dry_run is False
-    assert args.db.name == "state.db"
 
 
-def test_grava_os_achados_e_imprime_o_resumo(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
-    db = make_db(tmp_path)
+def test_grava_os_achados_e_imprime_o_resumo(capsys: pytest.CaptureFixture[str]):
+    make_db()
     writer = FakeWriter()
 
-    code = corpus_sync(db, writer=writer)
+    code = corpus_sync(writer=writer)
 
     out = capsys.readouterr().out
     assert code == 0
     assert set(writer.corpus) == {"h-1"}
     assert "corpus: candidatos" in out and "criados" in out
     assert writer.closed is True
-    assert StateStore(db, read_only=True).corpus_write_counts() == {"written": 1, "created": 1}
+    assert StateStore(read_only=True).corpus_write_counts() == {"written": 1, "created": 1}
 
 
-def test_dry_run_so_conta(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
-    db = make_db(tmp_path)
+def test_dry_run_so_conta(capsys: pytest.CaptureFixture[str]):
+    make_db()
     writer = FakeWriter()
 
-    assert corpus_sync(db, "--dry-run", writer=writer) == 0
+    assert corpus_sync("--dry-run", writer=writer) == 0
 
     assert writer.corpus == {}
     assert "simulação" in capsys.readouterr().out
-    assert StateStore(db, read_only=True).corpus_write_counts() == {"written": 0, "created": 0}
+    assert StateStore(read_only=True).corpus_write_counts() == {"written": 0, "created": 0}
 
 
-def test_analise_so_pela_manchete_nao_atende_ao_criterio_e_nao_entra(tmp_path: Path):
-    db = make_db(tmp_path, basis="headline")
+def test_analise_so_pela_manchete_nao_atende_ao_criterio_e_nao_entra():
+    make_db(basis="headline")
     writer = FakeWriter()
 
-    assert corpus_sync(db, writer=writer) == 0
+    assert corpus_sync(writer=writer) == 0
 
     assert writer.corpus == {}
 
 
-def test_sem_estado_aborta(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
-    assert corpus_sync(tmp_path / "nao-existe.db", writer=FakeWriter()) == 2
-    assert "estado" in capsys.readouterr().err
-
-
 def test_sem_variaveis_do_corpus_aborta_sem_vazar_senha(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ):
+    make_db()
     for name in (
         "DB_MIDIAS_IA_HOST",
         "DB_MIDIAS_IA_PORT",
@@ -170,30 +162,29 @@ def test_sem_variaveis_do_corpus_aborta_sem_vazar_senha(
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("DB_MIDIAS_IA_PASSWORD", "segredo-123")
 
-    code = corpus_sync(make_db(tmp_path))
+    code = corpus_sync()
 
     err = capsys.readouterr().err
     assert code == 2
     assert "DB_MIDIAS_IA_HOST" in err and "segredo-123" not in err
 
 
-def test_esquema_incompativel_aborta_antes_de_gravar(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-):
-    db = make_db(tmp_path)
+def test_esquema_incompativel_aborta_antes_de_gravar(capsys: pytest.CaptureFixture[str]):
+    make_db()
     writer = FakeWriter(schema_error=True)
 
-    code = corpus_sync(db, writer=writer)
+    code = corpus_sync(writer=writer)
 
     assert code == 2
     assert "ai_summary" in capsys.readouterr().err
     assert writer.corpus == {} and writer.closed is True
-    assert StateStore(db, read_only=True).corpus_runs() == []
+    assert StateStore(read_only=True).corpus_runs() == []
 
 
 def test_falha_de_conexao_aborta_com_o_tipo_do_erro(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ):
+    make_db()
     for name, value in (
         ("DB_MIDIAS_IA_HOST", "127.0.0.1"),
         ("DB_MIDIAS_IA_PORT", "1"),
@@ -203,7 +194,7 @@ def test_falha_de_conexao_aborta_com_o_tipo_do_erro(
     ):
         monkeypatch.setenv(name, value)
 
-    code = corpus_sync(make_db(tmp_path))
+    code = corpus_sync()
 
     err = capsys.readouterr().err
     assert code == 2

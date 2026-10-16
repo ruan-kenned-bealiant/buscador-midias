@@ -5,15 +5,11 @@ import pytest
 from test_labeling import build_store  # fixtures do módulo irmão
 
 from buscador_midias.cli import build_parser, main
-from buscador_midias.state.store import StateStore
 
 
 @pytest.fixture
-def db(tmp_path: Path) -> Path:
-    path = tmp_path / "estado.db"
-    source = build_store(findings=6, no_entity=6)
-    source.backup(path)
-    return path
+def db() -> None:
+    build_store(findings=6, no_entity=6)  # grava no schema do teste
 
 
 def test_parser_dos_rotulos_tem_padroes_razoaveis():
@@ -25,11 +21,11 @@ def test_parser_dos_rotulos_tem_padroes_razoaveis():
 
 
 def test_export_grava_o_lote_e_diz_o_que_fazer(
-    db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    db: None, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ):
     out = tmp_path / "rotulos"
 
-    code = main(["labels", "export", "--db", str(db), "--out-dir", str(out), "--per-group", "3"])
+    code = main(["labels", "export", "--out-dir", str(out), "--per-group", "3"])
 
     assert code == 0
     text = capsys.readouterr().out
@@ -39,13 +35,13 @@ def test_export_grava_o_lote_e_diz_o_que_fazer(
 
 
 def test_score_sem_rotulos_explica_o_que_falta(
-    db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    db: None, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ):
     out = tmp_path / "rotulos"
-    main(["labels", "export", "--db", str(db), "--out-dir", str(out), "--per-group", "3"])
+    main(["labels", "export", "--out-dir", str(out), "--per-group", "3"])
     capsys.readouterr()
 
-    code = main(["labels", "score", "--db", str(db), "--out-dir", str(out)])
+    code = main(["labels", "score", "--out-dir", str(out)])
 
     assert code == 0
     text = capsys.readouterr().out
@@ -55,29 +51,26 @@ def test_score_sem_rotulos_explica_o_que_falta(
 
 
 def test_score_sem_exportar_antes_aborta(
-    db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    db: None, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ):
-    code = main(["labels", "score", "--db", str(db), "--out-dir", str(tmp_path / "vazio")])
+    code = main(["labels", "score", "--out-dir", str(tmp_path / "vazio")])
 
     assert code == 2
     assert "export" in capsys.readouterr().err
 
 
-def test_sem_estado_aborta(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
-    code = main(
-        [
-            "labels",
-            "export",
-            "--db",
-            str(tmp_path / "nao-existe.db"),
-            "--out-dir",
-            str(tmp_path / "o"),
-        ]
-    )
+def test_sem_conexao_com_o_estado_aborta_sem_vazar_a_senha(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("DB_MIDIAS_IA_PASSWORD", "segredo-123")
+    monkeypatch.setenv("DB_MIDIAS_IA_PORT", "1")  # nada escuta nessa porta
 
+    code = main(["labels", "export", "--out-dir", str(tmp_path / "o")])
+
+    err = capsys.readouterr().err
     assert code == 2
-    assert "estado" in capsys.readouterr().err
-    assert StateStore  # importado para tipagem dos fixtures
+    assert "estado" in err
+    assert "segredo-123" not in err
 
 
 def test_parser_do_serve_tem_padroes_seguros():
@@ -98,7 +91,7 @@ def test_serve_nao_precisa_do_estado_mas_exige_lote(
 
 
 def test_serve_sobe_mostra_o_endereco_e_encerra_com_ctrl_c(
-    db: Path,
+    db: None,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
@@ -106,7 +99,7 @@ def test_serve_sobe_mostra_o_endereco_e_encerra_com_ctrl_c(
     from http.server import ThreadingHTTPServer
 
     out = tmp_path / "rotulos"
-    main(["labels", "export", "--db", str(db), "--out-dir", str(out), "--per-group", "2"])
+    main(["labels", "export", "--out-dir", str(out), "--per-group", "2"])
     capsys.readouterr()
 
     def interrupted(self: ThreadingHTTPServer, *_: object) -> None:
@@ -121,12 +114,12 @@ def test_serve_sobe_mostra_o_endereco_e_encerra_com_ctrl_c(
 
 
 def test_serve_com_porta_ocupada_avisa_sem_traceback(
-    db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    db: None, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ):
     import socket
 
     out = tmp_path / "rotulos"
-    main(["labels", "export", "--db", str(db), "--out-dir", str(out), "--per-group", "2"])
+    main(["labels", "export", "--out-dir", str(out), "--per-group", "2"])
     capsys.readouterr()
     with socket.socket() as busy:
         busy.bind(("127.0.0.1", 0))

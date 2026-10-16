@@ -1,8 +1,7 @@
 import itertools
-import json
-import sqlite3
 
 import pytest
+from psycopg.types.json import Jsonb
 
 from buscador_midias.criteria import (
     HAS_ENTITIES_SQL,
@@ -10,6 +9,7 @@ from buscador_midias.criteria import (
     has_entities,
     meets_criteria,
 )
+from buscador_midias.state.store import StateStore
 
 PERSON = {"name": "João Silva", "type": "PF", "role": "citado"}
 
@@ -37,12 +37,12 @@ def test_entidade_sem_nome_nao_conta():
     list(itertools.product(["text", "headline"], [[], [PERSON], [PERSON, PERSON]])),
 )
 def test_a_regra_em_sql_concorda_com_a_regra_em_python(basis, entities):
-    conn = sqlite3.connect(":memory:")
-    conn.execute("CREATE TABLE url_analysis (basis TEXT, entities TEXT)")
-    conn.execute("INSERT INTO url_analysis VALUES (?, ?)", (basis, json.dumps(entities)))
+    store = StateStore()
 
-    in_sql = conn.execute(f"SELECT COUNT(*) FROM url_analysis a WHERE {MEETS_CRITERIA_SQL}")
-    has_sql = conn.execute(f"SELECT COUNT(*) FROM url_analysis a WHERE {HAS_ENTITIES_SQL}")
+    row = store._one(
+        f"SELECT {MEETS_CRITERIA_SQL}, {HAS_ENTITIES_SQL}"
+        " FROM (SELECT %s::varchar AS basis, %s::jsonb AS entities) a",
+        (basis, Jsonb(entities)),
+    )
 
-    assert bool(in_sql.fetchone()[0]) is meets_criteria(basis=basis, entities=entities)
-    assert bool(has_sql.fetchone()[0]) is has_entities(entities)
+    assert row == (meets_criteria(basis=basis, entities=entities), has_entities(entities))

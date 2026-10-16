@@ -30,9 +30,8 @@ URL = "https://a.com/politica/pf-prende-empresario-por-fraude-em-licitacao"
 
 
 @pytest.fixture
-def db(tmp_path: Path) -> Path:
-    path = tmp_path / "estado.db"
-    store = StateStore(path)
+def db() -> None:
+    store = StateStore()
     run = store.start_run(NOW)
     store.record_urls(
         [DiscoveredUrl(URL, "h-pf", "a.com", "https://a.com/s.xml", None, None, None)],
@@ -41,7 +40,6 @@ def db(tmp_path: Path) -> Path:
         kind=UrlKind.NEW,
     )
     store.close()
-    return path
 
 
 class Articles:
@@ -90,8 +88,8 @@ class Unlocker:
         return FetchResult(url, 200, page_html(), None)
 
 
-def enrich(db: Path, *extra: str, **ports):
-    return main(["enrich", "--db", str(db), *extra], now=NOW, enrich_ports=EnrichPorts(**ports))
+def enrich(*extra: str, **ports):
+    return main(["enrich", *extra], now=NOW, enrich_ports=EnrichPorts(**ports))
 
 
 def test_parser_do_enrich_tem_padroes_baratos_e_reaproveita_o_html():
@@ -106,17 +104,17 @@ def test_parser_do_enrich_tem_padroes_baratos_e_reaproveita_o_html():
 
 
 def test_enrich_analisa_e_reaproveita_o_html_do_download_direto(
-    db: Path, capsys: pytest.CaptureFixture[str]
+    db: None, capsys: pytest.CaptureFixture[str]
 ):
     memory, unlocker = Memory(), Unlocker()
 
     code = enrich(
-        db, articles=Articles(), analyzer=Analyzer(), evidence_store=memory, bright_data=unlocker
+        articles=Articles(), analyzer=Analyzer(), evidence_store=memory, bright_data=unlocker
     )
 
     out = capsys.readouterr().out
     assert code == 0
-    store = StateStore(db, read_only=True)
+    store = StateStore(read_only=True)
     assert store.get_analysis("h-pf").finding is True  # type: ignore[union-attr]
     evidence = store.get_evidence("h-pf")
     assert evidence is not None and evidence.provider == "direct"
@@ -127,11 +125,10 @@ def test_enrich_analisa_e_reaproveita_o_html_do_download_direto(
     assert "evidências Bright Data" in out
 
 
-def test_modo_brightdata_usa_so_o_unlocker(db: Path, capsys: pytest.CaptureFixture[str]):
+def test_modo_brightdata_usa_so_o_unlocker(db: None, capsys: pytest.CaptureFixture[str]):
     memory, unlocker = Memory(), Unlocker()
 
     code = enrich(
-        db,
         "--evidence-mode",
         "brightdata",
         articles=Articles(),
@@ -141,7 +138,7 @@ def test_modo_brightdata_usa_so_o_unlocker(db: Path, capsys: pytest.CaptureFixtu
     )
 
     assert code == 0
-    evidence = StateStore(db, read_only=True).get_evidence("h-pf")
+    evidence = StateStore(read_only=True).get_evidence("h-pf")
     assert evidence is not None and evidence.provider == "brightdata"
     assert evidence.rejected_reasons == ("reuse_disabled",)
     assert len(unlocker.calls) == 1
@@ -149,25 +146,25 @@ def test_modo_brightdata_usa_so_o_unlocker(db: Path, capsys: pytest.CaptureFixtu
 
 
 def test_sem_chave_do_openrouter_aborta_antes_de_criar_execucao(
-    db: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    db: None, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
-    code = main(["enrich", "--db", str(db)], now=NOW, enrich_ports=EnrichPorts(articles=Articles()))
+    code = main(["enrich"], now=NOW, enrich_ports=EnrichPorts(articles=Articles()))
 
     assert code == 2
     assert "OPENROUTER_API_KEY" in capsys.readouterr().err
-    assert StateStore(db, read_only=True).enrich_runs() == []
+    assert StateStore(read_only=True).enrich_runs() == []
 
 
 def test_modo_brightdata_sem_credenciais_aborta(
-    db: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    db: None, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.delenv("BRIGHTDATA_API_KEY", raising=False)
     monkeypatch.delenv("BRIGHTDATA_ZONE_UNLOCKER", raising=False)
 
     code = main(
-        ["enrich", "--db", str(db), "--evidence-mode", "brightdata"],
+        ["enrich", "--evidence-mode", "brightdata"],
         now=NOW,
         enrich_ports=EnrichPorts(articles=Articles(), analyzer=Analyzer(), evidence_store=Memory()),
     )
@@ -177,13 +174,13 @@ def test_modo_brightdata_sem_credenciais_aborta(
 
 
 def test_modo_auto_sem_credenciais_do_bright_data_avisa_e_segue(
-    db: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    db: None, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.delenv("BRIGHTDATA_API_KEY", raising=False)
     monkeypatch.delenv("BRIGHTDATA_ZONE_UNLOCKER", raising=False)
 
     code = main(
-        ["enrich", "--db", str(db)],
+        ["enrich"],
         now=NOW,
         enrich_ports=EnrichPorts(articles=Articles(), analyzer=Analyzer(), evidence_store=Memory()),
     )
@@ -192,22 +189,29 @@ def test_modo_auto_sem_credenciais_do_bright_data_avisa_e_segue(
     assert (
         "sem Bright Data" in capsys.readouterr().err
     )  # aviso, e o HTML confiável foi reaproveitado
-    assert StateStore(db, read_only=True).get_evidence("h-pf").provider == "direct"  # type: ignore[union-attr]
+    assert StateStore(read_only=True).get_evidence("h-pf").provider == "direct"  # type: ignore[union-attr]
 
 
-def test_sem_estado_aborta_com_mensagem(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+def test_sem_conexao_com_o_estado_aborta_sem_vazar_a_senha(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("DB_MIDIAS_IA_PASSWORD", "segredo-123")
+    monkeypatch.setenv("DB_MIDIAS_IA_PORT", "1")  # nada escuta nessa porta
+
     code = main(
-        ["enrich", "--db", str(tmp_path / "nao-existe.db")],
+        ["enrich"],
         now=NOW,
         enrich_ports=EnrichPorts(articles=Articles(), analyzer=Analyzer(), evidence_store=Memory()),
     )
 
+    err = capsys.readouterr().err
     assert code == 2
-    assert "estado" in capsys.readouterr().err
+    assert "estado" in err
+    assert "segredo-123" not in err
 
 
-def test_limite_de_urls_por_execucao(db: Path, capsys: pytest.CaptureFixture[str]):
-    store = StateStore(db)
+def test_limite_de_urls_por_execucao(db: None, capsys: pytest.CaptureFixture[str]):
+    store = StateStore()
     run = store.start_run(NOW)
     store.record_urls(
         [
@@ -223,7 +227,6 @@ def test_limite_de_urls_por_execucao(db: Path, capsys: pytest.CaptureFixture[str
     store.close()
 
     enrich(
-        db,
         "--limit",
         "2",
         articles=Articles(),
@@ -232,9 +235,7 @@ def test_limite_de_urls_por_execucao(db: Path, capsys: pytest.CaptureFixture[str
         bright_data=Unlocker(),
     )
 
-    assert (
-        len(StateStore(db, read_only=True).pending_enrichment()) == 2
-    )  # 4 pendentes, 2 processadas
+    assert len(StateStore(read_only=True).pending_enrichment()) == 2  # 4 pendentes, 2 processadas
 
 
 def test_parser_do_enrich_escolhe_o_armazenamento_pelo_ambiente_por_padrao():
@@ -243,23 +244,23 @@ def test_parser_do_enrich_escolhe_o_armazenamento_pelo_ambiente_por_padrao():
 
 
 def test_s3_sem_bucket_aborta_com_mensagem_sem_criar_execucao(
-    db: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    db: None, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.delenv("AWS_BUCKET", raising=False)
 
     code = main(
-        ["enrich", "--db", str(db), "--evidence-store", "s3"],
+        ["enrich", "--evidence-store", "s3"],
         now=NOW,
         enrich_ports=EnrichPorts(articles=Articles(), analyzer=Analyzer(), bright_data=Unlocker()),
     )
 
     assert code == 2
     assert "AWS_BUCKET" in capsys.readouterr().err
-    assert StateStore(db, read_only=True).enrich_runs() == []
+    assert StateStore(read_only=True).enrich_runs() == []
 
 
 def test_disco_s3_do_ambiente_grava_a_evidencia_no_bucket(
-    db: Path, monkeypatch: pytest.MonkeyPatch
+    db: None, monkeypatch: pytest.MonkeyPatch
 ):
     saved: dict[tuple[str, str], bytes] = {}
 
@@ -274,25 +275,25 @@ def test_disco_s3_do_ambiente_grava_a_evidencia_no_bucket(
     monkeypatch.setenv("AWS_BUCKET", "bucket-do-ambiente")
 
     code = main(
-        ["enrich", "--db", str(db)],
+        ["enrich"],
         now=NOW,
         enrich_ports=EnrichPorts(articles=Articles(), analyzer=Analyzer(), bright_data=Unlocker()),
     )
 
     assert code == 0
     assert ("bucket-do-ambiente", "midias-ia/evidencias/h-pf.html") in saved
-    evidence = StateStore(db, read_only=True).get_evidence("h-pf")
+    evidence = StateStore(read_only=True).get_evidence("h-pf")
     assert evidence is not None and evidence.path == "midias-ia/evidencias/h-pf.html"
 
 
 def test_local_continua_o_padrao_sem_variaveis(
-    db: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    db: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.delenv("MIDIAS_IA_STORAGE_DISK", raising=False)
     folder = tmp_path / "evidencias"
 
     code = main(
-        ["enrich", "--db", str(db), "--evidence-dir", str(folder)],
+        ["enrich", "--evidence-dir", str(folder)],
         now=NOW,
         enrich_ports=EnrichPorts(articles=Articles(), analyzer=Analyzer(), bright_data=Unlocker()),
     )

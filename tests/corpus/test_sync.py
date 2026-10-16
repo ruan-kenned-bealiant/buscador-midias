@@ -299,7 +299,7 @@ def test_sem_pendentes_a_execucao_e_registrada_mesmo_assim():
 def seed_neutral(path: str, *, basis: str = "text", entities: bool = True) -> StateStore:
     store = seed(path, basis=basis)
     run = store.start_enrich_run(NOW, model="m", prompt_version="v2", evidence_mode="auto")
-    store._conn.execute("DELETE FROM url_analysis WHERE url_hash = ?", (f"h-{path}",))  # noqa: SLF001
+    store._run("DELETE FROM midias_crawler_analyses WHERE url_hash = %s", (f"h-{path}",))  # noqa: SLF001
     store.record_analysis(
         AnalysisRecord(
             f"h-{path}",

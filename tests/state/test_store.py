@@ -62,7 +62,7 @@ def test_a_primeira_classificacao_da_url_vence():
     assert store.count_urls(kind=UrlKind.NEW) == 0
 
 
-def test_seen_hashes_aceita_mais_hashes_que_o_limite_de_variaveis_do_sqlite():
+def test_seen_hashes_aceita_mais_hashes_que_o_tamanho_de_um_lote():
     store = StateStore()
     run = store.start_run(T0)
     urls = [found(f"p{i}") for i in range(2500)]
@@ -196,19 +196,6 @@ def test_latencia_de_publicacao_so_conta_urls_novas_com_data():
     assert sorted(store.new_url_latencies_hours()) == [2.0, 5.0]
 
 
-def test_persiste_em_arquivo_entre_aberturas(tmp_path):
-    path = tmp_path / "estado.db"
-    first = StateStore(path)
-    run = first.start_run(T0)
-    first.record_urls([found("a")], run_id=run, now=T0, kind=UrlKind.BASELINE)
-    first.close()
-
-    second = StateStore(path)
-
-    assert second.seen_hashes(["hash-a.com-a"]) == {"hash-a.com-a"}
-    assert second.start_run(T0) == 2
-
-
 def test_escritas_concorrentes_de_varias_threads_nao_se_perdem():
     store = StateStore()
     run = store.start_run(T0)
@@ -238,34 +225,6 @@ def test_resultado_do_site_guarda_quantos_sitemaps_falharam():
     assert store.all_site_runs() == [(run, record)]
 
 
-def test_banco_criado_antes_da_coluna_de_falhas_e_migrado_sem_perder_dados(tmp_path):
-    import sqlite3
-
-    path = tmp_path / "antigo.db"
-    legacy = sqlite3.connect(path)
-    legacy.executescript(
-        """
-        CREATE TABLE site_runs (
-            run_id INTEGER NOT NULL, site_key TEXT NOT NULL, status TEXT NOT NULL,
-            new_urls INTEGER NOT NULL, baseline_urls INTEGER NOT NULL,
-            backlog_urls INTEGER NOT NULL, seen_urls INTEGER NOT NULL,
-            sitemaps_fetched INTEGER NOT NULL, sitemaps_skipped INTEGER NOT NULL,
-            detail TEXT NOT NULL, known_urls INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY (run_id, site_key)
-        );
-        INSERT INTO site_runs VALUES (1, 'a.com', 'ok', 4, 0, 0, 4, 1, 0, '', 0);
-        """
-    )
-    legacy.commit()
-    legacy.close()
-
-    store = StateStore(path)
-
-    [record] = store.site_runs(1)
-    assert record.new_urls == 4
-    assert record.sitemaps_failed == 0
-
-
 def test_url_filtrada_guarda_o_motivo_e_so_ela():
     store = StateStore()
     run = store.start_run(T0)
@@ -293,41 +252,6 @@ def test_resultado_do_site_guarda_quantas_urls_o_l0_descartou():
     assert store.site_runs(run) == [record]
 
 
-def test_banco_antigo_ganha_as_colunas_do_l0(tmp_path):
-    import sqlite3
-
-    path = tmp_path / "antigo.db"
-    legacy = sqlite3.connect(path)
-    legacy.executescript(
-        """
-        CREATE TABLE urls_seen (
-            url_hash TEXT PRIMARY KEY, url TEXT NOT NULL, site_key TEXT NOT NULL,
-            source_sitemap TEXT NOT NULL, kind TEXT NOT NULL, first_seen_run INTEGER NOT NULL,
-            first_seen_at TEXT NOT NULL, lastmod TEXT, title TEXT, publication_date TEXT
-        );
-        INSERT INTO urls_seen VALUES ('h', 'https://a.com/x', 'a.com', 's', 'new', 1, 't',
-                                      NULL, NULL, NULL);
-        CREATE TABLE site_runs (
-            run_id INTEGER NOT NULL, site_key TEXT NOT NULL, status TEXT NOT NULL,
-            new_urls INTEGER NOT NULL, baseline_urls INTEGER NOT NULL,
-            backlog_urls INTEGER NOT NULL, seen_urls INTEGER NOT NULL,
-            sitemaps_fetched INTEGER NOT NULL, sitemaps_skipped INTEGER NOT NULL,
-            detail TEXT NOT NULL, known_urls INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY (run_id, site_key)
-        );
-        INSERT INTO site_runs VALUES (1, 'a.com', 'ok', 4, 0, 0, 4, 1, 0, '', 0);
-        """
-    )
-    legacy.commit()
-    legacy.close()
-
-    store = StateStore(path)
-
-    assert store.count_urls() == 1
-    assert store.filtered_by_reason() == {}
-    assert store.site_runs(1)[0].filtered_urls == 0
-
-
 def test_resultado_do_site_guarda_de_que_fonte_vieram_as_urls():
     store = StateStore()
     run = store.start_run(T0)
@@ -340,33 +264,6 @@ def test_resultado_do_site_guarda_de_que_fonte_vieram_as_urls():
     assert store.site_runs(run) == [via_feed, failed]
     assert failed.source == ""
     assert [r.source for _, r in store.all_site_runs()] == ["feed", ""]
-
-
-def test_banco_antigo_ganha_a_coluna_da_fonte_da_descoberta(tmp_path):
-    import sqlite3
-
-    path = tmp_path / "antigo.db"
-    legacy = sqlite3.connect(path)
-    legacy.executescript(
-        """
-        CREATE TABLE site_runs (
-            run_id INTEGER NOT NULL, site_key TEXT NOT NULL, status TEXT NOT NULL,
-            new_urls INTEGER NOT NULL, baseline_urls INTEGER NOT NULL,
-            backlog_urls INTEGER NOT NULL, seen_urls INTEGER NOT NULL,
-            sitemaps_fetched INTEGER NOT NULL, sitemaps_skipped INTEGER NOT NULL,
-            detail TEXT NOT NULL, known_urls INTEGER NOT NULL DEFAULT 0,
-            sitemaps_failed INTEGER NOT NULL DEFAULT 0, filtered_urls INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY (run_id, site_key)
-        );
-        INSERT INTO site_runs VALUES (1, 'a.com', 'ok', 4, 0, 0, 4, 1, 0, '', 0, 0, 0);
-        """
-    )
-    legacy.commit()
-    legacy.close()
-
-    store = StateStore(path)
-
-    assert store.site_runs(1)[0].source == ""
 
 
 def test_rodada_guarda_o_uso_do_bright_data():
@@ -389,65 +286,75 @@ def test_rodada_sem_uso_registrado_tem_zero():
     assert (record.bright_data_requests, record.bright_data_hosts) == (0, 0)
 
 
-def test_banco_antigo_ganha_as_colunas_de_uso_do_bright_data(tmp_path):
-    import sqlite3
+def test_duas_conexoes_veem_o_mesmo_estado():
+    first, second = StateStore(), StateStore()
+    run = first.start_run(T0)
+    first.record_urls([found("a-1")], run_id=run, now=T0, kind=UrlKind.NEW)
 
-    path = tmp_path / "antigo.db"
-    legacy = sqlite3.connect(path)
-    legacy.executescript(
-        """
-        CREATE TABLE runs (id INTEGER PRIMARY KEY AUTOINCREMENT, started_at TEXT NOT NULL,
-                           finished_at TEXT);
-        INSERT INTO runs (started_at) VALUES ('2026-10-15T09:00:00+00:00');
-        """
-    )
-    legacy.commit()
-    legacy.close()
-
-    store = StateStore(path)
-
-    assert store.list_runs()[0].bright_data_requests == 0
-    store.record_run_usage(1, bright_data_requests=3, bright_data_hosts=1)
-    assert store.list_runs()[0].bright_data_requests == 3
+    assert second.count_urls() == 1
+    assert second.seen_hashes(["hash-a.com-a-1"]) == {"hash-a.com-a-1"}
 
 
-def test_backup_gera_copia_consistente_enquanto_o_original_segue_em_uso(tmp_path):
-    source = StateStore(tmp_path / "estado.db")
-    run = source.start_run(T0)
-    source.record_urls([found("a-1"), found("a-2")], run_id=run, now=T0, kind=UrlKind.NEW)
-    source.add_fallback_hosts(["x.com"], T0)
-
-    destination = tmp_path / "copia" / "estado-backup.db"
-    source.backup(destination)
-    source.record_urls([found("a-3")], run_id=run, now=T0, kind=UrlKind.NEW)  # depois do backup
-
-    copy = StateStore(destination, read_only=True)
-    assert copy.count_urls() == 2
-    assert copy.fallback_hosts() == frozenset({"x.com"})
-    assert source.count_urls() == 3
-    assert copy.integrity_ok()
-    copy.close()
-
-
-def test_backup_nao_sobrescreve_arquivo_existente(tmp_path):
+def test_somente_leitura_le_mas_nao_grava():
+    import psycopg
     import pytest
 
-    source = StateStore(tmp_path / "estado.db")
-    destination = tmp_path / "ja-existe.db"
-    destination.write_bytes(b"nao apague")
-
-    with pytest.raises(FileExistsError):
-        source.backup(destination)
-
-    assert destination.read_bytes() == b"nao apague"
-
-
-def test_backup_funciona_a_partir_de_uma_abertura_somente_leitura(tmp_path):
-    writer = StateStore(tmp_path / "estado.db")
+    writer = StateStore()
     run = writer.start_run(T0)
-    writer.record_urls([found("a-1")], run_id=run, now=T0, kind=UrlKind.NEW)
-    reader = StateStore(tmp_path / "estado.db", read_only=True)
+    reader = StateStore(read_only=True)
 
-    reader.backup(tmp_path / "copia.db")
+    assert [r.id for r in reader.list_runs()] == [run]
+    with pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
+        reader.start_run(T0)
 
-    assert StateStore(tmp_path / "copia.db", read_only=True).count_urls() == 1
+
+def test_sem_variaveis_de_conexao_falha_sem_vazar_a_senha():
+    import pytest
+
+    from buscador_midias.state.store import StateConfigError
+
+    with pytest.raises(StateConfigError) as error:
+        StateStore({"DB_MIDIAS_IA_PASSWORD": "segredo"})
+
+    assert "DB_MIDIAS_IA_HOST" in str(error.value)
+    assert "segredo" not in str(error.value)
+
+
+def test_schema_com_nome_estranho_e_recusado():
+    import os
+
+    import pytest
+
+    from buscador_midias.state.store import StateConfigError
+
+    env = {**os.environ, "BUSCADOR_STATE_SCHEMA": "x; DROP TABLE midias_ia_articles"}
+    with pytest.raises(StateConfigError):
+        StateStore(env)
+
+
+def test_banco_sem_as_tabelas_diz_qual_arquivo_rodar():
+    import os
+
+    import pytest
+
+    from buscador_midias.state.store import StateSchemaError
+
+    env = {**os.environ, "BUSCADOR_STATE_SCHEMA": "public_sem_tabelas_do_buscador"}
+    with pytest.raises(StateSchemaError) as error:
+        StateStore(env)
+
+    assert "001_create_midias_crawler_tables.sql" in str(error.value)
+
+
+def test_texto_de_terceiros_com_caractere_nulo_e_gravado_sem_ele():
+    store = StateStore()
+    run = store.start_run(T0)
+    item = DiscoveredUrl(
+        "https://a.com/x\x00y", "h-nul", "a.com", "s", None, "Título\x00 sujo", None
+    )
+
+    store.record_urls([item], run_id=run, now=T0, kind=UrlKind.NEW)
+
+    [recent] = store.recent_new_urls(1)
+    assert recent.title == "Título sujo"
+    assert recent.url == "https://a.com/xy"

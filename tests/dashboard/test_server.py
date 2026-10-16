@@ -15,10 +15,13 @@ from buscador_midias.state.store import StateStore, UrlKind
 NOW = datetime(2026, 10, 15, 12, 30, tzinfo=UTC)
 
 
+def read_only() -> StateStore:
+    return StateStore(read_only=True)
+
+
 @pytest.fixture
-def db(tmp_path: Path) -> Path:
-    path = tmp_path / "estado.db"
-    store = StateStore(path)
+def db() -> None:
+    store = StateStore()
     run = store.start_run(NOW)
     store.record_urls(
         [
@@ -37,12 +40,11 @@ def db(tmp_path: Path) -> Path:
         kind=UrlKind.NEW,
     )
     store.close()
-    return path
 
 
 @pytest.fixture
-def base(db: Path) -> Iterator[str]:
-    server = make_server(db, "127.0.0.1", 0, clock=lambda: NOW)
+def base(db: None) -> Iterator[str]:
+    server = make_server(read_only, "127.0.0.1", 0, clock=lambda: NOW)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     yield f"http://127.0.0.1:{server.server_address[1]}"
@@ -109,8 +111,10 @@ def test_metodos_que_nao_sao_get_sao_recusados(base: str):
     assert error.value.headers["Allow"] == "GET"
 
 
-def test_banco_ausente_vira_503_sem_vazar_caminho(tmp_path: Path):
-    server = make_server(tmp_path / "nao-existe.db", "127.0.0.1", 0, clock=lambda: NOW)
+def test_banco_fora_do_ar_vira_503_sem_vazar_credenciais(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("DB_MIDIAS_IA_PASSWORD", "segredo-123")
+    monkeypatch.setenv("DB_MIDIAS_IA_PORT", "1")  # nada escuta nessa porta
+    server = make_server(read_only, "127.0.0.1", 0, clock=lambda: NOW)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -120,19 +124,17 @@ def test_banco_ausente_vira_503_sem_vazar_caminho(tmp_path: Path):
         server.server_close()
 
     assert status == 503
-    assert "nao-existe" not in body.decode()
+    assert "segredo-123" not in body.decode()
     assert json.loads(body)["error"]
 
 
-def test_o_servidor_nao_grava_no_estado(base: str, db: Path):
-    before = db.stat().st_mtime_ns
-
+def test_o_servidor_nao_grava_no_estado(base: str):
     get(base + "/api/snapshot")
 
-    store = StateStore(db, read_only=True)
+    store = StateStore(read_only=True)
     assert store.count_urls() == 1
+    assert len(store.list_runs()) == 1
     store.close()
-    assert db.stat().st_mtime_ns == before
 
 
 def test_pagina_nunca_injeta_dados_de_terceiros_como_html(base: str):
@@ -146,7 +148,7 @@ def test_pagina_nunca_injeta_dados_de_terceiros_como_html(base: str):
     assert "http://" not in page.replace("http://www.w3.org/2000/svg", "")  # sem recursos externos
 
 
-def test_servidor_usa_o_arquivo_de_agenda_informado(db: Path, tmp_path: Path):
+def test_servidor_usa_o_arquivo_de_agenda_informado(db: None, tmp_path: Path):
     agenda = tmp_path / "agenda.json"
     agenda.write_text(
         json.dumps(
@@ -154,7 +156,7 @@ def test_servidor_usa_o_arquivo_de_agenda_informado(db: Path, tmp_path: Path):
         ),
         encoding="utf-8",
     )
-    server = make_server(db, "127.0.0.1", 0, clock=lambda: NOW, schedule_path=agenda)
+    server = make_server(read_only, "127.0.0.1", 0, clock=lambda: NOW, schedule_path=agenda)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -166,9 +168,9 @@ def test_servidor_usa_o_arquivo_de_agenda_informado(db: Path, tmp_path: Path):
     assert json.loads(body)["schedule"]["jobs"][0]["name"] == "Rodada X"
 
 
-def test_cache_curto_evita_recalcular_o_snapshot_a_cada_requisicao(db: Path):
+def test_cache_curto_evita_recalcular_o_snapshot_a_cada_requisicao(db: None):
     now = [NOW]
-    server = make_server(db, "127.0.0.1", 0, clock=lambda: now[0], cache_seconds=5)
+    server = make_server(read_only, "127.0.0.1", 0, clock=lambda: now[0], cache_seconds=5)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     base = f"http://127.0.0.1:{server.server_address[1]}"

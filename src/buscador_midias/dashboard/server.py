@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -13,8 +12,10 @@ from importlib import resources
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+import psycopg
+
 from buscador_midias.dashboard.snapshot import DEFAULT_HOURS, DEFAULT_RECENT, build_snapshot
-from buscador_midias.state.store import StateStore
+from buscador_midias.state.store import StateConfigError, StateSchemaError, StateStore
 
 DEFAULT_CACHE_SECONDS = 4.0
 _MAX_HOURS = 168
@@ -27,7 +28,7 @@ _LOG = logging.getLogger(__name__)
 
 
 def make_server(
-    db: Path,
+    open_state: Callable[[], StateStore],
     host: str,
     port: int,
     *,
@@ -37,11 +38,11 @@ def make_server(
 ) -> ThreadingHTTPServer:
     """Cria o servidor do painel (sem iniciá-lo).
 
-    O estado é aberto somente leitura a cada requisição e fechado em seguida, então o painel
+    O estado é aberto somente leitura a cada cálculo do retrato e fechado em seguida, então o painel
     nunca grava nem segura o banco enquanto a descoberta e o enriquecimento trabalham.
 
     Args:
-        db: Arquivo SQLite do estado.
+        open_state: Abre o estado somente leitura (uma conexão por cálculo do retrato).
         host: Endereço de escuta (use ``127.0.0.1``: o painel não tem autenticação).
         port: Porta (``0`` escolhe uma livre).
         clock: Relógio (injetável); padrão é o horário atual em UTC.
@@ -95,8 +96,9 @@ def make_server(
         def _compute(self, now: datetime, hours: int, recent: int) -> bytes | None:
             """Calcula o retrato e o serializa; ``None`` se o estado não pôde ser lido."""
             try:
-                store = StateStore(db, read_only=True)
-            except (sqlite3.Error, OSError):
+                store = open_state()
+            except (psycopg.Error, StateConfigError, StateSchemaError):
+                _LOG.exception("falha ao abrir o estado")
                 return None
             try:
                 snapshot = build_snapshot(
@@ -106,7 +108,7 @@ def make_server(
                     recent=recent,
                     schedule_path=schedule_path,
                 )
-            except sqlite3.Error:
+            except psycopg.Error:
                 _LOG.exception("falha ao ler o estado")
                 return None
             finally:

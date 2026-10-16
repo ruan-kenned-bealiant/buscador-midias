@@ -9,7 +9,7 @@ critério quando:
 
 É a única regra de "entra ou não": a captura de evidência e a gravação no corpus olham só para ela.
 Ela existe em duas formas que precisam concordar (há um teste para isso): em Python, para decidir
-sobre uma análise em memória, e em SQL, para as consultas sobre ``url_analysis a``.
+sobre uma análise em memória, e em SQL, para as consultas sobre ``midias_crawler_analyses a``.
 """
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ from collections.abc import Mapping, Sequence
 
 BASIS_TEXT = "text"
 
-# ``entities`` guarda só nomes que constam no texto analisado; lista vazia = sem entidade.
-HAS_ENTITIES_SQL = "a.entities NOT IN ('[]', '')"
+# ``entities`` (jsonb) guarda só nomes que constam no texto analisado; lista vazia = sem entidade.
+HAS_ENTITIES_SQL = "a.entities <> '[]'::jsonb"
 MEETS_CRITERIA_SQL = f"(a.basis = '{BASIS_TEXT}' AND {HAS_ENTITIES_SQL})"
 
 

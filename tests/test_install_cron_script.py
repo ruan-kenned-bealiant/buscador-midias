@@ -140,3 +140,13 @@ def test_amostra_de_fontes_vai_para_o_comando(tmp_path: Path):
 
     [job] = [line for line in env.crontab() if "run.sh" in line]
     assert "scripts/run.sh --only-file data/outra.txt" in job
+
+
+def test_argumentos_extras_vao_para_o_comando(tmp_path: Path):
+    env = Env(tmp_path)
+
+    env.run("--times", "06:00", "--extra", "--max-sitemap-fetches 12")
+
+    [job] = [line for line in env.crontab() if "run.sh" in line]
+    assert "scripts/run.sh --only-file data/poc_sample.txt --max-sitemap-fetches 12 " in job
+    assert job.endswith(">> var/run.log 2>&1")

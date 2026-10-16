@@ -136,9 +136,9 @@ def explore_site(
     if isinstance(policy, Exploration):
         return policy
 
-    terms = _section_terms(site)
+    terms = section_terms(site)
     declared = policy.sitemaps or tuple(f"{origin}{path}" for path in _FALLBACK_PATHS)
-    entry_points = _rank_urls(declared, terms)
+    entry_points = rank_urls(declared, terms)
     return _walk(
         site, fetcher, policy, entry_points, terms, user_agent, max_sitemap_fetches, skip_child
     )
@@ -236,7 +236,7 @@ def _walk(
             kept: list[str] = []
             # O orçamento é uma janela dos filhos mais recentes: pular um filho inalterado
             # consome a janela em vez de avançar para arquivos mais antigos que nunca lemos.
-            ranked = _prioritize(sitemap.children, terms)
+            ranked = prioritize_children(sitemap.children, terms)
             candidates = [child for child in ranked if not is_taxonomy_sitemap(child.loc)] or ranked
             # Os sitemaps declarados no robots.txt (ex.: o de notícias) têm vez antes dos filhos.
             reserved = sum(1 for u in queue if u in is_entry and policy.allows(u, user_agent))
@@ -312,7 +312,7 @@ def is_taxonomy_sitemap(url: str) -> bool:
     return any(word in _TAXONOMY_WORDS for word in re.split(r"[^a-z]+", filename))
 
 
-def _section_terms(site: Site) -> tuple[str, ...]:
+def section_terms(site: Site) -> tuple[str, ...]:
     """Segmentos do prefixo de seção em minúsculas (``/pt-br`` vira ``("pt-br",)``)."""
     return tuple(part.lower() for part in site.path_prefix.split("/") if part)
 
@@ -323,12 +323,14 @@ def _mentions(url: str, terms: tuple[str, ...]) -> bool:
     return any(term in lowered for term in terms)
 
 
-def _rank_urls(urls: tuple[str, ...], terms: tuple[str, ...]) -> tuple[str, ...]:
+def rank_urls(urls: tuple[str, ...], terms: tuple[str, ...]) -> tuple[str, ...]:
     """Coloca antes as URLs que citam a seção da fonte, mantendo a ordem relativa."""
     return tuple(sorted(urls, key=lambda url: 0 if _mentions(url, terms) else 1))
 
 
-def _prioritize(children: tuple[SitemapRef, ...], terms: tuple[str, ...]) -> list[SitemapRef]:
+def prioritize_children(
+    children: tuple[SitemapRef, ...], terms: tuple[str, ...]
+) -> list[SitemapRef]:
     """Ordena filhos de um índice.
 
     Prioridade: os que citam a seção da fonte, depois os com "news" no nome, depois o ``lastmod``

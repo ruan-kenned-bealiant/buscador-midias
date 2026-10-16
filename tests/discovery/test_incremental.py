@@ -502,7 +502,7 @@ def test_corpus_nao_e_consultado_para_o_que_o_l0_ja_descartou():
     assert corpus.calls == []
 
 
-def test_tema_so_e_descartado_quando_pedido():
+def test_tema_nao_e_descartado_por_padrao():
     store = StateStore()
     fetcher = _after_baseline(store, "esporte/futebol/clube-vence-o-classico")
 
@@ -510,6 +510,8 @@ def test_tema_so_e_descartado_quando_pedido():
 
     assert len(default.new) == 1
 
+
+def test_tema_so_e_descartado_quando_pedido():
     store = StateStore()
     fetcher = _after_baseline(store, "esporte/futebol/clube-vence-o-classico")
 

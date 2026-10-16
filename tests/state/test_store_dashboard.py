@@ -1,7 +1,4 @@
-import sqlite3
 from datetime import UTC, datetime, timedelta
-
-import pytest
 
 from buscador_midias.domain.discovered import DiscoveredUrl
 from buscador_midias.state.store import (
@@ -24,21 +21,6 @@ def found(path: str, *, site: str = "a.com", title: str | None = None) -> Discov
         title=title,
         publication_date=None,
     )
-
-
-def test_abertura_somente_leitura_le_mas_nao_grava(tmp_path):
-    path = tmp_path / "estado.db"
-    writer = StateStore(path)
-    run = writer.start_run(T0)
-    writer.record_urls([found("x-y")], run_id=run, now=T0, kind=UrlKind.NEW)
-
-    reader = StateStore(path, read_only=True)
-
-    assert reader.count_urls() == 1
-    with pytest.raises(sqlite3.OperationalError):
-        reader.start_run(T0)
-    writer.close()
-    reader.close()
 
 
 def test_contagem_de_urls_por_tipo():
@@ -118,6 +100,16 @@ def test_ultimas_urls_novas_vem_da_mais_recente_para_a_mais_antiga():
 
 def test_analises_por_hora_separam_as_que_atendem_ao_criterio():
     store = StateStore()
+    run = store.start_run(T0)
+    store.record_urls(
+        [
+            DiscoveredUrl(f"https://a.com/{n}", f"h-{n}", "a.com", "s", None, None, None)
+            for n in "abcd"
+        ],
+        run_id=run,
+        now=T0,
+        kind=UrlKind.NEW,
+    )
     enrich = store.start_enrich_run(T0, model="m", prompt_version="v", evidence_mode="auto")
     person = ({"name": "João Silva", "type": "PF", "role": "citado"},)
 

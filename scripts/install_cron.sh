@@ -5,6 +5,7 @@
 #
 # Uso:
 #   scripts/install_cron.sh [--times 06:00,12:00,16:00] [--sample data/poc_sample.txt]
+#                           [--extra "--max-sitemap-fetches 12"]
 #   scripts/install_cron.sh --remove
 #   scripts/install_cron.sh --dry-run ...      só mostra o crontab resultante
 #
@@ -14,6 +15,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TIMES="06:00,12:00,16:00"
 SAMPLE="data/poc_sample.txt"
+EXTRA=""
 SCHEDULE_FILE="${SCHEDULE_FILE:-$ROOT/var/schedule.json}"
 REMOVE=0
 DRY_RUN=0
@@ -24,9 +26,10 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --times) TIMES="$2"; shift 2 ;;
     --sample) SAMPLE="$2"; shift 2 ;;
+    --extra) EXTRA="$2"; shift 2 ;;
     --remove) REMOVE=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
-    -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
     *) echo "opção desconhecida: $1" >&2; exit 2 ;;
   esac
 done
@@ -48,7 +51,9 @@ if [ "$REMOVE" = 0 ]; then
     fi
     hour=$((10#${clock%%:*}))
     minute=$((10#${clock##*:}))
-    lines+=("$minute $hour * * * cd $ROOT && scripts/run.sh --only-file $SAMPLE >> var/run.log 2>&1")
+    command="scripts/run.sh --only-file $SAMPLE"
+    [ -n "$EXTRA" ] && command="$command $EXTRA"
+    lines+=("$minute $hour * * * cd $ROOT && $command >> var/run.log 2>&1")
   done
   block="$BEGIN"$'\n'"$(printf '%s\n' "${lines[@]}")"$'\n'"$END"
 fi

@@ -8,6 +8,7 @@ import os
 import sys
 from collections import Counter
 from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -15,6 +16,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import httpx
+import psycopg
 
 from buscador_midias.analysis.context import DEFAULT_BATCH_SIZE as ANALYSIS_BATCH_SIZE
 from buscador_midias.analysis.context import ContextAnalyzer, OpenRouterContextAnalyzer
@@ -32,7 +34,7 @@ from buscador_midias.corpus.sync import DEFAULT_BATCH_SIZE as CORPUS_BATCH_SIZE
 from buscador_midias.corpus.sync import sync_corpus
 from buscador_midias.corpus.writer import CorpusSchemaError, CorpusWriter, PostgresCorpusWriter
 from buscador_midias.dashboard.server import make_server
-from buscador_midias.discovery.explore import DEFAULT_MAX_SITEMAP_FETCHES
+from buscador_midias.discovery.explore import DEFAULT_MAX_SITEMAP_FETCHES, ProbeStatus
 from buscador_midias.discovery.incremental import DEFAULT_FRESH_DAYS, RunResult, discover_all
 from buscador_midias.discovery.probe import SiteProbe
 from buscador_midias.discovery.report import probe_all, summarize, write_probe_report
@@ -40,6 +42,7 @@ from buscador_midias.discovery.sources import DiscoverySource, cascade_for
 from buscador_midias.discovery.stats import build_report, format_report
 from buscador_midias.discovery.url_filter import DEFAULT_OFF_TOPIC_SEGMENTS
 from buscador_midias.domain.site import Site
+from buscador_midias.domain.strategy import CandidateReport, Verdict
 from buscador_midias.enrich.pipeline import ArticleSource, enrich_pending
 from buscador_midias.evidence.capture import EvidenceCapturer
 from buscador_midias.evidence.s3_storage import StorageConfigError, make_evidence_store
@@ -56,14 +59,24 @@ from buscador_midias.net.stack import (
     build_unlocker,
 )
 from buscador_midias.sites.loader import load_sites
-from buscador_midias.state.store import CorpusTotals, EnrichTotals, SiteRunRecord, StateStore
+from buscador_midias.state.migrate import MigrationError, migrate_sqlite
+from buscador_midias.state.store import (
+    CorpusTotals,
+    EnrichTotals,
+    SiteRunRecord,
+    StateConfigError,
+    StateSchemaError,
+    StateStore,
+)
+from buscador_midias.strategy.hints import load_hints
+from buscador_midias.strategy.probe import DEFAULT_MAX_REQUESTS, SiteStrategy, probe_site
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SITES = _REPO_ROOT / "data" / "sites.csv"
+DEFAULT_HINTS = _REPO_ROOT / "data" / "discovery_hints.csv"
 DEFAULT_REPORT = _REPO_ROOT / "var" / "probe-report.csv"
-DEFAULT_DB = _REPO_ROOT / "var" / "state.db"
+DEFAULT_LOCK = _REPO_ROOT / "var" / "run.lock"
 DEFAULT_SCHEDULE = _REPO_ROOT / "var" / "schedule.json"
-DEFAULT_BACKUPS = _REPO_ROOT / "var" / "backups"
 DEFAULT_EVIDENCE_DIR = _REPO_ROOT / "var" / "evidence"
 DEFAULT_LABELS = _REPO_ROOT / "var" / "labels"
 ARTICLE_MAX_BYTES = 8 * 1024 * 1024
@@ -116,7 +129,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_site_args(discover)
     _add_network_args(discover)
-    discover.add_argument("--db", type=Path, default=DEFAULT_DB, help="Arquivo SQLite do estado.")
     discover.add_argument(
         "--fresh-days",
         type=int,
@@ -157,7 +169,6 @@ def build_parser() -> argparse.ArgumentParser:
         "dashboard",
         help="Painel web local (somente leitura) para acompanhar o fluxo em tempo real.",
     )
-    dashboard.add_argument("--db", type=Path, default=DEFAULT_DB, help="Arquivo SQLite do estado.")
     dashboard.add_argument(
         "--host",
         default="127.0.0.1",
@@ -178,7 +189,6 @@ def build_parser() -> argparse.ArgumentParser:
             "critério e captura a evidência das que atendem (CONSOME CRÉDITOS)."
         ),
     )
-    enrich.add_argument("--db", type=Path, default=DEFAULT_DB, help="Arquivo SQLite do estado.")
     enrich.add_argument("--model", default=DEFAULT_MODEL, help="Modelo do OpenRouter.")
     enrich.add_argument(
         "--evidence-mode",
@@ -229,9 +239,6 @@ def build_parser() -> argparse.ArgumentParser:
         "corpus-sync",
         help="Grava no corpus de Mídias IA (Postgres) os achados com contexto e evidência.",
     )
-    corpus_sync.add_argument(
-        "--db", type=Path, default=DEFAULT_DB, help="Arquivo SQLite do estado."
-    )
     corpus_sync.add_argument("--sites", type=Path, default=DEFAULT_SITES, help="CSV de fontes.")
     corpus_sync.add_argument(
         "--batch-size", type=int, default=CORPUS_BATCH_SIZE, help="Artigos por lote."
@@ -256,10 +263,6 @@ def build_parser() -> argparse.ArgumentParser:
         "serve",
         help="Tela simples para marcar se cada notícia entra no corpus (sim, não, incerto).",
     )
-    for parser_ in (labels_export, labels_score):
-        parser_.add_argument(
-            "--db", type=Path, default=DEFAULT_DB, help="Arquivo SQLite do estado."
-        )
     for parser_ in (labels_export, labels_score, labels_serve):
         parser_.add_argument(
             "--out-dir", type=Path, default=DEFAULT_LABELS, help="Pasta dos lotes e da chave."
@@ -282,7 +285,9 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     _add_site_args(run)
-    run.add_argument("--db", type=Path, default=DEFAULT_DB, help="Arquivo SQLite do estado.")
+    run.add_argument(
+        "--lock-file", type=Path, default=DEFAULT_LOCK, help="Trava contra duas execuções."
+    )
     run.add_argument("--workers", type=int, default=8, help="Fontes lidas em paralelo.")
     run.add_argument(
         "--enrich-workers", type=int, default=8, help="Downloads e chamadas ao LLM em paralelo."
@@ -324,16 +329,48 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--progress-every", type=int, default=100, help="Progresso a cada N fontes.")
 
-    backup = commands.add_parser(
-        "backup", help="Cópia consistente do estado (SQLite), com data e hora UTC no nome."
+    probe_sources = commands.add_parser(
+        "probe-sources",
+        help=(
+            "Sonda como obter as matérias novas de cada fonte (sitemap de notícias, sitemap, "
+            "feed), escolhe a melhor estratégia e a grava no estado."
+        ),
     )
-    backup.add_argument("--db", type=Path, default=DEFAULT_DB, help="Arquivo SQLite do estado.")
-    backup.add_argument(
-        "--out-dir", type=Path, default=DEFAULT_BACKUPS, help="Pasta onde a cópia é gravada."
+    _add_site_args(probe_sources)
+    probe_sources.add_argument("--workers", type=int, default=8, help="Threads em paralelo.")
+    probe_sources.add_argument(
+        "--interval",
+        type=float,
+        default=1.0,
+        help="Segundos mínimos entre requisições ao mesmo host.",
     )
-
-    report = commands.add_parser("report", help="Estatísticas das rodadas de descoberta.")
-    report.add_argument("--db", type=Path, default=DEFAULT_DB, help="Arquivo SQLite do estado.")
+    probe_sources.add_argument(
+        "--hints",
+        type=Path,
+        default=DEFAULT_HINTS,
+        help="CSV de dicas de endereços por fonte (só um palpite: vale o que o endereço publica).",
+    )
+    probe_sources.add_argument(
+        "--progress-every",
+        type=int,
+        default=50,
+        help="Imprime o progresso (em stderr) a cada N fontes concluídas.",
+    )
+    probe_sources.add_argument(
+        "--max-requests",
+        type=int,
+        default=DEFAULT_MAX_REQUESTS,
+        help="Orçamento de requisições por fonte (inclui o robots.txt e a home).",
+    )
+    probe_sources.add_argument(
+        "--dry-run", action="store_true", help="Mostra o resultado sem gravar no estado."
+    )
+    commands.add_parser("report", help="Estatísticas das rodadas de descoberta.")
+    migrate = commands.add_parser(
+        "migrate-sqlite",
+        help="Copia um estado antigo em SQLite (var/state.db) para o Postgres (destino vazio).",
+    )
+    migrate.add_argument("sqlite", type=Path, help="Arquivo SQLite do estado antigo.")
     return parser
 
 
@@ -421,7 +458,7 @@ def main(
     """
     args = build_parser().parse_args(argv)
     if args.command == "report":
-        return _report(args.db)
+        return _report()
     if args.command == "labels":
         return _labels(args)
     if args.command == "corpus-sync":
@@ -430,9 +467,9 @@ def main(
         return _enrich(args, enrich_ports or EnrichPorts(), now)
     if args.command == "dashboard":
         return _dashboard(args, serve)
-    if args.command == "backup":
-        return _backup(args, now or datetime.now(UTC))
 
+    if args.command == "migrate-sqlite":
+        return _migrate(args.sqlite)
     if args.command == "run":
         return _run(
             args,
@@ -451,6 +488,8 @@ def main(
     reference = now or datetime.now(UTC)
     if args.command == "probe":
         return _probe(args, sites, fetcher, client, reference)
+    if args.command == "probe-sources":
+        return _probe_sources(args, sites, fetcher, client, reference)
     return _discover(args, sites, fetcher, client, corpus, now, paid_fetcher)
 
 
@@ -472,14 +511,13 @@ def _run(
     pendente é retomado na próxima execução); o código de saída é 1 se alguma falhou. Duas
     execuções ao mesmo tempo não se atropelam: a segunda sai com código 3.
     """
-    args.db.parent.mkdir(parents=True, exist_ok=True)
-    with (args.db.parent / "run.lock").open("w") as lock:
+    args.lock_file.parent.mkdir(parents=True, exist_ok=True)
+    with args.lock_file.open("w") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             print("já existe uma execução em andamento; esta foi dispensada", file=sys.stderr)
             return 3
-        db = str(args.db)
         site_args = ["--sites", str(args.sites)]
         for flag, value in (("--limit", args.limit), ("--only-file", args.only_file)):
             if value is not None:
@@ -489,7 +527,6 @@ def _run(
         discover = [
             "discover",
             *site_args,
-            "--db", db,
             "--corpus",
             "--workers", str(args.workers),
             "--interval", str(args.interval),
@@ -500,7 +537,6 @@ def _run(
         ]  # fmt: skip
         enrich = [
             "enrich",
-            "--db", db,
             "--model", args.model,
             "--workers", str(args.enrich_workers),
             "--interval", str(args.interval),
@@ -508,7 +544,7 @@ def _run(
             "--evidence-store", args.evidence_store,
             "--bright-data-max-requests", str(args.enrich_bright_data_max),
         ]  # fmt: skip
-        sync = ["corpus-sync", "--db", db, "--sites", str(args.sites)]
+        sync = ["corpus-sync", "--sites", str(args.sites)]
         if not args.no_bright_data:
             discover.append("--bright-data")
         discover += ["--skip-off-topic"] * args.skip_off_topic + ["--no-feed"] * args.no_feed
@@ -579,9 +615,7 @@ def _open_stack(
     """
     if fetcher is not None:
         return FetchStack(fetcher, fallback=None)
-    http = client or exit_stack.enter_context(
-        httpx.Client(timeout=_REQUEST_TIMEOUT_SECONDS, follow_redirects=True)
-    )
+    http = _open_http(client, exit_stack)
     return build_fetcher(
         client=http,
         interval=args.interval,
@@ -589,6 +623,13 @@ def _open_stack(
         env=os.environ,
         max_fallback_requests=args.bright_data_max_requests,
         known_fallback_hosts=known_hosts,
+    )
+
+
+def _open_http(client: httpx.Client | None, exit_stack: ExitStack) -> httpx.Client:
+    """O cliente HTTP injetado (testes) ou um novo, fechado junto com ``exit_stack``."""
+    return client or exit_stack.enter_context(
+        httpx.Client(timeout=_REQUEST_TIMEOUT_SECONDS, follow_redirects=True)
     )
 
 
@@ -650,16 +691,15 @@ def _enrich(args: argparse.Namespace, ports: EnrichPorts, now: datetime | None) 
         except (MissingOpenRouterKeyError, MissingCredentialsError, StorageConfigError) as error:
             print(error, file=sys.stderr)
             return 2
-        if not args.db.is_file():
-            print(f"estado não encontrado em {args.db}: rode `discover` antes", file=sys.stderr)
-            return 2
         if unlocker is None:
             print(
                 "aviso: sem Bright Data; achados cujo HTML direto não for confiável ficam sem "
                 "evidência até haver credenciais",
                 file=sys.stderr,
             )
-        store = StateStore(args.db)
+        store = _open_state()
+        if store is None:
+            return 2
         exit_stack.callback(store.close)
         articles = ports.articles or ArticleFetcher(
             build_fetcher(
@@ -758,9 +798,6 @@ def _corpus_sync(
     args: argparse.Namespace, writer: CorpusWriter | None, now: datetime | None
 ) -> int:
     """Subcomando ``corpus-sync``: grava no corpus os achados pendentes e imprime o resumo."""
-    if not args.db.is_file():
-        print(f"estado não encontrado em {args.db}: rode `discover` antes", file=sys.stderr)
-        return 2
     if writer is None:
         try:
             writer = PostgresCorpusWriter.from_env(os.environ)
@@ -770,7 +807,9 @@ def _corpus_sync(
         except Exception as error:  # noqa: BLE001 - qualquer falha de conexão encerra com mensagem
             print(f"não consegui conectar ao corpus: {type(error).__name__}", file=sys.stderr)
             return 2
-    store = StateStore(args.db)
+    store = _open_state()
+    if store is None:
+        return 2
     try:
         check = getattr(writer, "check_schema", None)
         if callable(check):
@@ -820,10 +859,9 @@ def _labels(args: argparse.Namespace) -> int:
     """Subcomando ``labels``: exporta um lote cego, pontua os preenchidos ou abre a tela."""
     if args.labels_command == "serve":
         return _labels_serve(args)
-    if not args.db.is_file():
-        print(f"estado não encontrado em {args.db}", file=sys.stderr)
+    store = _open_state(read_only=True)
+    if store is None:
         return 2
-    store = StateStore(args.db, read_only=True)
     try:
         if args.labels_command == "export":
             batch = export_batch(store, args.out_dir, per_group=args.per_group, seed=args.seed)
@@ -866,41 +904,17 @@ def _labels_serve(args: argparse.Namespace) -> int:
     return 0
 
 
-def _backup(args: argparse.Namespace, now: datetime) -> int:
-    """Grava uma cópia do estado em ``--out-dir``, sem sobrescrever nada."""
-    if not args.db.is_file():
-        print(f"estado não encontrado em {args.db}", file=sys.stderr)
-        return 2
-    destination = args.out_dir / f"state-{now.astimezone(UTC):%Y%m%d-%H%M%S}.db"
-    store = StateStore(args.db, read_only=True)
-    try:
-        store.backup(destination)
-        intact = StateStore(destination, read_only=True)
-        try:
-            ok = intact.integrity_ok()
-        finally:
-            intact.close()
-    except FileExistsError:
-        print(f"a cópia {destination} já existe; nada foi sobrescrito", file=sys.stderr)
-        return 2
-    finally:
-        store.close()
-    print(f"cópia gravada em {destination} ({destination.stat().st_size} bytes)")
-    print(f"integridade: {'ok' if ok else 'FALHOU'}")
-    return 0 if ok else 2
-
-
 def _dashboard(
     args: argparse.Namespace, serve: Callable[[ThreadingHTTPServer], None] | None
 ) -> int:
     """Sobe o painel local e bloqueia até Ctrl+C."""
-    if not args.db.is_file():
-        print(f"estado não encontrado em {args.db}: rode `discover` antes", file=sys.stderr)
+    probe = _open_state(read_only=True)
+    if probe is None:
         return 2
-    # O painel abre o estado só para leitura, que não migra o esquema: um estado de antes de uma
-    # versão nova precisa ser atualizado uma vez, por um abridor normal.
-    StateStore(args.db).close()
-    server = make_server(args.db, args.host, args.port, schedule_path=args.schedule)
+    probe.close()
+    server = make_server(
+        lambda: StateStore(read_only=True), args.host, args.port, schedule_path=args.schedule
+    )
     port = server.server_address[1]
     print(f"painel em http://{args.host}:{port}  (Ctrl+C para sair)", flush=True)
     try:
@@ -941,8 +955,9 @@ def _discover(
                 exit_stack.callback(owned.close)
                 corpus = owned
 
-        args.db.parent.mkdir(parents=True, exist_ok=True)
-        store = StateStore(args.db)
+        store = _open_state()
+        if store is None:
+            return 2
         exit_stack.callback(store.close)
         try:
             fetchers = _open_discovery_fetchers(args, fetcher, paid_fetcher, client, exit_stack)
@@ -1026,9 +1041,7 @@ def _open_discovery_fetchers(
     if fetcher is not None:
         paid = paid_fetcher if args.bright_data else None
         return DiscoveryFetchers(fetcher, paid, counter(paid))
-    http = client or exit_stack.enter_context(
-        httpx.Client(timeout=_REQUEST_TIMEOUT_SECONDS, follow_redirects=True)
-    )
+    http = _open_http(client, exit_stack)
     free = build_fetcher(
         client=http,
         interval=args.interval,
@@ -1045,17 +1058,129 @@ def _open_discovery_fetchers(
     return DiscoveryFetchers(free, paid, counter(limited))
 
 
-def _report(db: Path) -> int:
-    """Imprime as estatísticas do estado (sem criar o arquivo se ele não existir)."""
-    if not db.is_file():
-        print("nenhuma rodada registrada")
-        return 0
-    store = StateStore(db)
+def _probe_sources(
+    args: argparse.Namespace,
+    sites: Sequence[Site],
+    fetcher: Fetcher | None,
+    client: httpx.Client | None,
+    now: datetime,
+) -> int:
+    """Subcomando ``probe-sources``: sonda as fontes e grava a estratégia de cada uma.
+
+    Só grava a fonte em que a sondagem achou um principal: uma falha passageira (bloqueio, rede) não
+    apaga a estratégia que já servia. Uma fonte com defeito não derruba as outras.
+    """
+    hints = load_hints(args.hints)
+    with ExitStack() as exit_stack:
+        store = None
+        if not args.dry_run:
+            store = _open_state()
+            if store is None:
+                return 2
+            exit_stack.callback(store.close)
+        free = (
+            fetcher
+            or build_fetcher(
+                client=_open_http(client, exit_stack),
+                interval=args.interval,
+                bright_data=False,
+                env=os.environ,
+                max_fallback_requests=0,
+            ).fetcher
+        )
+
+        def probe(site: Site) -> SiteStrategy:
+            try:
+                return probe_site(
+                    site,
+                    free,
+                    user_agent=USER_AGENT,
+                    now=now,
+                    hints=hints.for_site(site),
+                    max_requests=args.max_requests,
+                )
+            except Exception as error:  # noqa: BLE001 - uma fonte não derruba as outras
+                return SiteStrategy(site.key, ProbeStatus.ERROR, f"{type(error).__name__}", (), 0)
+
+        results: list[SiteStrategy] = []
+        statuses: Counter[str] = Counter()
+        with ThreadPoolExecutor(max_workers=args.workers) as pool:
+            for done, future in enumerate(as_completed(pool.submit(probe, s) for s in sites), 1):
+                result = future.result()
+                results.append(result)
+                statuses["ok" if result.primary else result.status.value] += 1
+                if store is not None and result.primary is not None:
+                    store.replace_site_strategies(result.site_key, result.reports, now)
+                _print_progress(done, len(sites), statuses, args.progress_every)
+    _print_strategies(results)
+    return 0
+
+
+def _print_strategies(results: Sequence[SiteStrategy]) -> None:
+    """Uma linha por fonte (principal e reserva, ou o motivo de não haver) e o resumo."""
+    for result in sorted(results, key=lambda r: r.site_key):
+        primary, backup = result.primary, result.backup
+        if primary is None:
+            print(f"{result.site_key:<36} sem estratégia ({result.status.value}: {result.detail})")
+            continue
+        line = f"{result.site_key:<36} {_describe(primary)}"
+        print(line + (f"  |  reserva: {_describe(backup)}" if backup else ""))
+    chosen = [r.primary for r in results if r.primary is not None]
+    kinds = Counter(c.kind.value for c in chosen if c.kind is not None)
+    print(f"{'fontes':>20}: {len(results)}")
+    print(f"{'com estratégia':>20}: {len(chosen)}")
+    for kind, count in sorted(kinds.items()):
+        print(f"{kind:>20}: {count}")
+    print(f"{'sem estratégia':>20}: {len(results) - len(chosen)}")
+    print(f"{'requisições':>20}: {sum(r.requests for r in results)}")
+
+
+def _describe(report: CandidateReport) -> str:
+    """Um candidato em uma frase: tipo, o que publica (recentes ou o veredito), nota e endereço."""
+    kind = report.kind.value if report.kind else "?"
+    recent = report.measure.recent if report.measure else 0
+    what = f"{recent} recentes" if report.verdict is Verdict.FRESH else report.verdict.value
+    return f"{kind} ({what}, nota {report.score:.0f}) {report.url}"
+
+
+def _report() -> int:
+    """Imprime as estatísticas do estado."""
+    store = _open_state(read_only=True)
+    if store is None:
+        return 2
     try:
         print(format_report(build_report(store)))
     finally:
         store.close()
     return 0
+
+
+def _migrate(path: Path) -> int:
+    """Subcomando ``migrate-sqlite``: copia o estado antigo para o Postgres e imprime o resumo."""
+    store = _open_state()
+    if store is None:
+        return 2
+    try:
+        counts = migrate_sqlite(path, store)
+    except MigrationError as error:
+        print(error, file=sys.stderr)
+        return 2
+    finally:
+        store.close()
+    for name, count in counts.items():
+        print(f"{name:>20}: {count}")
+    return 0
+
+
+def _open_state(*, read_only: bool = False) -> StateStore | None:
+    """Abre o estado no Postgres; em falha imprime o motivo (nunca a senha) e devolve ``None``."""
+    try:
+        return StateStore(read_only=read_only)
+    except (StateConfigError, StateSchemaError) as error:
+        print(error, file=sys.stderr)
+    except psycopg.Error as error:
+        print(f"não consegui conectar ao estado: {type(error).__name__}", file=sys.stderr)
+    return None
 
 
 def _print_progress(done: int, total: int, statuses: Counter[str], every: int) -> None:

@@ -21,7 +21,6 @@ import argparse
 import csv
 import os
 import random
-import sqlite3
 import sys
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -38,6 +37,7 @@ from buscador_midias.extraction.fetch import ArticleFetcher, PageStatus
 from buscador_midias.extraction.reliability import PageSnapshot, assess_evidence
 from buscador_midias.net.fetcher import USER_AGENT
 from buscador_midias.net.stack import build_fetcher, build_unlocker
+from buscador_midias.state.store import StateStore
 
 ROOT = Path(__file__).resolve().parents[1]
 MIN_SIMILARITY = 0.9
@@ -72,31 +72,31 @@ class Row:
 
 
 def sample_urls(
-    state: Path, n: int, per_site: int, rng: random.Random, source: str = "new"
+    state: StateStore, n: int, per_site: int, rng: random.Random, source: str = "new"
 ) -> list[tuple[str, str | None, str]]:
     """Amostra (url, título, fonte), até ``per_site`` por fonte.
 
     ``new``: URLs novas. ``recent``: as mais recentes por ``lastmod`` de cada
     fonte, para cobrir fontes que ainda não têm URLs novas.
     """
-    connection = sqlite3.connect(state)
     if source == "recent":
         rows = []
-        for (site,) in connection.execute("SELECT DISTINCT site_key FROM urls_seen").fetchall():
+        sites = state._all("SELECT DISTINCT site_key FROM midias_crawler_urls")  # noqa: SLF001
+        for (site,) in sites:
             candidates = [
                 row
-                for row in connection.execute(
-                    "SELECT url, title, site_key FROM urls_seen WHERE site_key = ?"
-                    " ORDER BY lastmod DESC NULLS LAST, rowid DESC LIMIT 40",
+                for row in state._all(  # noqa: SLF001
+                    "SELECT url, title, site_key FROM midias_crawler_urls WHERE site_key = %s"
+                    " ORDER BY lastmod DESC NULLS LAST, id DESC LIMIT 40",
                     (site,),
                 )
                 if l0_filter(row[0]) is None  # o que o L0 descarta nunca chega à evidência
             ]
             rows += rng.sample(candidates, min(per_site, len(candidates)))
     else:
-        rows = connection.execute(
-            "SELECT url, title, site_key FROM urls_seen WHERE kind = 'new'"
-        ).fetchall()
+        rows = state._all(  # noqa: SLF001
+            "SELECT url, title, site_key FROM midias_crawler_urls WHERE kind = 'new'"
+        )
     rng.shuffle(rows)
     taken: Counter[str] = Counter()
     sample = []
@@ -118,12 +118,13 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--source", choices=["new", "recent"], default="new")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--interval", type=float, default=1.0)
-    parser.add_argument("--state", type=Path, default=ROOT / "var/state.db")
     parser.add_argument("--out", type=Path, default=ROOT / "var/evidence_reuse_eval.csv")
     args = parser.parse_args(argv)
 
     now = datetime.now(UTC)
-    sample = sample_urls(args.state, args.n, args.per_site, random.Random(args.seed), args.source)
+    sample = sample_urls(
+        StateStore(read_only=True), args.n, args.per_site, random.Random(args.seed), args.source
+    )
     print(
         f"{len(sample)} URLs de {len({s for *_, s in sample})} fontes; "
         f"Bright Data: até {len(sample)} chamadas"

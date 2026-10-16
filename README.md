@@ -90,7 +90,7 @@ O relatório vai para `var/probe-report.csv` (ignorado pelo git). Respeita o `ro
 
 ## Descoberta incremental
 
-Cada rodada devolve só o que ainda não vimos. Estado em SQLite (`var/state.db`).
+Cada rodada devolve só o que ainda não vimos. O estado vive no **Postgres** (tabelas `midias_crawler_*`, veja "Estado" abaixo).
 
 ```bash
 .venv/bin/python -m buscador_midias discover --only-file data/poc_sample.txt \
@@ -124,6 +124,39 @@ Toda URL inédita é classificada na hora e gravada:
 | `known` | já está no corpus de Mídias IA (hash atual **e** legado); exige `--corpus` |
 | `filtered` | descartada pela forma da URL (L0); o motivo fica gravado |
 | `new` | o resto: candidata à análise |
+
+### Estratégia por fonte: `probe-sources`
+
+A cascata acima roda do zero a cada rodada e não lembra o que funcionou. O `probe-sources` descobre,
+**uma vez por fonte**, qual endereço entrega as matérias novas e grava a escolha (tabela
+`midias_crawler_source_strategies`, `sql/postgres/002_...`). Não mexe no `discover` (ainda).
+
+```bash
+scripts/bm.sh probe-sources --only-file data/teste_20_fontes.txt          # grava
+scripts/bm.sh probe-sources --only g1.globo.com --dry-run                 # só mostra
+# opções: --hints CSV  --max-requests 40 (por fonte)  --workers 8  --interval 1.0
+```
+
+Para cada fonte, em etapas (só avança se falta algo), até o orçamento de requisições:
+
+1. **Dicas** (`data/discovery_hints.csv`, do levantamento de 2026-10-07: só um palpite, e só entra
+   endereço do próprio domínio e sem credencial), o que o `robots.txt` declara ou, sem declaração,
+   `/sitemap.xml` e `/sitemap_index.xml`;
+2. se nenhum sitemap de notícias serviu, `/news-sitemap.xml`, `/sitemap-news.xml` e parentes;
+3. se nenhum feed serviu, os feeds que a home declara ou os caminhos usuais.
+
+Cada candidato é baixado e **medido** (matérias da fonte, quantas nas últimas 48 h, com data, com
+título). Um índice de sitemaps é medido pelos seus melhores filhos (notícias, `lastmod` recente; sem
+tags/autores), e é o índice que se grava, porque o endereço dos filhos muda (um por dia). Veredito:
+`fresh` (serve), `undated` (sem datas: não prova frescor), `stale` (nada recente), `archive` (lista
+enorme quase sem recentes: ler custaria muito e só traria o passado), `empty`, `invalid` (HTML no
+lugar de XML), `blocked`, `disallowed`, `unavailable`.
+
+A **nota** é a cobertura recente (teto 1000) × peso do tipo (sitemap de notícias 1,0; feed 0,9;
+sitemap comum 0,6) × 0,9 se faltar título; só `fresh` e `undated` pontuam (`undated` vale 0,5).
+O de maior nota é o **principal**; a **reserva** é o melhor de *outro tipo* de documento (sobreviver
+à falha de um formato). As regras estão em `strategy/scoring.py`, sem aprendizado de máquina. Uma
+sondagem só grava a fonte se achou um principal: falha passageira não apaga o que já servia.
 
 ### Filtro pela forma da URL (L0)
 
@@ -295,7 +328,7 @@ nesta ordem:
   pela metade. Evite editar o mesmo lote no Excel enquanto a tela está aberta (quem salvar por
   último vence).
 
-## Execução agendada e backup
+## Execução agendada
 
 `run` encadeia descoberta, análise (com o critério e a evidência) e gravação no corpus. Cada etapa
 é o subcomando de mesmo nome, então as opções valem aqui; uma etapa que falha não impede as
@@ -311,24 +344,24 @@ scripts/install_cron.sh --remove                         # tira o bloco do busca
 tail -f var/run.log                                      # saída das execuções do cron
 ```
 
-- `scripts/run.sh` lê as credenciais do `.env` do KyX (`KYX_ENV` muda o caminho), só as variáveis
-  que o buscador usa e sem imprimir nada (nunca com `eval`); o que já está no ambiente vence o
-  arquivo. O corpus é o Postgres local (`CORPUS_DB_HOST` troca o `127.0.0.1`).
+- `scripts/run.sh` (e `scripts/bm.sh <subcomando>` para qualquer outro) lê as credenciais do `.env`
+  do KyX (`KYX_ENV` muda o caminho), só as variáveis que o buscador usa e sem imprimir nada (nunca
+  com `eval`); o que já está no ambiente vence o arquivo. O estado e o corpus são o mesmo Postgres
+  (`DB_MIDIAS_IA_*`, host `127.0.0.1`; `CORPUS_DB_HOST` troca).
 - Tetos de custo por execução: `--discovery-bright-data-max` (60 chamadas) e
   `--enrich-bright-data-max` (100). `--no-bright-data` desliga o pago em tudo.
 - `--enrich-workers` (padrão 8) paraleliza downloads e chamadas ao LLM; a fila de análise intercala as
   fontes para o intervalo de 1 s por host não travar um bloco (cerca de 90 URLs por minuto).
 - `install_cron.sh` reescreve só o bloco `# >>> buscador-midias >>>` do crontab e grava
   `var/schedule.json` (`{"daily": [...]}`) para a agenda do painel.
-- **Escopo:** o cron usa a amostra da POC (`data/poc_sample.txt`, 125 fontes). Ampliar para as 1294
-  fontes exige antes decidir a linha de base (cada fonte nova grava milhares de URLs de histórico).
-
-```bash
-.venv/bin/python -m buscador_midias backup        # var/backups/state-AAAAMMDD-HHMMSS.db (UTC)
-```
-
-`backup` usa a API de backup do SQLite (cópia consistente com o banco em uso), grava um arquivo
-único, confere a integridade e nunca sobrescreve uma cópia existente. `var/` não vai para o git.
+- **Teste de 20 fontes (2026-10-16):** o cron está apontado para `data/teste_20_fontes.txt` (10
+  brasileiras e 10 estrangeiras conhecidas) com `--max-sitemap-fetches 12` (BBC e R7 declaram vários
+  índices no `robots.txt` e o orçamento padrão de 6 acabava neles). Painel: `scripts/bm.sh dashboard`.
+- **Escopo antigo:** o cron usava a amostra da POC (`data/poc_sample.txt`, 125 fontes). Ampliar para as
+  1294 fontes exige antes decidir a linha de base (cada fonte nova grava milhares de URLs de
+  histórico).
+- **Backup:** o estado é do Postgres; o backup é o do banco (`pg_dump`), não mais um comando do
+  buscador.
 
 ## Painel em tempo real
 
@@ -337,7 +370,7 @@ tail -f var/run.log                                      # saída das execuçõe
 .venv/bin/python -m buscador_midias dashboard --port 9000
 ```
 
-Servidor local, **somente leitura** (abre o SQLite com `mode=ro` a cada requisição), sem
+Servidor local, **somente leitura** (sessão do Postgres com `default_transaction_read_only=on`), sem
 dependências novas e sem recursos externos. A página consulta `/api/snapshot` a cada 5 s e mostra:
 estado da descoberta (com progresso da rodada em curso) e do enriquecimento, novas nas últimas 24 h,
 custo da análise, latência de publicação, funil acumulado, atividade por hora, rodadas (com a fonte
@@ -368,8 +401,26 @@ novas com a situação da análise.
 - Escuta só em `127.0.0.1` por padrão: **não tem autenticação**; não exponha na rede.
 - A página HTML é lida na subida do servidor: reinicie o painel depois de editá-la.
 - Uma rodada sem `finished_at` há mais de 3 h aparece como "interrompida?".
-- O comando `dashboard` atualiza uma vez o esquema de um estado de versão anterior antes de abri-lo
-  somente leitura.
+
+## Estado no Postgres
+
+Todo o estado (URLs vistas, rodadas, análises, evidências, gravações) vive nas tabelas
+`midias_crawler_*` do banco `pgsql_midias`, o mesmo do corpus. A conexão é a de sempre
+(`DB_MIDIAS_IA_HOST/PORT/DATABASE/USERNAME/PASSWORD`); não há mais `--db` nem arquivo SQLite.
+
+- **Esquema:** `sql/postgres/001_create_midias_crawler_tables.sql` (13 tabelas) e
+  `002_create_midias_crawler_source_strategies.sql` (a estratégia por fonte); `999_...` desfaz tudo.
+  O buscador nunca cria nem altera tabelas: se faltarem, ele diz qual arquivo rodar. O mesmo DDL deve
+  virar a migration do powerdd-backend. Tipos: datas em `timestamptz`, `themes` e `rejected_reasons`
+  em `text[]`, `entities` em `jsonb`, `finding` e `created` em `boolean`.
+- **Estado antigo em SQLite:** `scripts/bm.sh migrate-sqlite var/state-teste.db` copia o arquivo para
+  as tabelas (só para um destino vazio; mantém os ids das rodadas e a ordem de chegada das URLs;
+  as tabelas da triagem e `corpus_runs.withheld` não migram). Em 2026-10-16 foram migradas as
+  251.579 URLs do teste de 20 fontes; o `var/state.db` das 125 fontes **não** foi migrado (fica como
+  arquivo morto).
+- **Testes:** usam o banco `buscador_midias_test` (nunca o do corpus) no mesmo servidor, com um
+  schema novo por teste criado pelo mesmo DDL (`tests/conftest.py`). Sem o Postgres no ar, os testes
+  que precisam do estado falham com a mensagem de conexão.
 
 ## Catálogo de fontes
 

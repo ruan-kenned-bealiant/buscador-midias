@@ -125,7 +125,7 @@ class FakeWriter:
 def ws(tmp_path: Path) -> dict[str, Path]:
     sites = tmp_path / "sites.csv"
     sites.write_text(SITES, encoding="utf-8")
-    return {"sites": sites, "db": tmp_path / "estado.db", "dir": tmp_path}
+    return {"sites": sites, "lock": tmp_path / "run.lock", "dir": tmp_path}
 
 
 def ports() -> EnrichPorts:
@@ -140,14 +140,16 @@ def run(ws: dict[str, Path], *extra: str, **deps) -> int:
     deps.setdefault("enrich_ports", ports())
     deps.setdefault("corpus_writer", FakeWriter())
     return main(
-        ["run", "--sites", str(ws["sites"]), "--db", str(ws["db"]), *extra], now=NOW, **deps
+        ["run", "--sites", str(ws["sites"]), "--lock-file", str(ws["lock"]), *extra],
+        now=NOW,
+        **deps,
     )
 
 
 def test_parser_do_run_tem_padroes_do_fluxo_agendado():
     args = build_parser().parse_args(["run"])
 
-    assert args.db.name == "state.db"
+    assert args.lock_file.name == "run.lock"
     assert args.no_bright_data is False
     assert args.no_feed is False
     assert args.discovery_bright_data_max == 60
@@ -169,7 +171,7 @@ def test_run_descobre_analisa_confere_o_criterio_captura_evidencia_e_grava_no_co
 
     out = capsys.readouterr().out
     assert code == 0
-    store = StateStore(ws["db"], read_only=True)
+    store = StateStore(read_only=True)
     assert store.count_pending_enrichment() == 0
     assert store.corpus_write_counts() == {"written": 1, "created": 1}
     [article] = writer.corpus.values()
@@ -206,15 +208,14 @@ def test_falha_no_corpus_tambem_vira_codigo_de_saida(
 def test_duas_execucoes_ao_mesmo_tempo_nao_se_atropelam(
     ws: dict[str, Path], capsys: pytest.CaptureFixture[str]
 ):
-    ws["db"].parent.mkdir(parents=True, exist_ok=True)
-    with (ws["db"].parent / "run.lock").open("w") as held:
+    with ws["lock"].open("w") as held:
         fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
         code = run(ws)
 
     assert code == 3
     assert "já existe uma execução em andamento" in capsys.readouterr().err
-    assert not ws["db"].exists()
+    assert StateStore(read_only=True).list_runs() == []  # nada rodou
 
 
 def test_o_lock_e_liberado_ao_terminar(ws: dict[str, Path]):
@@ -230,7 +231,7 @@ def test_com_bright_data_o_sitemap_bloqueado_e_resgatado_pelo_pago(ws: dict[str,
     code = run(ws, fetcher=Blocked(), paid_fetcher=World())
 
     assert code == 0
-    [record] = StateStore(ws["db"], read_only=True).site_runs(1)
+    [record] = StateStore(read_only=True).site_runs(1)
     assert (record.status, record.source) == ("ok", "sitemap_bd")
 
 
@@ -242,7 +243,7 @@ def test_no_bright_data_nao_gasta_nada_e_o_site_fica_com_a_falha(ws: dict[str, P
     code = run(ws, "--no-bright-data", fetcher=Blocked(), paid_fetcher=World())
 
     assert code == 0  # um site bloqueado é resultado, não erro da execução
-    [record] = StateStore(ws["db"], read_only=True).site_runs(1)
+    [record] = StateStore(read_only=True).site_runs(1)
     assert (record.status, record.source) == ("blocked", "")
 
 

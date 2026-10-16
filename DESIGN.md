@@ -20,6 +20,14 @@ gravar no corpus (`midias_ia_*`, Postgres `pgsql_midias`) e no bucket.
   com o critério por entidade a triagem descartava ~2% das URLs e custava mais do que poupava, e o
   L1 nunca entrou no fluxo. Sobrou só o L0, que é barato e certeiro. A decisão de verdade é a
   análise do texto.
+- **Estratégia por fonte, descoberta e lembrada (`strategy/`):** a cascata estática (sitemap, feed,
+  pago) não sabe qual endereço serve cada fonte e relê arquivos inúteis (Le Monde: 105 mil URLs de
+  arquivo no lugar do sitemap de notícias de ~250 itens). `probe-sources` baixa os candidatos
+  (dicas, `robots.txt`, caminhos usuais, links da home), mede o que cada um publica agora (itens
+  das últimas 48 h, com título e data), descarta arquivo, lista defasada e HTML, pontua com regras
+  explícitas e grava um principal e uma reserva de outro tipo. O CSV de levantamento é só dica: é
+  uma fotografia de uma data e de uma rede. Fatia 1 (sondar e gravar) feita; falta o `discover`
+  usar a escolha e reavaliar sozinho quando a fonte degrada.
 - **Um critério, em um lugar** (`criteria.py`): a matéria entra se a análise **leu o texto** e achou
   **entidade identificável**. Evidência e corpus olham só para ela (a regra existe em Python e em
   SQL, com teste de concordância).
@@ -33,7 +41,9 @@ gravar no corpus (`midias_ia_*`, Postgres `pgsql_midias`) e no bucket.
   (`ThrottledFetcher`, trava por host); evita a complexidade de `asyncio` na POC.
 - **Leitura defensiva de XML:** sitemaps são conteúdo de terceiros — sem entidades externas, sem
   rede, e limite de 50 MB descomprimido (gzip bomb).
-- **Estado da POC em SQLite** (URLs vistas, saúde por site), descartável.
+- **Estado em Postgres** (`midias_crawler_*`, o mesmo banco do corpus): URLs vistas, saúde por
+  site, análises, evidências e gravações. Começou em SQLite e migrou em 2026-10-16 (o DDL é a fonte
+  do esquema e vira migration do powerdd-backend).
 - **Backfill histórico:** fora do escopo inicial; pensado depois, com janela finita.
 
 ## Fases
@@ -55,12 +65,13 @@ src/buscador_midias/
   sites/       catálogo de fontes
   net/         fetcher educado (limite de tamanho, intervalo por host)  [fase 1]
   discovery/   robots → sitemap/feed (cascata) → relatório, filtro L0
+  strategy/    sondar candidatos, medir, pontuar e escolher a estratégia de cada fonte
   criteria.py  o critério do corpus (Python e SQL)
   extraction/  artigo: texto, data, idioma                    [fase 4]
   analysis/    cliente OpenRouter, entidades, temas, resumo   [fase 4]
   evidence/    porta de armazenamento                         [fase 4]
   corpus/      CorpusWriter (Postgres), mapeamento, sync      [fase 4]
-  state/       SQLite                                         [fase 2]
+  state/       Postgres (midias_crawler_*) e migração do SQLite antigo  [fase 2]
 ```
 
 ## Regras de trabalho

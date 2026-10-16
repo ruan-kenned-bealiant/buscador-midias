@@ -204,3 +204,20 @@ def test_horario_diario_invalido_e_ignorado(tmp_path: Path):
     jobs = load_schedule(path, now=now, tz=BRT)
 
     assert {job.name for job in jobs} == {"Rodada das 06:00"}
+
+
+def test_horario_diario_anterior_a_primeira_rodada_do_estado_nao_vira_atrasado(tmp_path: Path):
+    now = datetime(2026, 10, 15, 15, 0, tzinfo=BRT)
+    path = write_daily(tmp_path / "s.json", DAILY)
+    first = datetime(2026, 10, 15, 11, 30, tzinfo=BRT)  # o estado só começou às 11:30 de hoje
+
+    jobs = build_schedule(path=path, discovery_runs=[run(1, first)], now=now, tz=BRT)["jobs"]
+
+    assert [j["at"][:16] for j in jobs] == [
+        "2026-10-15T12:00",
+        "2026-10-15T16:00",
+        "2026-10-16T06:00",
+        "2026-10-16T12:00",
+        "2026-10-16T16:00",
+    ]
+    assert jobs[0]["state"] == "overdue"  # 12:00 de hoje já passou sem rodada

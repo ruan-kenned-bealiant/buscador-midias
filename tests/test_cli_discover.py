@@ -57,14 +57,14 @@ class FakeCorpus:
 def workspace(tmp_path: Path) -> dict[str, Path]:
     sites = tmp_path / "sites.csv"
     sites.write_text(SITES, encoding="utf-8")
-    return {"sites": sites, "db": tmp_path / "estado.db", "dir": tmp_path}
+    return {"sites": sites, "dir": tmp_path}
 
 
 def discover(
     ws: dict[str, Path], *extra: str, fetcher: object | None = None, **kwargs: object
 ) -> int:
     return main(
-        ["discover", "--sites", str(ws["sites"]), "--db", str(ws["db"]), *extra],
+        ["discover", "--sites", str(ws["sites"]), *extra],
         fetcher=fetcher,  # type: ignore[arg-type]
         now=NOW,
         **kwargs,  # type: ignore[arg-type]
@@ -80,7 +80,6 @@ def number(out: str, label: str) -> int:
 def test_parser_do_discover_tem_padroes_conservadores():
     args = build_parser().parse_args(["discover"])
 
-    assert args.db.name == "state.db"
     assert args.fresh_days == 7
     assert args.max_sitemap_fetches == 6
     assert args.corpus is False
@@ -109,7 +108,7 @@ def test_primeira_rodada_e_linha_de_base_e_a_segunda_acha_as_novas(
 def test_estado_persiste_entre_execucoes_no_arquivo(workspace: dict[str, Path]):
     discover(workspace, fetcher=World())
 
-    store = StateStore(workspace["db"])
+    store = StateStore()
 
     assert [r.id for r in store.list_runs()] == [1]
     assert store.count_urls() == 6
@@ -124,7 +123,7 @@ def test_only_file_ignora_comentarios_e_linhas_em_branco(workspace: dict[str, Pa
 
     assert code == 0
     assert not any("a.com" in call for call in world.calls)
-    assert {r.site_key for r in StateStore(workspace["db"]).site_runs(1)} == {"b.com", "c.com"}
+    assert {r.site_key for r in StateStore().site_runs(1)} == {"b.com", "c.com"}
 
 
 def test_only_e_only_file_se_somam(workspace: dict[str, Path]):
@@ -133,7 +132,7 @@ def test_only_e_only_file_se_somam(workspace: dict[str, Path]):
 
     discover(workspace, "--only-file", str(keys), "--only", "c.com", fetcher=World())
 
-    assert {r.site_key for r in StateStore(workspace["db"]).site_runs(1)} == {"b.com", "c.com"}
+    assert {r.site_key for r in StateStore().site_runs(1)} == {"b.com", "c.com"}
 
 
 def test_chave_desconhecida_no_arquivo_aborta_sem_criar_rodada(
@@ -187,7 +186,7 @@ def test_report_mostra_as_rodadas(workspace: dict[str, Path], capsys: pytest.Cap
     discover(workspace, fetcher=world)
     capsys.readouterr()
 
-    code = main(["report", "--db", str(workspace["db"])])
+    code = main(["report"])
 
     out = capsys.readouterr().out
     assert code == 0
@@ -195,10 +194,10 @@ def test_report_mostra_as_rodadas(workspace: dict[str, Path], capsys: pytest.Cap
     assert "rodada 2" in out
 
 
-def test_report_sem_banco_nao_cria_arquivo_nem_quebra(
+def test_report_sem_rodadas_nao_quebra(
     workspace: dict[str, Path], capsys: pytest.CaptureFixture[str]
 ):
-    code = main(["report", "--db", str(workspace["db"])])
+    code = main(["report"])
 
     assert code == 0
     assert "nenhuma rodada registrada" in capsys.readouterr().out
@@ -214,12 +213,15 @@ def test_bright_data_sem_credenciais_aborta_sem_criar_rodada(
 
     assert code == 2
     assert "BRIGHTDATA_API_KEY" in capsys.readouterr().err
-    assert StateStore(workspace["db"]).list_runs() == []
+    assert StateStore().list_runs() == []
 
 
 def test_corpus_sem_variaveis_aborta_sem_criar_rodada(
     workspace: dict[str, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):
+    import os
+
+    connection = dict(os.environ)  # o estado segue acessível para conferir que nada foi criado
     for name in ("HOST", "PORT", "DATABASE", "USERNAME", "PASSWORD"):
         monkeypatch.delenv(f"DB_MIDIAS_IA_{name}", raising=False)
 
@@ -227,7 +229,7 @@ def test_corpus_sem_variaveis_aborta_sem_criar_rodada(
 
     assert code == 2
     assert "DB_MIDIAS_IA_HOST" in capsys.readouterr().err
-    assert StateStore(workspace["db"]).list_runs() == []
+    assert StateStore(connection).list_runs() == []
 
 
 def test_corpus_fora_do_ar_nao_derruba_a_descoberta(
@@ -245,7 +247,7 @@ def test_corpus_fora_do_ar_nao_derruba_a_descoberta(
     captured = capsys.readouterr()
     assert code == 0
     assert "corpus indisponível (ConnectionError)" in captured.err
-    assert [r.id for r in StateStore(workspace["db"]).list_runs()] == [1]
+    assert len(StateStore().list_runs()) == 1
 
 
 def test_host_bloqueado_fica_persistido_e_nao_tenta_o_sitemap_gratuito_de_novo(
@@ -275,7 +277,7 @@ def test_host_bloqueado_fica_persistido_e_nao_tenta_o_sitemap_gratuito_de_novo(
         return discover(workspace, "--bright-data", "--interval", "0", client=client)
 
     assert run_once() == 0
-    assert StateStore(workspace["db"]).fallback_hosts() == frozenset({"bloqueado.com"})
+    assert StateStore().fallback_hosts() == frozenset({"bloqueado.com"})
     assert any(c.startswith("DIRETO") for c in calls)
 
     calls.clear()
@@ -321,16 +323,15 @@ def test_parser_do_painel_escuta_so_na_maquina_local_por_padrao():
 
     assert args.host == "127.0.0.1"
     assert args.port == 8765
-    assert args.db.name == "state.db"
     assert args.schedule.name == "schedule.json"
 
 
-def test_painel_sem_estado_aborta_com_mensagem(
-    workspace: dict[str, Path], capsys: pytest.CaptureFixture[str]
+def test_painel_sem_conexao_com_o_estado_aborta_com_mensagem(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ):
-    code = main(
-        ["dashboard", "--db", str(workspace["db"]), "--port", "0"], serve=lambda server: None
-    )
+    monkeypatch.setenv("DB_MIDIAS_IA_PORT", "1")  # nada escuta nessa porta
+
+    code = main(["dashboard", "--port", "0"], serve=lambda server: None)
 
     assert code == 2
     assert "estado" in capsys.readouterr().err
@@ -346,30 +347,11 @@ def test_painel_sobe_o_servidor_e_mostra_o_endereco(
     def serve(server) -> None:
         started.append(server.server_address[:2])
 
-    code = main(["dashboard", "--db", str(workspace["db"]), "--port", "0"], serve=serve)
+    code = main(["dashboard", "--port", "0"], serve=serve)
 
     assert code == 0
     assert started[0][0] == "127.0.0.1"
     assert f"http://127.0.0.1:{started[0][1]}" in capsys.readouterr().out
-
-
-def test_painel_atualiza_o_esquema_de_um_estado_antigo_antes_de_abrir_somente_leitura(
-    workspace: dict[str, Path],
-):
-    import sqlite3
-
-    assert discover(workspace, fetcher=World()) == 0
-    legacy = sqlite3.connect(workspace["db"])
-    legacy.execute(
-        "ALTER TABLE site_runs DROP COLUMN source"
-    )  # como num estado de antes da cascata
-    legacy.commit()
-    legacy.close()
-
-    code = main(["dashboard", "--db", str(workspace["db"]), "--port", "0"], serve=lambda s: None)
-
-    assert code == 0
-    assert StateStore(workspace["db"], read_only=True).site_runs(1)[0].source == ""
 
 
 def test_uso_do_bright_data_fica_gravado_na_rodada(
@@ -394,7 +376,7 @@ def test_uso_do_bright_data_fica_gravado_na_rodada(
     client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
     assert discover(workspace, "--bright-data", "--interval", "0", client=client) == 0
 
-    [record] = StateStore(workspace["db"]).list_runs()
+    [record] = StateStore().list_runs()
     assert record.bright_data_requests == 2  # robots.txt e sitemap
     assert record.bright_data_hosts == 1
 
@@ -402,48 +384,8 @@ def test_uso_do_bright_data_fica_gravado_na_rodada(
 def test_rodada_sem_bright_data_grava_zero(workspace: dict[str, Path]):
     assert discover(workspace, fetcher=World()) == 0
 
-    [record] = StateStore(workspace["db"]).list_runs()
+    [record] = StateStore().list_runs()
     assert record.bright_data_requests == 0
-
-
-def test_backup_copia_o_estado_com_data_no_nome(
-    workspace: dict[str, Path], capsys: pytest.CaptureFixture[str]
-):
-    assert discover(workspace, fetcher=World()) == 0
-    capsys.readouterr()
-    out_dir = workspace["dir"] / "backups"
-
-    code = main(["backup", "--db", str(workspace["db"]), "--out-dir", str(out_dir)], now=NOW)
-
-    assert code == 0
-    [saved] = list(out_dir.iterdir())
-    assert saved.name == "state-20261015-120000.db"
-    assert StateStore(saved, read_only=True).count_urls() > 0
-    assert str(saved) in capsys.readouterr().out
-
-
-def test_backup_sem_estado_aborta(workspace: dict[str, Path], capsys: pytest.CaptureFixture[str]):
-    code = main(
-        ["backup", "--db", str(workspace["db"]), "--out-dir", str(workspace["dir"] / "b")], now=NOW
-    )
-
-    assert code == 2
-    assert "estado" in capsys.readouterr().err
-    assert not (workspace["dir"] / "b").exists()
-
-
-def test_backup_repetido_no_mesmo_segundo_nao_sobrescreve(
-    workspace: dict[str, Path], capsys: pytest.CaptureFixture[str]
-):
-    assert discover(workspace, fetcher=World()) == 0
-    out_dir = workspace["dir"] / "backups"
-    argv = ["backup", "--db", str(workspace["db"]), "--out-dir", str(out_dir)]
-    assert main(argv, now=NOW) == 0
-    capsys.readouterr()
-
-    assert main(argv, now=NOW) == 2
-
-    assert "já existe" in capsys.readouterr().err
 
 
 def feed_xml(*links: str) -> bytes:
@@ -471,7 +413,7 @@ def test_site_sem_sitemap_e_lido_pelo_feed_e_o_resumo_mostra_as_fontes(
 
     out = capsys.readouterr().out
     assert "fontes: sitemap 0, feed 1, sitemap pago 0" in out
-    [record] = StateStore(workspace["db"]).site_runs(1)
+    [record] = StateStore().site_runs(1)
     assert (record.status, record.source, record.baseline_urls) == ("ok", "feed", 1)
 
 
@@ -493,6 +435,6 @@ def test_no_feed_desliga_a_alternativa(
 
     assert discover(workspace, "--no-feed", "--interval", "0", client=client) == 0
 
-    [record] = StateStore(workspace["db"]).site_runs(1)
+    [record] = StateStore().site_runs(1)
     assert (record.status, record.source) == ("no_sitemap", "")
     assert build_parser().parse_args(["discover"]).no_feed is False
