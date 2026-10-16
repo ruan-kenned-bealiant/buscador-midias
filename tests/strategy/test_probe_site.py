@@ -391,3 +391,28 @@ def test_endereco_forcado_de_listagem_e_baixado():
     result = probe(fetcher, forced=[tags])
 
     assert result.primary is not None and result.primary.url == tags
+
+
+def test_feed_lento_vira_estrategia_quando_nao_ha_nada_melhor():
+    fetcher = FakeFetcher({ROBOTS: robots(), FEED: rss(("a", 240), ("b", 300))})
+
+    result = probe(fetcher)
+
+    assert result.status is ProbeStatus.OK
+    assert result.primary is not None and result.primary.verdict is Verdict.SLOW
+
+
+def test_sitemap_lento_declarado_nao_dispensa_procurar_o_de_noticias():
+    slow = f"{HOME}/sitemap.xml"
+    fetcher = FakeFetcher(
+        {
+            ROBOTS: robots(slow),
+            slow: plain_sitemap(("velho", 240.0)),
+            NEWS: news_sitemap(*((f"n{i}", 1) for i in range(8))),
+        }
+    )
+
+    result = probe(fetcher)
+
+    assert NEWS in fetcher.calls
+    assert result.primary is not None and result.primary.url == NEWS

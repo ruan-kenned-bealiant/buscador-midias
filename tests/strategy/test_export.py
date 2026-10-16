@@ -1,5 +1,6 @@
 """Planilha de conferência: o que se sabe de cada fonte, os candidatos e as seções."""
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -197,3 +198,118 @@ def test_csv_grava_um_arquivo_por_aba_ao_lado(tmp_path: Path):
     assert path.read_text(encoding="utf-8-sig").splitlines()[0].startswith("Fonte,")
     assert (tmp_path / "estrategias-candidatos.csv").is_file()
     assert (tmp_path / "estrategias-secoes.csv").is_file()
+
+
+def test_fonte_lenta_aparece_como_lenta_com_a_data_da_ultima_materia():
+    lenta = site("Lenta", "https://lenta.com")
+    rows = [
+        (
+            "lenta.com",
+            candidate(
+                "https://lenta.com/feed/",
+                Role.PRIMARY,
+                kind=StrategyKind.FEED,
+                verdict=Verdict.SLOW,
+                recent=0,
+                coverage=None,
+            ),
+            T0,
+        )
+    ]
+
+    t = build_tables([lenta], rows, {}, SourceHints({}, {})).summary
+    row = dict(zip(t.headers, t.rows[0], strict=True))
+
+    assert row["Situação"] == "lenta"
+    assert row["Recentes 48h (principal)"] == 0
+    assert row["Última matéria (principal)"] == T0
+
+
+def _map(rows, sites=None):
+    t = build_tables(sites or [G1], rows, {}, SourceHints({}, {})).section_map
+    return t, [dict(zip(t.headers, r, strict=True)) for r in t.rows]
+
+
+def test_mapa_de_secoes_junta_as_secoes_de_todas_as_candidatas_e_marca_as_cobertas():
+    rows = [
+        ("g1.globo.com", candidate("https://g1.globo.com/a.xml", Role.PRIMARY), T0),
+        (
+            "g1.globo.com",
+            candidate(
+                "https://g1.globo.com/b.xml", Role.COMPLEMENT, sections=(("mg", 25), ("sp", 5))
+            ),
+            T0,
+        ),
+        (
+            "g1.globo.com",
+            candidate("https://g1.globo.com/c.xml", None, sections=(("rj", 30),), recent=30),
+            T0,
+        ),
+    ]
+
+    _, mapped = _map(rows)
+    by_section = {r["Seção"]: r for r in mapped}
+
+    assert set(by_section) == {"sp", "politica", "mg", "rj"}
+    assert by_section["sp"]["Coberta pelo conjunto"] == "sim"
+    assert by_section["sp"]["Matérias"] == 60  # a maior contagem entre as candidatas
+    assert by_section["mg"]["Listada em"] == "complemento"
+    assert by_section["rj"]["Coberta pelo conjunto"] == "não"
+    assert by_section["rj"]["Listada em"] == "só em candidata não escolhida"
+    assert [r["Seção"] for r in mapped][0] == "sp"  # da maior para a menor
+
+
+def test_resumo_conta_secoes_vistas_e_fora_do_conjunto():
+    rows = [
+        ("g1.globo.com", candidate("https://g1.globo.com/a.xml", Role.PRIMARY), T0),
+        (
+            "g1.globo.com",
+            candidate("https://g1.globo.com/c.xml", None, sections=(("rj", 30),), recent=30),
+            T0,
+        ),
+    ]
+
+    t = build_tables([G1], rows, {}, SourceHints({}, {})).summary
+    row = dict(zip(t.headers, t.rows[0], strict=True))
+
+    assert row["Seções vistas (todas as candidatas)"] == 3
+    assert row["Seções fora do conjunto"] == 1
+
+
+def test_url_plana_nao_tem_secoes_confiaveis():
+    """Quando o primeiro trecho do caminho muda a cada matéria, não é seção."""
+    flat = tuple((f"titulo-{n}", 1) for n in range(40))
+    rows = [
+        (
+            "g1.globo.com",
+            candidate("https://g1.globo.com/a.xml", Role.PRIMARY, recent=40, sections=flat),
+            T0,
+        )
+    ]
+
+    t = build_tables([G1], rows, {}, SourceHints({}, {}))
+    mapped = [dict(zip(t.section_map.headers, r, strict=True)) for r in t.section_map.rows]
+    row = dict(zip(t.summary.headers, t.summary.rows[0], strict=True))
+
+    assert len(mapped) == 1 and "não são seções" in mapped[0]["Observação"]
+    assert row["Seções vistas (todas as candidatas)"] == "URL plana"
+
+
+def test_secoes_alem_do_limite_guardado_viram_um_aviso():
+    secs = tuple((f"s{n}", 100 - n) for n in range(40))
+    base = candidate("https://g1.globo.com/a.xml", Role.PRIMARY, recent=2000, sections=secs)
+    assert base.measure is not None
+    truncated = replace(base, measure=replace(base.measure, sections=90))
+    rows = [("g1.globo.com", truncated, T0)]
+
+    _, mapped = _map(rows)
+
+    assert any("90 seções" in r["Observação"] for r in mapped)
+
+
+def test_arquivos_csv_ganham_o_mapa_de_secoes(tmp_path: Path):
+    tables = build_tables([G1], ROWS, STATES, HINTS)
+
+    write_csv(tables, tmp_path / "e.csv")
+
+    assert (tmp_path / "e-mapa-secoes.csv").is_file()

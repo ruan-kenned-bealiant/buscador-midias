@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from urllib.parse import urlsplit
@@ -27,6 +28,7 @@ from buscador_midias.domain.strategy import (
     Verdict,
 )
 from buscador_midias.net.fetcher import Fetcher, FetchResult
+from buscador_midias.strategy.manual import is_excluded
 from buscador_midias.strategy.measure import measure_items, recent_of, section_of
 from buscador_midias.strategy.scoring import ScoringPolicy, judge, score
 
@@ -68,6 +70,7 @@ def evaluate_candidate(
     max_children: int = DEFAULT_MAX_CHILDREN,
     thematic_children: int = DEFAULT_THEMATIC_CHILDREN,
     allow_listing: bool = False,
+    exclude: Sequence[str] = (),
 ) -> CandidateReport:
     """Sonda um candidato e devolve o relatório (nunca levanta por causa do site).
 
@@ -92,6 +95,7 @@ def evaluate_candidate(
         max_children: Quantos filhos de um índice datado se leem.
         thematic_children: Quantos filhos se leem de um índice com várias famílias de arquivos.
         allow_listing: Se vale baixar um sitemap de listagem (só um endereço forçado à mão).
+        exclude: Endereços que uma regra manual manda não baixar (também filhos de índice).
 
     Returns:
         O relatório, com veredito, medida e nota.
@@ -124,7 +128,7 @@ def evaluate_candidate(
         return report(document.verdict, document.detail)
     if document.parsed is not None and document.parsed.kind is SitemapKind.INDEX:
         children = _children(
-            document.parsed, site, robots, user_agent, max_children, thematic_children
+            document.parsed, site, robots, user_agent, max_children, thematic_children, exclude
         )
         documents: list[_Document] = []
         failures: list[_Failure] = []
@@ -155,7 +159,7 @@ def evaluate_candidate(
         detail = ""
 
     measure = measure_items(kind, items, now=now, size_bytes=size)
-    verdict = judge(measure, scoring)
+    verdict = judge(measure, scoring, now=now)
     if verdict is Verdict.EMPTY and not detail:
         detail = "nenhuma URL da fonte"
     final = report(verdict, detail, kind, measure, score(measure, verdict, scoring))
@@ -221,9 +225,14 @@ def _children(
     user_agent: str,
     limit: int,
     thematic_limit: int,
+    exclude: Sequence[str] = (),
 ) -> list[str]:
     """Filhos de um índice que valem a leitura: sem listagens e dentro do que o robots permite."""
-    ranked = prioritize_children(index.children, section_terms(site))
+    ranked = [
+        c
+        for c in prioritize_children(index.children, section_terms(site))
+        if not is_excluded(c.loc, exclude)
+    ]
     candidates = [c for c in ranked if not is_taxonomy_sitemap(c.loc)] or ranked
     chosen = _select_children(candidates, limit, thematic_limit)
     return [c.loc for c in chosen if robots.allows(c.loc, user_agent)]

@@ -1287,7 +1287,7 @@ def _export_strategies(args: argparse.Namespace) -> int:
         print(error, file=sys.stderr)
         return 2
     probed = sum(1 for r in tables.summary.rows if r[5] != "não sondada")
-    ok = sum(1 for r in tables.summary.rows if r[5] == "ok")
+    ok = sum(1 for r in tables.summary.rows if r[5] in ("ok", "lenta"))
     print(f"{len(sites)} fontes ({probed} sondadas, {ok} com estratégia) em {args.out}")
     return 0
 
@@ -1325,7 +1325,13 @@ def _describe(report: CandidateReport) -> str:
     """Um candidato em uma frase: tipo, o que publica (recentes ou o veredito), nota e endereço."""
     kind = report.kind.value if report.kind else "?"
     recent = report.measure.recent if report.measure else 0
-    what = f"{recent} recentes" if report.verdict is Verdict.FRESH else report.verdict.value
+    newest = report.measure.newest if report.measure else None
+    if report.verdict is Verdict.FRESH:
+        what = f"{recent} recentes"
+    elif report.verdict is Verdict.SLOW and newest is not None:
+        what = f"lenta, última matéria em {newest:%Y-%m-%d}"
+    else:
+        what = report.verdict.value
     return f"{kind} ({what}, nota {report.score:.0f}) {report.url}"
 
 

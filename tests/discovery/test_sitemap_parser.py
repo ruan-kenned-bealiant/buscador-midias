@@ -1,4 +1,6 @@
 import gzip
+import io
+import zipfile
 from datetime import UTC, datetime
 
 import pytest
@@ -170,3 +172,39 @@ def test_xml_puro_acima_do_limite_e_rejeitado():
 def test_gzip_corrompido_levanta_erro():
     with pytest.raises(SitemapParseError, match="gzip"):
         parse_sitemap(b"\x1f\x8bnao-e-gzip-de-verdade")
+
+
+def _zip(**files: bytes) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in files.items():
+            archive.writestr(name, data)
+    return buffer.getvalue()
+
+
+def test_aceita_sitemap_dentro_de_um_zip():
+    parsed = parse_sitemap(_zip(**{"sitemap.xml": URLSET}))
+
+    assert parsed.kind is SitemapKind.URLSET and parsed.entries
+
+
+def test_zip_com_varios_arquivos_e_rejeitado_em_vez_de_ler_so_um():
+    with pytest.raises(SitemapParseError, match="vários"):
+        parse_sitemap(_zip(**{"a.xml": URLSET, "b.xml": URLSET}))
+
+
+def test_zip_acima_do_limite_descomprimido_e_rejeitado():
+    bomba = _zip(**{"s.xml": b"<urlset>" + b" " * 10_000 + b"</urlset>"})
+
+    with pytest.raises(SitemapParseError, match="limite"):
+        parse_sitemap(bomba, max_bytes=1_000)
+
+
+def test_zip_corrompido_levanta_erro():
+    with pytest.raises(SitemapParseError, match="zip"):
+        parse_sitemap(b"PK\x03\x04nao-e-zip-de-verdade")
+
+
+def test_zip_vazio_levanta_erro():
+    with pytest.raises(SitemapParseError, match="zip"):
+        parse_sitemap(_zip())

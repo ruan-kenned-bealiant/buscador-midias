@@ -61,8 +61,15 @@ _LISTING_SEGMENTS: frozenset[str] = frozenset(
         "page",
         "search",
         "busca",
+        "product",
+        "products",
+        "shop",
     }
 )
+
+# Um termo de listagem só marca listagem se quase nada vem depois dele (o nome da tag, a página):
+# ``/category/world/2026/10/17/titulo`` é uma matéria cujo caminho começa por "category".
+_MAX_NAME_SEGMENTS = 1
 
 _ASSET_EXTENSIONS: frozenset[str] = frozenset(
     {
@@ -94,7 +101,9 @@ def l0_filter(url: str, *, off_topic_segments: frozenset[str] = frozenset()) -> 
 
     - ``HOME``: caminho vazio.
     - ``ASSET``: termina em extensão de mídia ou dado (imagem, vídeo, XML...). PDF não entra.
-    - ``LISTING``: algum segmento é de listagem (``tag``, ``author``, ``category``, ``page``...).
+    - ``LISTING``: algum segmento é de listagem (``tag``, ``author``, ``category``, ``page``...) e é
+      seguido de no máximo um nome (``/tag/cars``, ``/politica/page/2``); com mais caminho depois
+      (``/category/world/2026/10/17/titulo``) é uma matéria.
     - ``SECTION``: um único segmento, só letras (sem hífen, dígito ou ponto): é seção ou página
       institucional, pois o *slug* de uma matéria quase sempre tem várias palavras.
     - ``OFF_TOPIC``: algum segmento **antes do último** está em ``off_topic_segments`` (o último é
@@ -121,10 +130,25 @@ def l0_filter(url: str, *, off_topic_segments: frozenset[str] = frozenset()) -> 
     extension = _EXTENSION.search(segments[-1])
     if extension and extension.group(1) in _ASSET_EXTENSIONS:
         return FilterReason.ASSET
-    if any(part in _LISTING_SEGMENTS for part in segments):
+    if _is_listing(segments):
         return FilterReason.LISTING
     if len(segments) == 1 and re.fullmatch(r"[^\W\d_]+", segments[0]):
         return FilterReason.SECTION
     if any(part in off_topic_segments for part in segments[:-1]):
         return FilterReason.OFF_TOPIC
     return None
+
+
+def _is_listing(segments: list[str]) -> bool:
+    """Se algum termo de listagem é seguido de no máximo um nome (tirada a paginação final)."""
+    for index, part in enumerate(segments):
+        if part not in _LISTING_SEGMENTS:
+            continue
+        rest = segments[index + 1 :]
+        if rest and re.fullmatch(r"\d{1,4}", rest[-1]):  # número de página no fim
+            rest = rest[:-1]
+            if rest and rest[-1] == "page":
+                rest = rest[:-1]
+        if len(rest) <= _MAX_NAME_SEGMENTS:
+            return True
+    return False

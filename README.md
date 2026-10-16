@@ -208,6 +208,16 @@ rodada. Uma ação desconhecida aborta o `probe-sources` com a linha do erro, pa
 erro de digitação não ficar sem efeito em silêncio. A planilha `var/revisar-nao-noticia.xlsx` lista
 as fontes cujo principal parece listagem (tags, categorias, produtos), com 5 URLs de amostra.
 
+**Zip como categoria de leitura:** um sitemap pode vir em ``.xml``, ``.xml.gz`` ou ``.zip`` (de um único
+XML); o zip é lido com o mesmo limite de tamanho do gzip (a bomba de descompressão vale para o que
+se lê, não para o tamanho declarado) e um zip com vários arquivos é recusado, em vez de ler só um.
+A exclusão manual vale também para os filhos de um índice (`https://www.seudinheiro.com/cotacoes-sitemap.xml`).
+
+**Filtro de forma (L0):** um termo de listagem (`category`, `page`, `tag`, `product`...) só descarta a URL
+se quase nada vem depois dele (`/tag/cars`, `/politica/page/2`). Com mais caminho
+(`/category/world/2026/10/17/titulo`, `/page/202610/123.shtml`) é matéria: antes, sites como
+`freemalaysiatoday.com` e `globaltimes.cn` tinham todas as matérias descartadas.
+
 **Regras da sondagem que vieram de sites reais:** um sitemap de tags, categorias, autores ou produtos
 no topo nunca é baixado (só um endereço forçado); um sitemap declarado no `robots.txt` que falha ou
 dá 404 ganha uma segunda tentativa (os adivinhados não); uma lista grande só é "arquivo" se tiver

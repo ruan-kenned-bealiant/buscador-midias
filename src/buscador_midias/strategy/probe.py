@@ -30,6 +30,7 @@ from buscador_midias.domain.strategy import (
 )
 from buscador_midias.net.fetcher import Fetcher
 from buscador_midias.strategy.evaluate import DEFAULT_MAX_CHILDREN, evaluate_candidate
+from buscador_midias.strategy.manual import is_excluded
 from buscador_midias.strategy.scoring import ScoringPolicy, choose, plan_coverage
 
 DEFAULT_MAX_REQUESTS = 40
@@ -108,7 +109,9 @@ class _Run:
 
     def has_usable(self, kind: StrategyKind) -> bool:
         """Se algum candidato do tipo já serve."""
-        return any(r.kind is kind and r.score > 0 for r in self.reports)
+        return any(
+            r.kind is kind and r.score > 0 and r.verdict is not Verdict.SLOW for r in self.reports
+        )
 
     def evaluate(
         self,
@@ -141,7 +144,7 @@ class _Run:
                 report = replace(again, requests=report.requests + again.requests)
             self.requests += report.requests
             self.reports.append(replace(report, url=url, forced=forced))
-            if until_usable and report.score > 0:
+            if until_usable and report.score > 0 and report.verdict is not Verdict.SLOW:
                 break
 
     def _evaluate_once(self, url: str, origin: CandidateOrigin, forced: bool) -> CandidateReport:
@@ -157,14 +160,12 @@ class _Run:
             scoring=self.scoring,
             max_children=DEFAULT_MAX_CHILDREN,
             allow_listing=forced,
+            exclude=self._exclude,
         )
 
     def _is_excluded(self, url: str) -> bool:
-        """Se uma regra manual manda não sondar o endereço (``*`` no fim vale o prefixo)."""
-        return any(
-            url.startswith(rule[:-1]) if rule.endswith("*") else url == rule
-            for rule in self._exclude
-        )
+        """Se uma regra manual manda não sondar o endereço."""
+        return is_excluded(url, self._exclude)
 
 
 def _excluded(url: str, origin: CandidateOrigin) -> CandidateReport:

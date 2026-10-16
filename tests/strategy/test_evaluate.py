@@ -33,6 +33,7 @@ def evaluate(
     site=None,
     origin=CandidateOrigin.ROBOTS,
     allow_listing=False,
+    exclude=(),
 ):
     return evaluate_candidate(
         url,
@@ -46,6 +47,7 @@ def evaluate(
         max_children=max_children,
         thematic_children=thematic_children,
         allow_listing=allow_listing,
+        exclude=exclude,
     )
 
 
@@ -311,3 +313,36 @@ def test_indice_de_categorias_por_ano_le_o_ano_mais_novo_de_cada_categoria():
     assert f"{HOME}/sitemap/juridico/2026.xml" in fetcher.calls
     assert f"{HOME}/sitemap/conceito/2025.xml" not in fetcher.calls
     assert f"{HOME}/sitemap/juridico/2025.xml" not in fetcher.calls
+
+
+def test_feed_com_ultimo_item_de_dez_dias_e_lento_e_pontua():
+    fetcher = FakeFetcher({NEWS: rss(("a", 240), ("b", 500))})
+
+    report = evaluate(fetcher)
+
+    assert report.verdict is Verdict.SLOW and report.score > 0
+    assert report.measure is not None and report.measure.recent == 0
+    assert report.recent_urls == frozenset()
+
+
+def test_sitemap_com_lastmod_de_um_ano_continua_defasado():
+    fetcher = FakeFetcher({NEWS: plain_sitemap(("a", 24 * 400.0))})
+
+    assert evaluate(fetcher).verdict is Verdict.STALE
+
+
+def test_filho_de_indice_excluido_a_mao_nao_e_baixado():
+    """seudinheiro: o índice traz cotacoes-sitemap.xml, milhares de páginas de ação."""
+    index = sitemap_index((f"{HOME}/cotacoes-sitemap.xml", 1), (f"{HOME}/news-sitemap-1.xml", 2))
+    fetcher = FakeFetcher(
+        {
+            NEWS: index,
+            f"{HOME}/cotacoes-sitemap.xml": plain_sitemap(*((f"c{i}", 1) for i in range(30))),
+            f"{HOME}/news-sitemap-1.xml": news_sitemap(("n1", 1)),
+        }
+    )
+
+    report = evaluate(fetcher, exclude=[f"{HOME}/cotacoes-sitemap.xml"])
+
+    assert f"{HOME}/cotacoes-sitemap.xml" not in fetcher.calls
+    assert report.measure is not None and report.measure.items == 1

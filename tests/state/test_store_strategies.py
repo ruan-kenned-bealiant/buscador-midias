@@ -215,3 +215,14 @@ def test_strategy_rows_traz_todos_os_candidatos_com_a_fonte_e_o_instante():
         ("a.com", "https://a.com/o", T0),
         ("b.com", "https://b.com/x", T0 + timedelta(hours=1)),
     }
+
+
+def test_grava_e_devolve_uma_estrategia_lenta():
+    store = StateStore()
+    slow = report(
+        "https://a.com/feed", kind=StrategyKind.FEED, verdict=Verdict.SLOW, role=Role.PRIMARY
+    )
+
+    store.replace_site_strategies("a.com", [slow], T0)
+
+    assert store.site_strategies("a.com")[0].verdict is Verdict.SLOW

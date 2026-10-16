@@ -73,6 +73,35 @@ def test_itens_sem_nenhuma_data_nao_provam_frescor():
     assert judge(measure(items=[item(1, hours_ago=None)])) is Verdict.UNDATED
 
 
+def test_fonte_que_publica_devagar_e_lenta_nao_defasada():
+    """A janela de 48 h é só uma régua da POC: quem publicou no último trimestre está viva."""
+    ten_days = measure(items=[item(1, hours_ago=240)])
+
+    assert judge(ten_days, now=NOW) is Verdict.SLOW
+
+
+def test_fonte_sem_nada_no_ultimo_trimestre_continua_defasada():
+    old = measure(items=[item(1, hours_ago=24 * 200)])
+
+    assert judge(old, now=NOW) is Verdict.STALE
+
+
+def test_sem_o_instante_de_referencia_nao_se_conclui_lenta():
+    assert judge(measure(items=[item(1, hours_ago=240)])) is Verdict.STALE
+
+
+def test_a_janela_da_fonte_lenta_e_ajustavel():
+    policy = ScoringPolicy(slow_window_days=5)
+
+    assert judge(measure(items=[item(1, hours_ago=240)]), policy, now=NOW) is Verdict.STALE
+
+
+def test_um_item_com_data_no_futuro_distante_nao_vira_lenta():
+    future = measure(items=[item(1, hours_ago=-24 * 30)])
+
+    assert judge(future, now=NOW) is Verdict.STALE
+
+
 def test_itens_so_antigos_estao_defasados():
     assert judge(measure(items=[item(1, hours_ago=500)])) is Verdict.STALE
 
@@ -118,6 +147,14 @@ def test_lista_enorme_mas_quase_toda_recente_nao_e_arquivo():
 
 
 # --- nota ---
+
+
+def test_lenta_tem_nota_menor_que_qualquer_fonte_fresca_e_maior_que_sem_data():
+    one_recent = score(measure(items=[item(1)]), Verdict.FRESH)
+    slow = score(measure(items=[item(1, hours_ago=240)]), Verdict.SLOW)
+    undated = score(measure(items=[item(1, hours_ago=None)]), Verdict.UNDATED)
+
+    assert undated < slow < one_recent
 
 
 def test_so_fresca_ou_sem_data_tem_nota():
@@ -211,6 +248,14 @@ def test_endereco_forcado_que_nao_serve_nao_e_escolhido():
     assert {r.url: r.role for r in choose(reports)}["a"] is Role.PRIMARY
 
 
+def test_a_lenta_e_escolhida_quando_nao_ha_nada_melhor_e_perde_para_a_fresca():
+    slow = report("lenta", StrategyKind.FEED, 0.7, Verdict.SLOW)
+    fresh = report("fresca", StrategyKind.SITEMAP, 5)
+
+    assert {r.url: r.role for r in choose([slow])}["lenta"] is Role.PRIMARY
+    assert {r.url: r.role for r in choose([slow, fresh])}["fresca"] is Role.PRIMARY
+
+
 def test_sem_outro_tipo_nao_ha_reserva():
     reports = [report("a", StrategyKind.FEED, 10), report("b", StrategyKind.FEED, 9)]
 
@@ -282,11 +327,11 @@ def test_sem_itens_recentes_as_secoes_vem_de_todos_os_itens():
 
 
 def test_so_as_secoes_mais_frequentes_ficam_na_medida():
-    items = [Item(f"https://x.com/{n}", NOW, "t", f"s{n}") for n in range(30)]
+    items = [Item(f"https://x.com/{n}", NOW, "t", f"s{n}") for n in range(60)]
 
     result = measure(items=items)
 
-    assert result.sections == 30 and len(result.top_sections) == 12
+    assert result.sections == 60 and len(result.top_sections) == 40
 
 
 # --- cobertura: a união das fontes é o "site todo" que dá para ver ---

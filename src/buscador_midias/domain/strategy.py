@@ -29,6 +29,7 @@ class Verdict(StrEnum):
 
     FRESH = "fresh"
     UNDATED = "undated"
+    SLOW = "slow"
     STALE = "stale"
     ARCHIVE = "archive"
     EMPTY = "empty"

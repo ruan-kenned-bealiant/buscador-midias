@@ -354,3 +354,26 @@ def test_acao_desconhecida_no_arquivo_manual_aborta_com_mensagem(
 
     assert code == 2
     assert "apagar" in capsys.readouterr().err
+
+
+def test_resumo_diz_que_a_fonte_e_lenta_e_quando_foi_a_ultima_materia(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    path = tmp_path / "sites.csv"
+    path.write_text(
+        "region,name,url,country,country_code,language,source_type\n"
+        "Brasil,Lenta,https://lenta.com,Brasil,BR,Português,Jornal\n",
+        encoding="utf-8",
+    )
+    fetcher = FakeFetcher(
+        {
+            "https://lenta.com/robots.txt": robots(),
+            "https://lenta.com/feed/": rss(("a", 240), ("b", 300), host="https://lenta.com"),
+        }
+    )
+
+    code = probe_sources(path, "--dry-run", fetcher=fetcher)
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "lenta, última matéria em 2026-10-06" in out

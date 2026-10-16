@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
+from datetime import datetime, timedelta
 
 from buscador_midias.domain.strategy import (
     CandidateReport,
@@ -12,8 +13,9 @@ from buscador_midias.domain.strategy import (
     StrategyKind,
     Verdict,
 )
+from buscador_midias.strategy.measure import FUTURE_TOLERANCE
 
-_SCORED = frozenset({Verdict.FRESH, Verdict.UNDATED})
+_SCORED = frozenset({Verdict.FRESH, Verdict.UNDATED, Verdict.SLOW})
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +30,11 @@ class ScoringPolicy:
             10 mil URLs com centenas de recentes está vivo, mesmo que sejam poucos por cento.
         coverage_cap: Teto de itens recentes que contam na nota (mais que isso não melhora a fonte).
         undated_coverage: Cobertura atribuída a uma lista sem datas (não dá para provar frescor).
+        slow_window_days: Uma fonte sem nada nas últimas 48 h, mas com matéria neste prazo, é lenta
+            (publica devagar), não defasada: a janela de 48 h é só uma régua da POC, e o objetivo é
+            mapear como obter as matérias de cada fonte, também das que publicam de vez em quando.
+        slow_coverage: Cobertura atribuída a uma fonte lenta: abaixo de qualquer fonte fresca (que
+            tem ao menos uma matéria recente) e acima de uma lista sem datas, que nem a vida prova.
         untitled_factor: Multiplicador de uma lista em que menos da metade dos itens tem título.
         max_complements: Quantas fontes a mais, além do principal e da reserva, entram para cobrir o
             que eles não listam.
@@ -44,6 +51,8 @@ class ScoringPolicy:
     archive_keep_recent: int = 100
     coverage_cap: int = 1000
     undated_coverage: float = 0.5
+    slow_window_days: int = 90
+    slow_coverage: float = 0.75
     untitled_factor: float = 0.9
     max_complements: int = 3
     min_gain_urls: int = 5
@@ -57,16 +66,20 @@ class ScoringPolicy:
     )
 
 
-def judge(measure: Measure, policy: ScoringPolicy | None = None) -> Verdict:
+def judge(
+    measure: Measure, policy: ScoringPolicy | None = None, *, now: datetime | None = None
+) -> Verdict:
     """Conclui se a lista serve para descobrir matérias novas.
 
     Args:
         measure: O que o candidato publica.
         policy: Parâmetros do julgamento.
+        now: Instante de referência; sem ele não se distingue a fonte lenta da defasada.
 
     Returns:
         ``EMPTY`` sem itens; ``ARCHIVE`` para lista enorme quase sem recentes (ou sem datas);
-        ``UNDATED`` sem nenhuma data; ``STALE`` se nada é recente; senão ``FRESH``.
+        ``UNDATED`` sem nenhuma data; ``FRESH`` se há matéria recente; ``SLOW`` se a mais nova tem
+        até ``slow_window_days``; senão ``STALE``.
     """
     policy = policy or ScoringPolicy()
     if measure.items == 0:
@@ -80,8 +93,16 @@ def judge(measure: Measure, policy: ScoringPolicy | None = None) -> Verdict:
     if measure.dated == 0:
         return Verdict.UNDATED
     if measure.recent == 0:
-        return Verdict.STALE
+        return Verdict.SLOW if _is_slow(measure, policy, now) else Verdict.STALE
     return Verdict.FRESH
+
+
+def _is_slow(measure: Measure, policy: ScoringPolicy, now: datetime | None) -> bool:
+    """Se a matéria mais nova é de dentro do prazo da fonte lenta (e não é de um futuro absurdo)."""
+    if now is None or measure.newest is None:
+        return False
+    age = now - measure.newest
+    return -FUTURE_TOLERANCE <= age <= timedelta(days=policy.slow_window_days)
 
 
 def score(measure: Measure, verdict: Verdict, policy: ScoringPolicy | None = None) -> float:
@@ -98,11 +119,10 @@ def score(measure: Measure, verdict: Verdict, policy: ScoringPolicy | None = Non
     policy = policy or ScoringPolicy()
     if verdict not in _SCORED:
         return 0.0
-    coverage = (
-        min(measure.recent, policy.coverage_cap)
-        if verdict is Verdict.FRESH
-        else policy.undated_coverage
-    )
+    coverage = {
+        Verdict.FRESH: float(min(measure.recent, policy.coverage_cap)),
+        Verdict.SLOW: policy.slow_coverage,
+    }.get(verdict, policy.undated_coverage)
     richness = 1.0 if measure.titled * 2 >= measure.items else policy.untitled_factor
     return coverage * policy.kind_factor[measure.kind] * richness
 

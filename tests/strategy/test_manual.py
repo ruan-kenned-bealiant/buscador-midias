@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from tests.strategy.helpers import make_site
 
-from buscador_midias.strategy.manual import ManualRules, load_manual_rules
+from buscador_midias.strategy.manual import ManualRules, is_excluded, load_manual_rules
 
 HEADER = "dominio,endereco,acao,motivo\n"
 
@@ -73,3 +73,12 @@ def test_endereco_de_outro_dominio_e_descartado(tmp_path: Path):
     rules = load_manual_rules(write(tmp_path, "exemplo.com,https://malicioso.com/x,forçar,"))
 
     assert rules.for_site(make_site("https://exemplo.com")).force == ()
+
+
+def test_is_excluded_vale_para_o_endereco_exato_e_para_o_prefixo_com_asterisco():
+    rules = ("https://a.com/x.xml", "https://a.com/tag/*")
+
+    assert is_excluded("https://a.com/x.xml", rules)
+    assert is_excluded("https://a.com/tag/qualquer/coisa", rules)
+    assert not is_excluded("https://a.com/x.xml?p=2", rules)
+    assert not is_excluded("https://a.com/outro", rules)

@@ -7,6 +7,7 @@ rodada, sem mexer em código.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -40,6 +41,11 @@ class ManualRulesBook:
         """As regras da fonte; um endereço forçado de outro domínio é descartado."""
         found = self._rules.get(site.key, ManualRules((), ()))
         return ManualRules(found.exclude, tuple(u for u in found.force if site.owns_host(u)))
+
+
+def is_excluded(url: str, rules: Sequence[str]) -> bool:
+    """Se uma regra manda não sondar o endereço (``*`` no fim vale o prefixo)."""
+    return any(url.startswith(rule[:-1]) if rule.endswith("*") else url == rule for rule in rules)
 
 
 def load_manual_rules(path: Path) -> ManualRulesBook:

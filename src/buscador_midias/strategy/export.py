@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from buscador_midias.domain.site import Site
-from buscador_midias.domain.strategy import CandidateReport, ProbeState, Role
+from buscador_midias.domain.strategy import CandidateReport, Measure, ProbeState, Role, Verdict
 from buscador_midias.strategy.hints import SourceHints
 
 SUMMARY_SHEET = "Estratégia"
@@ -39,8 +39,11 @@ SUMMARY_HEADERS = (
     "Estratégia principal",
     "Endereço principal",
     "Recentes 48h (principal)",
+    "Última matéria (principal)",
     "Seções (principal)",
     "Maior seção",
+    "Seções vistas (todas as candidatas)",
+    "Seções fora do conjunto",
     "Reserva",
     "Endereço da reserva",
     "Complementos",
@@ -86,6 +89,22 @@ SECTION_HEADERS = (
     "Matérias recentes",
     "% do candidato",
 )
+MAP_HEADERS = (
+    "Chave",
+    "Fonte",
+    "Seção",
+    "Matérias",
+    "Coberta pelo conjunto",
+    "Listada em",
+    "Observação",
+)
+MAP_SHEET = "Mapa de seções"
+_FLAT_MIN_SECTIONS = 10
+_FLAT_MAX_RATIO = 0.5
+_FLAT_NOTE = (
+    "O primeiro trecho do caminho muda a cada matéria (URL plana): não são seções, "
+    "então não dá para mapear o site por elas"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,11 +117,12 @@ class Table:
 
 @dataclass(frozen=True, slots=True)
 class StrategyTables:
-    """As três abas da planilha."""
+    """As abas da planilha."""
 
     summary: Table
     candidates: Table
     sections: Table
+    section_map: Table
 
 
 def build_tables(
@@ -137,7 +157,10 @@ def build_tables(
         )
         for site in sites
     }
-    summary = [_summary_row(s, ordered[s.key], states.get(s.key), hints) for s in sites]
+    maps = {s.key: _section_map(s, [r for r, _ in ordered[s.key]]) for s in sites}
+    summary = [
+        _summary_row(s, ordered[s.key], states.get(s.key), hints, maps[s.key]) for s in sites
+    ]
     cand_rows = [
         _candidate_row(s, report, probed_at) for s in sites for report, probed_at in ordered[s.key]
     ]
@@ -152,6 +175,7 @@ def build_tables(
         Table(SUMMARY_HEADERS, tuple(summary)),
         Table(CANDIDATE_HEADERS, tuple(cand_rows)),
         Table(SECTION_HEADERS, tuple(section_rows)),
+        Table(MAP_HEADERS, tuple(row for s in sites for row in maps[s.key].rows)),
     )
 
 
@@ -174,6 +198,7 @@ def write_xlsx(tables: StrategyTables, path: Path) -> None:
         (SUMMARY_SHEET, tables.summary, "C2"),
         (CANDIDATES_SHEET, tables.candidates, "C2"),
         (SECTIONS_SHEET, tables.sections, "A2"),
+        (MAP_SHEET, tables.section_map, "C2"),
     )
     for title, table, freeze in sheets:
         sheet = book.create_sheet(title)
@@ -205,6 +230,7 @@ def write_csv(tables: StrategyTables, path: Path) -> None:
         (path, tables.summary),
         (path.with_name(f"{path.stem}-candidatos{path.suffix}"), tables.candidates),
         (path.with_name(f"{path.stem}-secoes{path.suffix}"), tables.sections),
+        (path.with_name(f"{path.stem}-mapa-secoes{path.suffix}"), tables.section_map),
     )
     for target, table in targets:
         with target.open("w", encoding="utf-8-sig", newline="") as handle:
@@ -218,6 +244,7 @@ def _summary_row(
     rows: Sequence[tuple[CandidateReport, datetime]],
     state: ProbeState | None,
     hints: SourceHints,
+    section_map: _SectionMap,
 ) -> tuple[Any, ...]:
     reports = [report for report, _ in rows]
     primary = next((r for r in reports if r.role is Role.PRIMARY), None)
@@ -225,7 +252,7 @@ def _summary_row(
     complements = [r for r in reports if r.role is Role.COMPLEMENT]
     reference = hints.reference(site)
     if primary is not None:
-        situation = "ok"
+        situation = "lenta" if primary.verdict is Verdict.SLOW else "ok"
     elif state is not None or rows:
         situation = "sem estratégia"
     else:
@@ -246,8 +273,11 @@ def _summary_row(
         primary.kind.value if primary and primary.kind else "",
         primary.url if primary else "",
         measure.recent if measure else "",
+        measure.newest if measure else "",
         measure.sections if measure else "",
         f"{top[0]} ({top[1] / base:.0%})" if top else "",
+        section_map.seen if rows else "",
+        section_map.outside if rows else "",
         backup.kind.value if backup and backup.kind else "",
         backup.url if backup else "",
         len(complements) if primary else "",
@@ -300,6 +330,61 @@ def _sections(site: Site, report: CandidateReport) -> list[tuple[Any, ...]]:
         (site.key, site.name, role, report.url, name, count, count / base)
         for name, count in m.top_sections
     ]
+
+
+@dataclass(frozen=True, slots=True)
+class _SectionMap:
+    """O mapa de seções de uma fonte: as linhas da aba e os números do resumo."""
+
+    rows: tuple[tuple[Any, ...], ...]
+    seen: int | str
+    outside: int | str
+
+
+def _section_map(site: Site, reports: Sequence[CandidateReport]) -> _SectionMap:
+    """Une as seções de todas as candidatas e marca as que o conjunto escolhido lista.
+
+    A seção é o primeiro trecho do caminho: em sites de URL plana (``/titulo-da-materia``) ele
+    muda a cada matéria e o mapa não vale, o que se avisa em vez de listar milhares de "seções".
+    Só as maiores seções de cada candidata ficam gravadas (``MAX_TOP_SECTIONS``), e o aviso diz
+    quando há mais.
+    """
+    measured = [r for r in reports if r.measure is not None and r.measure.top_sections]
+    if not measured:
+        return _SectionMap((), 0, 0)
+    primary = next((r for r in measured if r.role is Role.PRIMARY), measured[0])
+    assert primary.measure is not None
+    if _is_flat(primary.measure):
+        row = (site.key, site.name, "(URL plana)", "", "", "", _FLAT_NOTE)
+        return _SectionMap((row,), "URL plana", "URL plana")
+    found: dict[str, tuple[int, set[str], bool]] = {}
+    for report in measured:
+        assert report.measure is not None
+        label = _ROLE_NAMES[report.role] if report.role else ""
+        for name, count in report.measure.top_sections:
+            best, labels, covered = found.get(name, (0, set(), False))
+            labels.add(label)
+            found[name] = (max(best, count), labels, covered or report.role is not None)
+    ordered = sorted(found.items(), key=lambda item: (-item[1][0], item[0]))
+    rows: list[tuple[Any, ...]] = []
+    total = primary.measure.sections
+    if total > len(primary.measure.top_sections):
+        note = (
+            f"{total} seções no total; só as {len(primary.measure.top_sections)} maiores aparecem"
+        )
+        rows.append((site.key, site.name, "", "", "", "", note))
+    for name, (count, labels, covered) in ordered:
+        named = sorted(label for label in labels if label)
+        where = ", ".join(named) if named else "só em candidata não escolhida"
+        rows.append((site.key, site.name, name, count, "sim" if covered else "não", where, ""))
+    outside = sum(1 for _, (_, _, covered) in ordered if not covered)
+    return _SectionMap(tuple(rows), len(ordered), outside)
+
+
+def _is_flat(measure: Measure) -> bool:
+    """Se há mais "seções" que a metade das matérias: o caminho não traz seção."""
+    base = measure.recent or measure.items or 1
+    return measure.sections >= _FLAT_MIN_SECTIONS and measure.sections > base * _FLAT_MAX_RATIO
 
 
 def _cell(value: Any) -> Any:

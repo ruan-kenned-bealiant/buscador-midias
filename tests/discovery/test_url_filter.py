@@ -14,6 +14,9 @@ from buscador_midias.discovery.url_filter import DEFAULT_OFF_TOPIC_SEGMENTS, Fil
         "https://exemplo.com/2026/10/15/titulo-da-materia",
         "https://exemplo.com/economia/negocios/empresa-e-alvo-de-investigacao",
         "https://exemplo.com/a%C3%A7%C3%A3o/materia-com-acento",
+        # "category" e "page" são parte do caminho da matéria em alguns sites, não listagem
+        "https://www.freemalaysiatoday.com/category/world/2026/10/17/israeli-settlers-attack-us",
+        "https://www.globaltimes.cn/page/202610/1372421.shtml",
     ],
 )
 def test_materias_passam(url):
@@ -41,6 +44,10 @@ def test_pagina_inicial(url):
         "https://exemplo.com/TAG/Eleicoes",
         "https://exemplo.com/politica/page/2/",
         "https://exemplo.com/search/corrupcao",
+        "https://exemplo.com/category/noticias/page/3/",
+        "https://exemplo.com/tag/economia/2",
+        "https://www.theelephant.info/product/donate-one-time/",
+        "https://exemplo.com/shop/camiseta",
     ],
 )
 def test_paginas_de_listagem(url):
