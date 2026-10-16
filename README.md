@@ -22,7 +22,8 @@ scripts/install_cron.sh                            # instala 06:00, 12:00 e 16:0
 
 | Passo | Etapa | Comando avulso |
 |---|---|---|
-| 1. Buscar notícias novas | sitemap → feed → sitemap pelo Bright Data (cascata) | `discover` |
+| 0. Revisar estratégias | reavalia só as fontes na vez (veja "Reavaliação automática") | `probe-sources --due` |
+| 1. Buscar notícias novas | estratégia da fonte → sitemap → feed → sitemap pelo Bright Data | `discover` |
 | 2. Analisar o contexto | texto por HTTP direto + LLM: entidades, temas, fato adverso | `enrich` |
 | 3. Conferir o critério | `criteria.py`: matéria **lida** e com **entidade** identificável | (dentro do `enrich`) |
 | 4. Capturar a evidência | só das que atendem ao critério | `enrich` |
@@ -127,9 +128,18 @@ Toda URL inédita é classificada na hora e gravada:
 
 ### Estratégia por fonte: `probe-sources`
 
-A cascata acima roda do zero a cada rodada e não lembra o que funcionou. O `probe-sources` descobre,
-**uma vez por fonte**, qual endereço entrega as matérias novas e grava a escolha (tabela
-`midias_crawler_source_strategies`, `sql/postgres/002_...`). Não mexe no `discover` (ainda).
+A cascata acima, sozinha, roda do zero a cada rodada e não lembra o que funcionou. O `probe-sources`
+descobre, **uma vez por fonte**, qual endereço entrega as matérias novas e grava a escolha (tabela
+`midias_crawler_source_strategies`, `sql/postgres/002_...`).
+
+**O `discover` (e, portanto, o `run` e o cron) já usa a escolha:** para cada fonte tenta primeiro o
+principal, depois a reserva, e só então a cascata de sempre (sitemap do `robots.txt`, feed, Bright
+Data) como plano B. Se o endereço escolhido mudou ou quebrou, a fonte não fica sem descoberta.
+`--no-strategy` (no `discover` e no `run`) ignora a escolha. Fonte sem estratégia gravada segue só a
+cascata. Um host que já precisou do Bright Data não tem a estratégia de sitemap tentada de graça.
+Medição de 2026-10-16 (20 fontes, uma rodada logo após a outra): a estratégia leu 41 sitemaps contra
+176 da cascata e achou o que ela deixou passar (g1: +1.258 URLs novas, que a cascata não alcançava
+no orçamento de sitemaps; El País: +46, que a cascata via bloqueado); nas outras 17 achou o mesmo.
 
 ```bash
 scripts/bm.sh probe-sources --only-file data/teste_20_fontes.txt          # grava
@@ -157,6 +167,34 @@ sitemap comum 0,6) × 0,9 se faltar título; só `fresh` e `undated` pontuam (`u
 O de maior nota é o **principal**; a **reserva** é o melhor de *outro tipo* de documento (sobreviver
 à falha de um formato). As regras estão em `strategy/scoring.py`, sem aprendizado de máquina. Uma
 sondagem só grava a fonte se achou um principal: falha passageira não apaga o que já servia.
+
+#### Reavaliação automática (`probe-sources --due`, o passo 0 do `run`)
+
+Antes de cada descoberta o `run` reavalia **só as fontes na vez** (poucas por rodada). A regra está
+em `strategy/health.py`, com parâmetros em `HealthPolicy`, e olha só as rodadas **desde a última
+sondagem**:
+
+| Motivo | Quando |
+|---|---|
+| `never_probed` | a fonte nunca foi sondada (estratégias gravadas antes do controle são adotadas com a idade da sondagem) |
+| `refresh` | a estratégia tem mais de 7 dias (endereços mudam) |
+| `retry` | a fonte não tinha estratégia e a espera acabou |
+| `failing` | as 2 últimas rodadas falharam (bloqueio, erro, sem sitemap) |
+| `silent` | 4 rodadas `ok` sem nenhuma URL nova, numa fonte que antes rendeu 10 ou mais |
+| `shrunk` | a rodada listou menos de 25% da mediana das anteriores (mediana ≥ 20; rodadas com sitemaps pulados não entram: o volume não é comparável) |
+
+**Espera crescente:** sondagem sem achar nada, ou por saúde sem mudar a escolha, dobra a espera até
+a próxima reavaliação por saúde (6 h, 12 h, 24 h... até 7 dias), então uma fonte quieta por natureza
+não é sondada a cada rodada. Reavaliação por idade ou manual zera a espera; escolha nova também. A
+sondagem só troca a estratégia gravada se achou um principal. O estado fica em
+`midias_crawler_source_probe_state` (`sql/postgres/003_...`).
+
+**Endereços com data embutida** (um sitemap por dia ou mês, como `.../sitemap/2026-10-15/` ou
+`sitemap-2026-10.xml`) viram modelo (`{YYYY}-{MM}-{DD}`) quando a data é recente (até 45 dias; mês
+corrente e dois anteriores), e a descoberta lê o de hoje e o de ontem (o dia vira em horas
+diferentes por fuso). Arquivos de ano antigo não viram modelo. Em um índice sem `lastmod`, os filhos
+se ordenam pela data da URL (e `latest`/`recent` vêm antes): era o que fazia o índice por dia do
+Estadão (9.951 filhos, do mais novo ao mais antigo) ser lido do fim, nos anos 1999.
 
 ### Filtro pela forma da URL (L0)
 
@@ -409,7 +447,8 @@ Todo o estado (URLs vistas, rodadas, análises, evidências, gravações) vive n
 (`DB_MIDIAS_IA_HOST/PORT/DATABASE/USERNAME/PASSWORD`); não há mais `--db` nem arquivo SQLite.
 
 - **Esquema:** `sql/postgres/001_create_midias_crawler_tables.sql` (13 tabelas) e
-  `002_create_midias_crawler_source_strategies.sql` (a estratégia por fonte); `999_...` desfaz tudo.
+  `002_create_midias_crawler_source_strategies.sql` (a estratégia por fonte) e
+  `003_create_midias_crawler_source_probe_state.sql` (quando reavaliar); `999_...` desfaz tudo.
   O buscador nunca cria nem altera tabelas: se faltarem, ele diz qual arquivo rodar. O mesmo DDL deve
   virar a migration do powerdd-backend. Tipos: datas em `timestamptz`, `themes` e `rejected_reasons`
   em `text[]`, `entities` em `jsonb`, `finding` e `created` em `boolean`.

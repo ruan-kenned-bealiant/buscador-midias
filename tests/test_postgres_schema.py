@@ -24,6 +24,7 @@ TABLES = {
     "midias_crawler_corpus_runs",
     "midias_crawler_fallback_hosts",
     "midias_crawler_source_strategies",
+    "midias_crawler_source_probe_state",
 }
 
 
@@ -67,7 +68,8 @@ def test_os_valores_aceitos_pelos_checks_cobrem_o_que_o_codigo_grava():
 
 def test_os_checks_das_estrategias_cobrem_os_enums_do_dominio():
     from buscador_midias.domain.strategy import CandidateOrigin, Role, StrategyKind, Verdict
+    from buscador_midias.strategy.health import DueReason
 
-    for enum in (CandidateOrigin, Role, StrategyKind, Verdict):
+    for enum in (CandidateOrigin, Role, StrategyKind, Verdict, DueReason):
         for value in enum:
             assert f"'{value.value}'" in UP, (enum, value)

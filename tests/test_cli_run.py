@@ -266,3 +266,22 @@ def test_as_etapas_recebem_as_opcoes_proprias(ws: dict[str, Path], monkeypatch: 
     assert discover[discover.index("--workers") + 1] == "3"
     assert enrich[enrich.index("--workers") + 1] == "12"
     assert "--skip-off-topic" in discover
+
+
+def test_run_revisa_as_estrategias_antes_da_descoberta(
+    ws: dict[str, Path], capsys: pytest.CaptureFixture[str]
+):
+    assert run(ws) == 0
+
+    out = capsys.readouterr().out
+    assert out.index("== ESTRATÉGIA") < out.index("== DESCOBERTA")
+    assert "never_probed" in out  # a.com nunca foi sondada
+
+
+def test_run_no_strategy_nao_revisa_as_estrategias(
+    ws: dict[str, Path], capsys: pytest.CaptureFixture[str]
+):
+    assert run(ws, "--no-strategy") == 0
+
+    assert "== ESTRATÉGIA" not in capsys.readouterr().out
+    assert StateStore().probe_states() == {}

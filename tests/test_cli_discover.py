@@ -438,3 +438,83 @@ def test_no_feed_desliga_a_alternativa(
     [record] = StateStore().site_runs(1)
     assert (record.status, record.source) == ("no_sitemap", "")
     assert build_parser().parse_args(["discover"]).no_feed is False
+
+
+class StrategyWorld(World):
+    """O robots declara /sitemap.xml, mas a estratégia gravada aponta para /estrategia.xml."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.strategy_pages = ["https://a.com/e1", "https://a.com/e2"]
+
+    def get(self, url: str) -> FetchResult:
+        if url == "https://a.com/estrategia.xml":
+            self.calls.append(url)
+            return FetchResult(url, 200, sitemap(*self.strategy_pages), None)
+        return super().get(url)
+
+
+def store_strategy(url: str = "https://a.com/estrategia.xml") -> None:
+    from buscador_midias.domain.strategy import (
+        CandidateOrigin,
+        CandidateReport,
+        Role,
+        StrategyKind,
+        Verdict,
+    )
+
+    StateStore().replace_site_strategies(
+        "a.com",
+        [
+            CandidateReport(
+                url=url,
+                origin=CandidateOrigin.HINT,
+                verdict=Verdict.FRESH,
+                kind=StrategyKind.NEWS_SITEMAP,
+                measure=None,
+                score=10,
+                detail="",
+                role=Role.PRIMARY,
+            )
+        ],
+        NOW,
+    )
+
+
+def test_descoberta_usa_a_estrategia_gravada_da_fonte(workspace: dict[str, Path]):
+    world = StrategyWorld()
+    store_strategy()
+
+    assert discover(workspace, "--only", "a.com", fetcher=world) == 0
+
+    assert "https://a.com/estrategia.xml" in world.calls
+    assert "https://a.com/sitemap.xml" not in world.calls  # o plano B nem foi preciso
+    rows = StateStore()._all("SELECT url FROM midias_crawler_urls WHERE site_key = 'a.com'")
+    assert {r[0] for r in rows} == {"https://a.com/e1", "https://a.com/e2"}
+
+
+def test_estrategia_quebrada_cai_no_plano_b_e_a_fonte_nao_fica_sem_descoberta(
+    workspace: dict[str, Path],
+):
+    world = StrategyWorld()
+    store_strategy("https://a.com/sumiu.xml")
+
+    assert discover(workspace, "--only", "a.com", fetcher=world) == 0
+
+    assert "https://a.com/sumiu.xml" in world.calls
+    rows = StateStore()._all("SELECT url FROM midias_crawler_urls WHERE site_key = 'a.com'")
+    assert {r[0] for r in rows} == {"https://a.com/1", "https://a.com/2"}  # do sitemap do robots
+
+
+def test_no_strategy_ignora_a_estrategia_gravada(workspace: dict[str, Path]):
+    world = StrategyWorld()
+    store_strategy()
+
+    assert discover(workspace, "--only", "a.com", "--no-strategy", fetcher=world) == 0
+
+    assert "https://a.com/estrategia.xml" not in world.calls
+
+
+def test_parser_do_discover_usa_a_estrategia_por_padrao():
+    assert build_parser().parse_args(["discover"]).no_strategy is False
+    assert build_parser().parse_args(["run"]).no_strategy is False

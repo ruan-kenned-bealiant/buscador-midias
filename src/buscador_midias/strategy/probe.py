@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from buscador_midias.discovery.explore import (
@@ -18,6 +18,7 @@ from buscador_midias.discovery.explore import (
 from buscador_midias.discovery.feed_explore import GUESSED_FEED_PATHS, MAX_DECLARED_FEEDS
 from buscador_midias.discovery.feeds import find_feed_links
 from buscador_midias.discovery.robots import RobotsPolicy
+from buscador_midias.domain.dated_url import render, templatize
 from buscador_midias.domain.site import Site
 from buscador_midias.domain.strategy import (
     CandidateOrigin,
@@ -105,12 +106,14 @@ class _Run:
         self, urls: Sequence[str], origin: CandidateOrigin, *, until_usable: bool = False
     ) -> None:
         """Avalia as URLs ainda não tentadas, enquanto houver orçamento."""
-        for url in urls:
+        for raw in urls:
+            # Um sitemap "do dia" (``.../2026-10-15/``) vira modelo: o que se grava não envelhece.
+            url = templatize(raw, self.now)
             if url in self._tried or self.requests >= self.max_requests:
                 continue
             self._tried.add(url)
             report = evaluate_candidate(
-                url,
+                render(url, self.now),
                 origin,
                 site=self.site,
                 fetcher=self.fetcher,
@@ -121,7 +124,7 @@ class _Run:
                 max_children=DEFAULT_MAX_CHILDREN,
             )
             self.requests += report.requests
-            self.reports.append(report)
+            self.reports.append(replace(report, url=url))
             if until_usable and report.score > 0:
                 break
 

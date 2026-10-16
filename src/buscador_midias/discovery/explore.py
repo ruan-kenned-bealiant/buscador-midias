@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -12,12 +12,15 @@ from urllib.parse import urlsplit
 
 from buscador_midias.discovery.robots import RobotsPolicy
 from buscador_midias.discovery.sitemap_parser import SitemapParseError, parse_sitemap
+from buscador_midias.domain.dated_url import find_date
 from buscador_midias.domain.site import Site
 from buscador_midias.domain.sitemap import ParsedSitemap, SitemapKind, SitemapRef
 from buscador_midias.net.fetcher import Fetcher, FetchResult
 
 DEFAULT_MAX_SITEMAP_FETCHES = 6
 _FALLBACK_PATHS = ("/sitemap.xml", "/sitemap_index.xml")
+# Palavras inteiras do nome de um sitemap filho que indicam o mais recente ("recente" não conta).
+_FRESH_WORDS = frozenset({"latest", "recent"})
 BLOCKING_STATUSES = frozenset({401, 403, 429})
 _NO_ROBOTS_STATUSES = frozenset({404, 410})
 # Palavras do nome do arquivo que indicam sitemap de listagens (tags, autores...), não de matérias.
@@ -108,6 +111,7 @@ def explore_site(
     user_agent: str,
     max_sitemap_fetches: int = DEFAULT_MAX_SITEMAP_FETCHES,
     skip_child: Callable[[SitemapRef], bool] | None = None,
+    entry_points: Sequence[str] = (),
 ) -> Exploration:
     """Lê o robots.txt e percorre os sitemaps do site dentro de um orçamento de leituras.
 
@@ -127,6 +131,9 @@ def explore_site(
             de entrada; ``True`` dispensa o filho sem requisição (ex.: ``lastmod`` inalterado),
             mas ele continua ocupando um lugar na janela, então nunca se avança para filhos
             mais antigos.
+        entry_points: Sitemaps por onde começar, no lugar dos declarados no robots.txt (ex.: o
+            endereço escolhido pela estratégia da fonte). O robots.txt continua valendo: é lido
+            e o que ele proíbe não é baixado.
 
     Returns:
         A exploração; nunca levanta por causa do conteúdo ou da rede do site.
@@ -137,11 +144,13 @@ def explore_site(
         return policy
 
     terms = section_terms(site)
-    declared = policy.sitemaps or tuple(f"{origin}{path}" for path in _FALLBACK_PATHS)
-    entry_points = rank_urls(declared, terms)
-    return _walk(
-        site, fetcher, policy, entry_points, terms, user_agent, max_sitemap_fetches, skip_child
+    declared = (
+        tuple(entry_points)
+        or policy.sitemaps
+        or tuple(f"{origin}{path}" for path in _FALLBACK_PATHS)
     )
+    ranked = rank_urls(declared, terms)
+    return _walk(site, fetcher, policy, ranked, terms, user_agent, max_sitemap_fetches, skip_child)
 
 
 def _failed(status: ProbeStatus, detail: str, *, fetched: int = 0, skipped: int = 0) -> Exploration:
@@ -333,15 +342,20 @@ def prioritize_children(
 ) -> list[SitemapRef]:
     """Ordena filhos de um índice.
 
-    Prioridade: os que citam a seção da fonte, depois os com "news" no nome, depois o ``lastmod``
-    mais recente e, na falta dele, os listados mais ao fim do índice.
+    Prioridade: os que citam a seção da fonte, depois os com "news" (ou a palavra inteira "latest"
+    ou "recent") no nome, depois o ``lastmod`` mais recente. Sem ``lastmod``, vale a data que a URL
+    traz (um sitemap por dia: ``.../2026-10-15/``) e, sem data nenhuma, os listados mais ao fim do
+    índice.
     """
 
     def sort_key(item: tuple[int, SitemapRef]) -> tuple[int, int, float, int]:
         position, child = item
         not_section = 0 if _mentions(child.loc, terms) else 1
-        not_news = 0 if "news" in child.loc.lower() else 1
-        stamp = child.lastmod.timestamp() if child.lastmod else float("-inf")
+        lowered = child.loc.lower()
+        words = set(re.split(r"[^a-z]+", lowered))
+        not_news = 0 if "news" in lowered or words & _FRESH_WORDS else 1
+        moment = child.lastmod or find_date(child.loc)
+        stamp = moment.timestamp() if moment else float("-inf")
         # Sem lastmod, índices costumam listar do mais antigo ao mais novo: ler do fim.
         return (not_section, not_news, -stamp, -position)
 

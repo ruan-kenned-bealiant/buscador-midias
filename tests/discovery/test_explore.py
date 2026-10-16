@@ -281,3 +281,87 @@ def test_filhos_so_ocupam_o_orcamento_que_sobra_depois_dos_declarados():
     explore_site(make_site(), fetcher, user_agent=UA, max_sitemap_fetches=2)
 
     assert fetcher.calls[1:] == ["https://exemplo.com/index.xml", "https://exemplo.com/news.xml"]
+
+
+def test_pontos_de_entrada_dados_substituem_os_do_robots():
+    fetcher = FakeFetcher(
+        {
+            "https://exemplo.com/robots.txt": ROBOTS,
+            "https://exemplo.com/index.xml": urlset("https://exemplo.com/do-robots"),
+            "https://exemplo.com/news.xml": urlset("https://exemplo.com/da-estrategia"),
+        }
+    )
+
+    result = explore_site(
+        make_site(), fetcher, user_agent=UA, entry_points=("https://exemplo.com/news.xml",)
+    )
+
+    assert result.status is ProbeStatus.OK
+    assert [s.url for s in result.sitemaps] == ["https://exemplo.com/news.xml"]
+    assert "https://exemplo.com/index.xml" not in fetcher.calls
+
+
+def test_ponto_de_entrada_dado_tambem_respeita_o_robots():
+    robots = b"User-agent: *\nDisallow: /news.xml\nSitemap: https://exemplo.com/index.xml\n"
+    fetcher = FakeFetcher({"https://exemplo.com/robots.txt": robots})
+
+    result = explore_site(
+        make_site(), fetcher, user_agent=UA, entry_points=("https://exemplo.com/news.xml",)
+    )
+
+    assert result.status is ProbeStatus.ROBOTS_DISALLOWED
+    assert "https://exemplo.com/news.xml" not in fetcher.calls
+
+
+def children(*locs: str, lastmod: str | None = None):
+    from buscador_midias.domain.sitemap import SitemapRef
+
+    stamp = datetime.fromisoformat(lastmod) if lastmod else None
+    return tuple(SitemapRef(loc, stamp) for loc in locs)
+
+
+def order(refs, terms=()):
+    from buscador_midias.discovery.explore import prioritize_children
+
+    return [r.loc for r in prioritize_children(refs, terms)]
+
+
+def test_filhos_sem_lastmod_se_ordenam_pela_data_na_url_do_mais_novo_ao_mais_antigo():
+    # O índice por dia do Estadão lista do mais novo ao mais antigo e não traz lastmod.
+    refs = children(
+        "https://e.com/s/2026-10-14/",
+        "https://e.com/s/2026-10-15/",
+        "https://e.com/s/1999-07-22/",
+    )
+
+    assert order(refs) == [
+        "https://e.com/s/2026-10-15/",
+        "https://e.com/s/2026-10-14/",
+        "https://e.com/s/1999-07-22/",
+    ]
+
+
+def test_filho_chamado_latest_ou_recent_vem_antes_dos_datados():
+    refs = children("https://e.com/s/2026-10-15/", "https://e.com/s/latest/")
+
+    assert order(refs)[0] == "https://e.com/s/latest/"
+    assert order(children("https://e.com/s/2026-10-15/", "https://e.com/recent.xml"))[0] == (
+        "https://e.com/recent.xml"
+    )
+
+
+def test_o_lastmod_declarado_continua_valendo_mais_que_a_data_da_url():
+    from buscador_midias.domain.sitemap import SitemapRef
+
+    refs = (
+        SitemapRef("https://e.com/s/2026-10-15/", datetime(2026, 1, 1, tzinfo=UTC)),
+        SitemapRef("https://e.com/s/2026-01-01/", datetime(2026, 10, 15, tzinfo=UTC)),
+    )
+
+    assert order(refs)[0] == "https://e.com/s/2026-01-01/"
+
+
+def test_sem_lastmod_nem_data_continua_lendo_do_fim_da_lista():
+    refs = children("https://e.com/a.xml", "https://e.com/b.xml", "https://e.com/c.xml")
+
+    assert order(refs) == ["https://e.com/c.xml", "https://e.com/b.xml", "https://e.com/a.xml"]

@@ -10,6 +10,13 @@ from buscador_midias.discovery.sources import (
     run_cascade,
 )
 from buscador_midias.domain.site import Site
+from buscador_midias.domain.strategy import (
+    CandidateOrigin,
+    CandidateReport,
+    Role,
+    StrategyKind,
+    Verdict,
+)
 from buscador_midias.net.fetcher import FetchResult
 
 UA = "BuscadorMidiasBot"
@@ -262,3 +269,104 @@ def test_feed_pode_ser_desligado():
         SourceKind.SITEMAP,
         SourceKind.SITEMAP_PAID,
     ]
+
+
+def strategy(url: str, kind: StrategyKind, role: Role) -> CandidateReport:
+    return CandidateReport(
+        url=url,
+        origin=CandidateOrigin.ROBOTS,
+        verdict=Verdict.FRESH,
+        kind=kind,
+        measure=None,
+        score=10,
+        detail="",
+        role=role,
+    )
+
+
+NEWS_STRATEGY = strategy(f"{HOME}/news.xml", StrategyKind.NEWS_SITEMAP, Role.PRIMARY)
+FEED_STRATEGY = strategy(f"{HOME}/meu-feed", StrategyKind.FEED, Role.BACKUP)
+
+
+def test_estrategias_vem_antes_da_cascata_generica_que_fica_de_plano_b():
+    sources = build(strategies=[NEWS_STRATEGY, FEED_STRATEGY])
+
+    assert kinds(sources) == [
+        SourceKind.SITEMAP,  # principal (sitemap de notícias)
+        SourceKind.FEED,  # reserva
+        SourceKind.SITEMAP,  # plano B: a cascata de sempre
+        SourceKind.FEED,
+    ]
+
+
+def test_estrategia_de_sitemap_le_o_endereco_escolhido_e_nao_o_do_robots():
+    fetcher = FakeFetcher(
+        {
+            f"{HOME}/robots.txt": f"Sitemap: {HOME}/outro.xml\n".encode(),
+            f"{HOME}/news.xml": urlset(f"{HOME}/a"),
+        }
+    )
+
+    first = build(free=fetcher, strategies=[NEWS_STRATEGY])[0]
+    found = first.find(make_site())
+
+    assert found.ok and [u.url for u in found.urls] == [f"{HOME}/a"]
+    assert f"{HOME}/outro.xml" not in fetcher.calls
+
+
+def test_estrategia_de_feed_le_o_feed_escolhido():
+    fetcher = FakeFetcher(
+        {
+            f"{HOME}/robots.txt": b"",
+            f"{HOME}/meu-feed": b'<rss version="2.0"><channel><item><link>'
+            + f"{HOME}/materia".encode()
+            + b"</link></item></channel></rss>",
+        }
+    )
+
+    first = build(free=fetcher, strategies=[FEED_STRATEGY])[0]
+    found = first.find(make_site())
+
+    assert first.kind is SourceKind.FEED
+    assert found.ok and [u.url for u in found.urls] == [f"{HOME}/materia"]
+
+
+def test_host_bloqueado_com_bright_data_perde_a_estrategia_de_sitemap_mas_mantem_a_de_feed():
+    sources = build(
+        paid=FakeFetcher({}),
+        known_blocked=True,
+        strategies=[NEWS_STRATEGY, FEED_STRATEGY],
+    )
+
+    assert kinds(sources) == [SourceKind.FEED, SourceKind.FEED, SourceKind.SITEMAP_PAID]
+
+
+def test_sem_estrategia_a_cascata_e_a_de_sempre():
+    assert kinds(build(strategies=[])) == [SourceKind.SITEMAP, SourceKind.FEED]
+
+
+def test_feed_desligado_tambem_dispensa_a_estrategia_de_feed():
+    sources = build(use_feed=False, strategies=[NEWS_STRATEGY, FEED_STRATEGY])
+
+    assert kinds(sources) == [SourceKind.SITEMAP, SourceKind.SITEMAP]
+
+
+def test_estrategia_com_modelo_de_data_le_hoje_e_ontem():
+    from datetime import UTC, datetime
+
+    now = datetime(2026, 10, 16, 15, 0, tzinfo=UTC)
+    dated = strategy(
+        f"{HOME}/dia/{{YYYY}}-{{MM}}-{{DD}}.xml", StrategyKind.NEWS_SITEMAP, Role.PRIMARY
+    )
+    fetcher = FakeFetcher(
+        {
+            f"{HOME}/robots.txt": b"",
+            f"{HOME}/dia/2026-10-16.xml": urlset(f"{HOME}/hoje"),
+            f"{HOME}/dia/2026-10-15.xml": urlset(f"{HOME}/ontem"),
+        }
+    )
+
+    first = build(free=fetcher, strategies=[dated], now=now)[0]
+    found = first.find(make_site())
+
+    assert {u.url for u in found.urls} == {f"{HOME}/hoje", f"{HOME}/ontem"}

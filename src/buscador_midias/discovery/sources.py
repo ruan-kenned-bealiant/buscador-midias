@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Protocol
 
@@ -18,9 +19,11 @@ from buscador_midias.discovery.explore import (
     explore_site,
 )
 from buscador_midias.discovery.feed_explore import explore_feed
+from buscador_midias.domain.dated_url import render_window
 from buscador_midias.domain.discovered import DiscoveredUrl
 from buscador_midias.domain.site import Site
 from buscador_midias.domain.sitemap import SitemapRef
+from buscador_midias.domain.strategy import CandidateReport, StrategyKind
 from buscador_midias.net.fetcher import Fetcher
 
 SkipChild = Callable[[SitemapRef], bool]
@@ -103,6 +106,7 @@ class SitemapSource:
         user_agent: str,
         max_sitemap_fetches: int = DEFAULT_MAX_SITEMAP_FETCHES,
         force: bool = False,
+        entry_points: Sequence[str] = (),
     ) -> None:
         """Cria a fonte.
 
@@ -112,12 +116,15 @@ class SitemapSource:
             user_agent: Nome do nosso agente (regras do robots.txt).
             max_sitemap_fetches: Orçamento de sitemaps por site.
             force: Para a fonte paga, tenta mesmo sem bloqueio anterior na cascata.
+            entry_points: Sitemaps por onde começar, no lugar dos declarados no robots.txt (a
+                estratégia escolhida para a fonte); vazio explora a partir do robots.txt.
         """
         self.kind = kind
         self._fetcher = fetcher
         self._user_agent = user_agent
         self._budget = max_sitemap_fetches
         self._force = force
+        self._entry_points = tuple(entry_points)
 
     def applies(self, previous: Sequence[SourceFind]) -> bool:
         """A gratuita sempre; a paga só após bloqueio do sitemap gratuito (ou se forçada)."""
@@ -136,6 +143,7 @@ class SitemapSource:
             user_agent=self._user_agent,
             max_sitemap_fetches=self._budget,
             skip_child=skip_child,
+            entry_points=self._entry_points,
         )
         if exploration.status is not ProbeStatus.OK:
             return SourceFind(
@@ -164,15 +172,18 @@ class FeedSource:
 
     kind = SourceKind.FEED
 
-    def __init__(self, fetcher: Fetcher, *, user_agent: str) -> None:
+    def __init__(self, fetcher: Fetcher, *, user_agent: str, feed_urls: Sequence[str] = ()) -> None:
         """Cria a fonte.
 
         Args:
             fetcher: Porta HTTP gratuita com o intervalo por host.
             user_agent: Nome do nosso agente (regras do robots.txt).
+            feed_urls: Feeds escolhidos para a fonte (a estratégia): lidos direto; vazio deixa a
+                home declarar os feeds ou adivinha os caminhos usuais.
         """
         self._fetcher = fetcher
         self._user_agent = user_agent
+        self._feed_urls = tuple(feed_urls)
 
     def applies(self, previous: Sequence[SourceFind]) -> bool:
         """O feed é tentado sempre que a cascata chega até ele."""
@@ -180,7 +191,9 @@ class FeedSource:
 
     def find(self, site: Site, *, skip_child: SkipChild | None = None) -> SourceFind:
         """Lê os feeds do site e transforma os itens em URLs descobertas."""
-        exploration = explore_feed(site, self._fetcher, user_agent=self._user_agent)
+        exploration = explore_feed(
+            site, self._fetcher, user_agent=self._user_agent, feed_urls=self._feed_urls
+        )
         if exploration.status is not ProbeStatus.OK:
             return SourceFind(
                 self.kind,
@@ -261,8 +274,14 @@ def cascade_for(
     known_blocked: bool,
     max_sitemap_fetches: int = DEFAULT_MAX_SITEMAP_FETCHES,
     use_feed: bool = True,
+    strategies: Sequence[CandidateReport] = (),
+    now: datetime | None = None,
 ) -> list[DiscoverySource]:
     """Monta a cascata de um site.
+
+    As estratégias escolhidas para a fonte (``probe-sources``: principal e reserva) vêm primeiro,
+    cada uma lendo o endereço que a sondagem mostrou servir. A cascata de sempre fica depois, de
+    plano B: se o endereço escolhido mudou ou quebrou, a fonte não fica sem descoberta.
 
     Um host que já bloqueou o acesso gratuito não tem o sitemap gratuito tentado de novo (se há
     Bright Data para o resgatar): vai direto ao feed gratuito e, se ele não servir, ao sitemap pago.
@@ -274,13 +293,37 @@ def cascade_for(
         user_agent: Nome do nosso agente.
         known_blocked: Se o host já bloqueou o acesso gratuito em rodadas anteriores.
         max_sitemap_fetches: Orçamento de sitemaps por site.
-        use_feed: Se o feed entra na cascata.
+        use_feed: Se o feed entra na cascata (também o da estratégia).
+        strategies: Estratégias escolhidas da fonte, a principal antes da reserva. Um endereço com
+            modelo de data (``{YYYY}-{MM}-{DD}``) é lido para hoje e para ontem.
+        now: Instante de referência para os modelos de data (padrão: agora).
 
     Returns:
         As fontes, na ordem em que serão tentadas.
     """
     skip_free_sitemap = known_blocked and paid is not None
     sources: list[DiscoverySource] = []
+    moment = now or datetime.now(UTC)
+    for chosen in strategies:
+        if chosen.kind is StrategyKind.FEED:
+            if use_feed:
+                sources.append(
+                    FeedSource(
+                        free,
+                        user_agent=user_agent,
+                        feed_urls=render_window(chosen.url, moment),
+                    )
+                )
+        elif chosen.kind is not None and not skip_free_sitemap:
+            sources.append(
+                SitemapSource(
+                    SourceKind.SITEMAP,
+                    free,
+                    user_agent=user_agent,
+                    max_sitemap_fetches=max_sitemap_fetches,
+                    entry_points=render_window(chosen.url, moment),
+                )
+            )
     if not skip_free_sitemap:
         sources.append(
             SitemapSource(

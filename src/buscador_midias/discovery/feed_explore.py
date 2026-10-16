@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from buscador_midias.discovery.explore import (
@@ -38,7 +39,9 @@ class FeedExploration:
     fetched: int
 
 
-def explore_feed(site: Site, fetcher: Fetcher, *, user_agent: str) -> FeedExploration:
+def explore_feed(
+    site: Site, fetcher: Fetcher, *, user_agent: str, feed_urls: Sequence[str] = ()
+) -> FeedExploration:
     """Lê os feeds do site: os que a home declara (até três) ou, sem declaração, os caminhos usuais.
 
     Respeita o ``robots.txt``. Uma home que bloqueia não impede tentar os caminhos usuais: é comum
@@ -48,6 +51,8 @@ def explore_feed(site: Site, fetcher: Fetcher, *, user_agent: str) -> FeedExplor
         site: Fonte a explorar.
         fetcher: Porta HTTP (use a versão com intervalo por host em produção).
         user_agent: Nome do nosso agente, usado nas regras do robots.txt.
+        feed_urls: Feeds já escolhidos (a estratégia da fonte): são lidos direto, sem baixar a
+            home nem adivinhar caminhos.
 
     Returns:
         A exploração; nunca levanta por causa do conteúdo ou da rede do site.
@@ -56,16 +61,22 @@ def explore_feed(site: Site, fetcher: Fetcher, *, user_agent: str) -> FeedExplor
     if isinstance(policy, Exploration):
         return FeedExploration(policy.status, policy.detail, (), 0)
 
-    fetched = 1
+    fetched = 0
     blocked = False
     failure = ""
-    declared: tuple[str, ...] = ()
-    home = fetcher.get(site.url)
-    if home.ok:
-        declared = find_feed_links(home.content, home.final_url or site.url)[:MAX_DECLARED_FEEDS]
-    else:
-        blocked = home.status in BLOCKING_STATUSES
-        failure = home.error or f"home: HTTP {home.status}"
+    declared: tuple[str, ...] = tuple(feed_urls)
+    unreachable = False
+    if not declared:
+        fetched = 1
+        home = fetcher.get(site.url)
+        if home.ok:
+            declared = find_feed_links(home.content, home.final_url or site.url)[
+                :MAX_DECLARED_FEEDS
+            ]
+        else:
+            blocked = home.status in BLOCKING_STATUSES
+            failure = home.error or f"home: HTTP {home.status}"
+            unreachable = home.status is None
 
     origin = origin_of(site.url)
     guessing = not declared
@@ -80,6 +91,7 @@ def explore_feed(site: Site, fetcher: Fetcher, *, user_agent: str) -> FeedExplor
         if not page.ok:
             blocked = blocked or page.status in BLOCKING_STATUSES
             failure = failure or page.error or f"{url}: HTTP {page.status}"
+            unreachable = unreachable or (bool(feed_urls) and page.status is None)
             continue
         found = [e for e in parse_feed_entries(page.content, url) if site.owns(e.url)]
         for entry in found:
@@ -91,6 +103,6 @@ def explore_feed(site: Site, fetcher: Fetcher, *, user_agent: str) -> FeedExplor
         return FeedExploration(ProbeStatus.OK, "", tuple(entries.values()), fetched)
     if blocked:
         return FeedExploration(ProbeStatus.BLOCKED, failure or "feed bloqueado", (), fetched)
-    if failure and home.status is None:
+    if failure and unreachable:
         return FeedExploration(ProbeStatus.ERROR, failure, (), fetched)
     return FeedExploration(ProbeStatus.NO_SITEMAP, "nenhum feed encontrado", (), fetched)

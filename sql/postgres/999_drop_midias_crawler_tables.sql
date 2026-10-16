@@ -1,5 +1,5 @@
--- Desfaz 001_create_midias_crawler_tables.sql e 002_create_midias_crawler_source_strategies.sql
--- (ordem inversa das chaves estrangeiras).
+-- Desfaz os arquivos 001, 002 e 003 (ordem inversa das chaves estrangeiras).
+DROP TABLE IF EXISTS midias_crawler_source_probe_state;
 DROP TABLE IF EXISTS midias_crawler_source_strategies;
 DROP TABLE IF EXISTS midias_crawler_corpus_writes;
 DROP TABLE IF EXISTS midias_crawler_evidences;

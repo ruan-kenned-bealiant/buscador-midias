@@ -189,3 +189,22 @@ def test_conteudo_que_nao_e_feed_nao_conta():
     result = explore_feed(make_site(), fetcher, user_agent=UA)
 
     assert result.status is ProbeStatus.NO_SITEMAP
+
+
+def test_feed_dado_e_lido_direto_sem_baixar_a_home():
+    fetcher = FakeFetcher({f"{HOME}/meu-feed": rss(f"{HOME}/materia-x")})
+
+    result = explore_feed(make_site(), fetcher, user_agent=UA, feed_urls=(f"{HOME}/meu-feed",))
+
+    assert result.status is ProbeStatus.OK
+    assert [e.url for e in result.entries] == [f"{HOME}/materia-x"]
+    assert HOME not in fetcher.calls and f"{HOME}/feed/" not in fetcher.calls
+
+
+def test_feed_dado_que_bloqueia_e_bloqueio_e_nao_adivinha_outros_caminhos():
+    fetcher = FakeFetcher({f"{HOME}/meu-feed": blocked(f"{HOME}/meu-feed")})
+
+    result = explore_feed(make_site(), fetcher, user_agent=UA, feed_urls=(f"{HOME}/meu-feed",))
+
+    assert result.status is ProbeStatus.BLOCKED
+    assert f"{HOME}/rss.xml" not in fetcher.calls

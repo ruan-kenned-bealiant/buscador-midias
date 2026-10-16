@@ -22,7 +22,9 @@ from buscador_midias.domain.strategy import (
     CandidateOrigin,
     CandidateReport,
     Measure,
+    ProbeState,
     Role,
+    RoundHealth,
     StrategyKind,
     Verdict,
 )
@@ -619,6 +621,7 @@ class StateStore:
             "midias_crawler_analyses",
             "midias_crawler_corpus_writes",
             "midias_crawler_source_strategies",
+            "midias_crawler_source_probe_state",
         )
         missing = []
         for name in names:
@@ -1627,7 +1630,9 @@ class StateStore:
 
     def chosen_strategies(self) -> list[tuple[str, CandidateReport]]:
         """O principal e a reserva de todas as fontes, por fonte (o principal antes)."""
-        rows = self._all(_STRATEGY_SELECT + " WHERE role IS NOT NULL ORDER BY site_key, role")
+        rows = self._all(
+            _STRATEGY_SELECT + " WHERE role IS NOT NULL ORDER BY site_key, (role <> 'primary')"
+        )
         return [(row[0], _strategy_from_row(row[1:])) for row in rows]
 
     def strategy_probed_at(self, site_key: str) -> datetime | None:
@@ -1637,6 +1642,63 @@ class StateStore:
             (site_key,),
         )
         return row[0] if row else None
+
+    def strategy_probe_times(self) -> dict[str, datetime]:
+        """Quando cada fonte com estratégia gravada foi sondada pela última vez."""
+        rows = self._all(
+            "SELECT site_key, max(probed_at) FROM midias_crawler_source_strategies"
+            " GROUP BY site_key"
+        )
+        return {row[0]: row[1] for row in rows}
+
+    def probe_states(self) -> dict[str, ProbeState]:
+        """O estado de reavaliação de cada fonte já sondada."""
+        rows = self._all(
+            "SELECT site_key, probed_at, found, streak, cooldown_until, refresh_at"
+            " FROM midias_crawler_source_probe_state"
+        )
+        return {row[0]: ProbeState(*row) for row in rows}
+
+    def record_probe_state(self, state: ProbeState, reason: str) -> None:
+        """Grava (ou substitui) o estado de reavaliação de uma fonte.
+
+        Args:
+            state: O estado depois da sondagem.
+            reason: Por que a sondagem aconteceu (vazio: manual).
+        """
+        self._run(
+            "INSERT INTO midias_crawler_source_probe_state (site_key, probed_at, found, streak,"
+            " cooldown_until, refresh_at, reason) VALUES (%s, %s, %s, %s, %s, %s, %s)"
+            " ON CONFLICT (site_key) DO UPDATE SET probed_at = EXCLUDED.probed_at,"
+            " found = EXCLUDED.found, streak = EXCLUDED.streak,"
+            " cooldown_until = EXCLUDED.cooldown_until, refresh_at = EXCLUDED.refresh_at,"
+            " reason = EXCLUDED.reason",
+            (
+                state.site_key,
+                _utc(state.probed_at),
+                state.found,
+                state.streak,
+                _utc(state.cooldown_until),
+                _utc(state.refresh_at),
+                reason,
+            ),
+        )
+
+    def recent_rounds(self, per_site: int) -> dict[str, list[RoundHealth]]:
+        """As últimas ``per_site`` rodadas de cada fonte, da mais nova para a mais antiga."""
+        rows = self._all(
+            "SELECT site_key, started_at, status, new_urls, seen_urls, sitemaps_skipped FROM ("
+            " SELECT sr.site_key, r.started_at, sr.status, sr.new_urls, sr.seen_urls,"
+            " sr.sitemaps_skipped, ROW_NUMBER() OVER ("
+            " PARTITION BY sr.site_key ORDER BY sr.run_id DESC) AS n"
+            " FROM midias_crawler_site_runs sr JOIN midias_crawler_runs r ON r.id = sr.run_id"
+            ") ranked WHERE n <= %s ORDER BY site_key, n",
+            (per_site,),
+        )
+        rounds: dict[str, list[RoundHealth]] = {}
+        for site_key, *fields in rows:
+            rounds.setdefault(site_key, []).append(RoundHealth(*fields))
+        return rounds
 
     # --- fallback ---
 

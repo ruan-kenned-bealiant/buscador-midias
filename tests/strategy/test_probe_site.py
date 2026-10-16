@@ -212,3 +212,36 @@ def test_so_o_principal_e_a_reserva_recebem_papel():
     roles = {r.url: r.role for r in result.reports}
     assert roles[NEWS] is Role.PRIMARY and roles[FEED] is Role.BACKUP
     assert roles[f"{HOME}/sitemap.xml"] is None
+
+
+def test_dica_com_data_velha_vira_modelo_e_sonda_o_endereco_de_hoje():
+    template = f"{HOME}/sitemap/{{YYYY}}-{{MM}}-{{DD}}/news.xml"
+    today = f"{HOME}/sitemap/2026-10-16/news.xml"
+    fetcher = FakeFetcher(
+        {ROBOTS: robots(), today: news_sitemap(*((f"n{i}", 1) for i in range(5)))}
+    )
+
+    result = probe(fetcher, hints=(f"{HOME}/sitemap/2026-10-07/news.xml",))
+
+    assert today in fetcher.calls
+    assert result.primary is not None and result.primary.url == template
+
+
+def test_sitemap_com_data_declarado_no_robots_tambem_vira_modelo():
+    template = f"{HOME}/s-{{YYYY}}-{{MM}}.xml"
+    fetcher = FakeFetcher(
+        {ROBOTS: robots(f"{HOME}/s-2026-09.xml"), f"{HOME}/s-2026-10.xml": news_sitemap(("a", 1))}
+    )
+
+    result = probe(fetcher)
+
+    assert result.primary is not None and result.primary.url == template
+
+
+def test_sitemap_de_arquivo_com_ano_antigo_nao_vira_modelo():
+    old = f"{HOME}/post-sitemap-2019-04.xml"
+    fetcher = FakeFetcher({ROBOTS: robots(old), old: plain_sitemap(("a", 1))})
+
+    result = probe(fetcher)
+
+    assert old in {r.url for r in result.reports}

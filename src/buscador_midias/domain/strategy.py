@@ -108,3 +108,46 @@ class CandidateReport:
     detail: str
     requests: int = 0
     role: Role | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RoundHealth:
+    """Como a descoberta de uma fonte foi em uma rodada (o que a saúde da estratégia observa).
+
+    Attributes:
+        started_at: Quando a rodada começou.
+        status: Desfecho da fonte (``ok``, ``blocked``, ``error``...).
+        new_urls: URLs novas que a rodada achou.
+        seen_urls: URLs que a fonte listou na rodada (as de sitemaps pulados não contam).
+        sitemaps_skipped: Sitemaps filhos pulados por ``lastmod`` inalterado; com pulos,
+            ``seen_urls`` não é comparável com o de outra rodada.
+    """
+
+    started_at: datetime
+    status: str
+    new_urls: int
+    seen_urls: int
+    sitemaps_skipped: int
+
+
+@dataclass(frozen=True, slots=True)
+class ProbeState:
+    """Quando e por que uma fonte volta a ser sondada.
+
+    Attributes:
+        site_key: A fonte.
+        probed_at: Última sondagem.
+        found: Se a última sondagem achou um principal.
+        streak: Sondagens seguidas sem melhora (por saúde sem mudar nada, ou sem achar nada); dobra
+            a espera até a próxima reavaliação.
+        cooldown_until: Antes disso, a saúde (falha, silêncio, encolhimento) não pede reavaliação.
+        refresh_at: Quando a estratégia fica velha e é reavaliada de qualquer jeito; para uma fonte
+            sem estratégia, quando tentar de novo.
+    """
+
+    site_key: str
+    probed_at: datetime
+    found: bool
+    streak: int
+    cooldown_until: datetime
+    refresh_at: datetime

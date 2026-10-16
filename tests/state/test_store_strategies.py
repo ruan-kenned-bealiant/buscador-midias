@@ -132,3 +132,17 @@ def test_o_banco_nao_aceita_dois_principais_na_mesma_fonte():
         store.replace_site_strategies("a.com", reports, T0)
 
     assert store.site_strategies("a.com") == []  # a transação desfez a troca
+
+
+def test_chosen_traz_o_principal_antes_da_reserva_de_cada_fonte():
+    store = StateStore()
+    store.replace_site_strategies(
+        "a.com",
+        [
+            report("https://a.com/feed", kind=StrategyKind.FEED, role=Role.BACKUP),
+            report("https://a.com/n", role=Role.PRIMARY),
+        ],
+        T0,
+    )
+
+    assert [r.role for _, r in store.chosen_strategies()] == [Role.PRIMARY, Role.BACKUP]

@@ -26,8 +26,10 @@ gravar no corpus (`midias_ia_*`, Postgres `pgsql_midias`) e no bucket.
   (dicas, `robots.txt`, caminhos usuais, links da home), mede o que cada um publica agora (itens
   das últimas 48 h, com título e data), descarta arquivo, lista defasada e HTML, pontua com regras
   explícitas e grava um principal e uma reserva de outro tipo. O CSV de levantamento é só dica: é
-  uma fotografia de uma data e de uma rede. Fatia 1 (sondar e gravar) feita; falta o `discover`
-  usar a escolha e reavaliar sozinho quando a fonte degrada.
+  uma fotografia de uma data e de uma rede. Fatia 1 (sondar e gravar) e fatia 2 (o `discover` usa o
+  principal e a reserva, com a cascata de sempre de plano B) e fatia 3 (reavaliação
+  automática por saúde, idade e espera crescente; modelos para URLs com data) feitas. O `run`
+  reavalia só as fontes na vez antes de cada descoberta (`probe-sources --due`).
 - **Um critério, em um lugar** (`criteria.py`): a matéria entra se a análise **leu o texto** e achou
   **entidade identificável**. Evidência e corpus olham só para ela (a regra existe em Python e em
   SQL, com teste de concordância).

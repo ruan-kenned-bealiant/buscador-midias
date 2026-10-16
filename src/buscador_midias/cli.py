@@ -42,7 +42,7 @@ from buscador_midias.discovery.sources import DiscoverySource, cascade_for
 from buscador_midias.discovery.stats import build_report, format_report
 from buscador_midias.discovery.url_filter import DEFAULT_OFF_TOPIC_SEGMENTS
 from buscador_midias.domain.site import Site
-from buscador_midias.domain.strategy import CandidateReport, Verdict
+from buscador_midias.domain.strategy import CandidateReport, ProbeState, Role, Verdict
 from buscador_midias.enrich.pipeline import ArticleSource, enrich_pending
 from buscador_midias.evidence.capture import EvidenceCapturer
 from buscador_midias.evidence.s3_storage import StorageConfigError, make_evidence_store
@@ -68,6 +68,7 @@ from buscador_midias.state.store import (
     StateSchemaError,
     StateStore,
 )
+from buscador_midias.strategy.health import DueReason, HealthPolicy, adopt, due_reason, next_state
 from buscador_midias.strategy.hints import load_hints
 from buscador_midias.strategy.probe import DEFAULT_MAX_REQUESTS, SiteStrategy, probe_site
 
@@ -163,6 +164,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-feed",
         action="store_true",
         help="Não usa o feed (RSS/Atom) como alternativa quando o sitemap não serve.",
+    )
+    discover.add_argument(
+        "--no-strategy",
+        action="store_true",
+        help=(
+            "Ignora a estratégia gravada por `probe-sources` e usa só a cascata de sempre "
+            "(sitemap do robots.txt, feed, Bright Data)."
+        ),
     )
 
     dashboard = commands.add_parser(
@@ -303,6 +312,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--skip-off-topic", action="store_true", help="Veja `discover --help`.")
     run.add_argument("--no-feed", action="store_true", help="Não usa o feed como alternativa.")
+    run.add_argument("--no-strategy", action="store_true", help="Veja `discover --help`.")
     run.add_argument(
         "--no-bright-data",
         action="store_true",
@@ -361,6 +371,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=DEFAULT_MAX_REQUESTS,
         help="Orçamento de requisições por fonte (inclui o robots.txt e a home).",
+    )
+    probe_sources.add_argument(
+        "--due",
+        action="store_true",
+        help=(
+            "Sonda só as fontes na vez: nunca sondadas, estratégia velha (7 dias), ou com falha, "
+            "silêncio ou encolhimento nas rodadas (com espera crescente para não insistir)."
+        ),
     )
     probe_sources.add_argument(
         "--dry-run", action="store_true", help="Mostra o resultado sem gravar no estado."
@@ -548,7 +566,21 @@ def _run(
         if not args.no_bright_data:
             discover.append("--bright-data")
         discover += ["--skip-off-topic"] * args.skip_off_topic + ["--no-feed"] * args.no_feed
+        discover += ["--no-strategy"] * args.no_strategy
+        strategy = [
+            "probe-sources",
+            *site_args,
+            "--due",
+            "--workers", str(args.workers),
+            "--interval", str(args.interval),
+            "--progress-every", str(args.progress_every),
+        ]  # fmt: skip
         steps = (
+            *(
+                (("ESTRATÉGIA", "a revisão das estratégias", strategy),)
+                if not args.no_strategy
+                else ()
+            ),
             ("DESCOBERTA", "a descoberta", discover),
             ("ANÁLISE, CRITÉRIO E EVIDÊNCIA", "a análise", enrich),
             ("CORPUS", "a gravação no corpus", sync),
@@ -965,6 +997,7 @@ def _discover(
             print(error, file=sys.stderr)
             return 2
         known_blocked = store.fallback_hosts()
+        strategies = _strategies_by_site(store) if not args.no_strategy else {}
 
         def sources_for(site: Site) -> list[DiscoverySource]:
             return cascade_for(
@@ -975,6 +1008,8 @@ def _discover(
                 known_blocked=site.host in known_blocked,
                 max_sitemap_fetches=args.max_sitemap_fetches,
                 use_feed=not args.no_feed,
+                strategies=strategies.get(site.key, ()),
+                now=now,
             )
 
         statuses: Counter[str] = Counter()
@@ -1005,6 +1040,14 @@ def _discover(
             print(f"{'bright_data_requests':>20}: {paid_requests}")
             print(f"{'bright_data_hosts':>20}: {paid_sites}")
     return 0
+
+
+def _strategies_by_site(store: StateStore) -> dict[str, list[CandidateReport]]:
+    """As estratégias escolhidas por fonte, o principal antes da reserva."""
+    grouped: dict[str, list[CandidateReport]] = {}
+    for site_key, chosen in store.chosen_strategies():
+        grouped.setdefault(site_key, []).append(chosen)
+    return grouped
 
 
 @dataclass(frozen=True, slots=True)
@@ -1067,17 +1110,37 @@ def _probe_sources(
 ) -> int:
     """Subcomando ``probe-sources``: sonda as fontes e grava a estratégia de cada uma.
 
-    Só grava a fonte em que a sondagem achou um principal: uma falha passageira (bloqueio, rede) não
-    apaga a estratégia que já servia. Uma fonte com defeito não derruba as outras.
+    Com ``--due`` só entram as fontes na vez (veja ``strategy/health.py``). Só grava a estratégia da
+    fonte em que a sondagem achou um principal: uma falha passageira (bloqueio, rede) não apaga a
+    que já servia. O estado de reavaliação é gravado sempre, para a espera crescer sem achar nada.
+    Uma fonte com defeito não derruba as outras.
     """
     hints = load_hints(args.hints)
+    policy = HealthPolicy()
     with ExitStack() as exit_stack:
-        store = None
-        if not args.dry_run:
-            store = _open_state()
-            if store is None:
-                return 2
-            exit_stack.callback(store.close)
+        store = _open_state(read_only=args.dry_run)
+        if store is None:
+            return 2
+        exit_stack.callback(store.close)
+        states = store.probe_states()
+        for key, probed_at in store.strategy_probe_times().items():
+            states.setdefault(key, adopt(key, probed_at, policy))  # gravadas antes do controle
+        previous_primary = {
+            key: chosen.url
+            for key, chosen in store.chosen_strategies()
+            if chosen.role is Role.PRIMARY
+        }
+        reasons: dict[str, DueReason | None] = {}
+        selected = list(sites)
+        if args.due:
+            rounds = store.recent_rounds(per_site=30)
+            reasons = {
+                site.key: due_reason(
+                    states.get(site.key), rounds.get(site.key, []), now=now, policy=policy
+                )
+                for site in sites
+            }
+            selected = [site for site in sites if reasons[site.key] is not None]
         free = (
             fetcher
             or build_fetcher(
@@ -1105,26 +1168,61 @@ def _probe_sources(
         results: list[SiteStrategy] = []
         statuses: Counter[str] = Counter()
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
-            for done, future in enumerate(as_completed(pool.submit(probe, s) for s in sites), 1):
+            futures = as_completed(pool.submit(probe, s) for s in selected)
+            for done, future in enumerate(futures, 1):
                 result = future.result()
                 results.append(result)
                 statuses["ok" if result.primary else result.status.value] += 1
-                if store is not None and result.primary is not None:
-                    store.replace_site_strategies(result.site_key, result.reports, now)
-                _print_progress(done, len(sites), statuses, args.progress_every)
-    _print_strategies(results)
+                if not args.dry_run:
+                    _record_probe(store, result, previous_primary, states, reasons, now, policy)
+                _print_progress(done, len(selected), statuses, args.progress_every)
+    _print_strategies(results, reasons, up_to_date=len(sites) - len(selected) if args.due else None)
     return 0
 
 
-def _print_strategies(results: Sequence[SiteStrategy]) -> None:
-    """Uma linha por fonte (principal e reserva, ou o motivo de não haver) e o resumo."""
+def _record_probe(
+    store: StateStore,
+    result: SiteStrategy,
+    previous_primary: dict[str, str],
+    states: dict[str, ProbeState],
+    reasons: dict[str, DueReason | None],
+    now: datetime,
+    policy: HealthPolicy,
+) -> None:
+    """Grava a estratégia (se achou principal) e o estado de reavaliação da fonte."""
+    primary = result.primary
+    if primary is not None:
+        store.replace_site_strategies(result.site_key, result.reports, now)
+    reason = reasons.get(result.site_key)
+    state = next_state(
+        states.get(result.site_key),
+        result.site_key,
+        now=now,
+        found=primary is not None,
+        changed=primary is not None and primary.url != previous_primary.get(result.site_key),
+        reason=reason,
+        policy=policy,
+    )
+    store.record_probe_state(state, reason.value if reason else "")
+
+
+def _print_strategies(
+    results: Sequence[SiteStrategy],
+    reasons: dict[str, DueReason | None] | None = None,
+    up_to_date: int | None = None,
+) -> None:
+    """Uma linha por fonte sondada (principal e reserva, ou o motivo de não haver) e o resumo."""
     for result in sorted(results, key=lambda r: r.site_key):
         primary, backup = result.primary, result.backup
+        reason = (reasons or {}).get(result.site_key)
+        label = f"{result.site_key:<36}" + (f" [{reason.value}]" if reason else "")
         if primary is None:
-            print(f"{result.site_key:<36} sem estratégia ({result.status.value}: {result.detail})")
+            print(f"{label} sem estratégia ({result.status.value}: {result.detail})")
             continue
-        line = f"{result.site_key:<36} {_describe(primary)}"
-        print(line + (f"  |  reserva: {_describe(backup)}" if backup else ""))
+        print(
+            f"{label} {_describe(primary)}"
+            + (f"  |  reserva: {_describe(backup)}" if backup else "")
+        )
     chosen = [r.primary for r in results if r.primary is not None]
     kinds = Counter(c.kind.value for c in chosen if c.kind is not None)
     print(f"{'fontes':>20}: {len(results)}")
@@ -1133,6 +1231,8 @@ def _print_strategies(results: Sequence[SiteStrategy]) -> None:
         print(f"{kind:>20}: {count}")
     print(f"{'sem estratégia':>20}: {len(results) - len(chosen)}")
     print(f"{'requisições':>20}: {sum(r.requests for r in results)}")
+    if up_to_date is not None:
+        print(f"{'em dia':>20}: {up_to_date}")
 
 
 def _describe(report: CandidateReport) -> str:
