@@ -230,7 +230,25 @@ def test_corpus_sem_variaveis_aborta_sem_criar_rodada(
     assert StateStore(workspace["db"]).list_runs() == []
 
 
-def test_host_bloqueado_fica_persistido_e_nao_tenta_o_acesso_gratuito_de_novo(
+def test_corpus_fora_do_ar_nao_derruba_a_descoberta(
+    workspace: dict[str, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    from buscador_midias.corpus.index import PostgresCorpusIndex
+
+    def unreachable(env, **kwargs):
+        raise ConnectionError("connection refused")
+
+    monkeypatch.setattr(PostgresCorpusIndex, "from_env", staticmethod(unreachable))
+
+    code = discover(workspace, "--corpus", fetcher=World())
+
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "corpus indisponível (ConnectionError)" in captured.err
+    assert [r.id for r in StateStore(workspace["db"]).list_runs()] == [1]
+
+
+def test_host_bloqueado_fica_persistido_e_nao_tenta_o_sitemap_gratuito_de_novo(
     workspace: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setenv("BRIGHTDATA_API_KEY", "k")
@@ -263,7 +281,7 @@ def test_host_bloqueado_fica_persistido_e_nao_tenta_o_acesso_gratuito_de_novo(
     calls.clear()
     assert run_once() == 0
 
-    assert not any(c.startswith("DIRETO") for c in calls)
+    assert not any(c.startswith("DIRETO") and "sitemap" in c for c in calls)
     assert any(c.startswith("UNLOCKER") for c in calls)
 
 
@@ -279,7 +297,7 @@ def test_resumo_mostra_as_filtradas_pelo_l0(
     out = capsys.readouterr().out
 
     assert number(out, "novas") == 1
-    assert number(out, "filtradas (L0)") == 1
+    assert number(out, "filtradas (forma)") == 1
 
 
 def test_temas_fora_so_com_a_opcao_explicita(
@@ -295,177 +313,7 @@ def test_temas_fora_so_com_a_opcao_explicita(
     out = capsys.readouterr().out
 
     assert number(out, "novas") == 0
-    assert number(out, "filtradas (L0)") == 1
-
-
-def test_l1_e_opcional_e_arquivo_inexistente_aborta_sem_criar_rodada(
-    workspace: dict[str, Path], capsys: pytest.CaptureFixture[str]
-):
-    assert build_parser().parse_args(["discover"]).l1_model is None
-
-    code = discover(
-        workspace, "--l1-model", str(workspace["dir"] / "nao-existe.json"), fetcher=World()
-    )
-
-    assert code == 2
-    assert "nao-existe.json" in capsys.readouterr().err
-    assert not workspace["db"].exists()
-
-
-def test_l1_descarta_pelo_modelo_informado(
-    workspace: dict[str, Path], capsys: pytest.CaptureFixture[str]
-):
-    from buscador_midias.triage.l1 import L1Filter, NaiveBayesHeadlineModel
-
-    model = NaiveBayesHeadlineModel.train(
-        ["pf prende empresario por fraude e lavagem de dinheiro"] * 10,
-        ["previsao do tempo hoje com sol e nuvens em recife"] * 10,
-        min_count=2,
-    )
-    model_path = workspace["dir"] / "l1.json"
-    L1Filter(model, threshold=0.0, languages=frozenset({"Português"})).save(model_path)
-    world = World()
-    assert discover(workspace, fetcher=world) == 0
-    capsys.readouterr()
-    world.pages["a.com"] += [
-        "https://a.com/clima/previsao-do-tempo-hoje-com-sol-e-nuvens-em-recife",
-        "https://a.com/policia/pf-prende-empresario-por-fraude-e-lavagem-de-dinheiro",
-    ]
-
-    assert discover(workspace, "--l1-model", str(model_path), fetcher=world) == 0
-    out = capsys.readouterr().out
-
-    assert number(out, "novas") == 1
-    assert number(out, "filtradas (L0)") == 1
-
-
-class FakeLlm:
-    """Classificador falso: descarta manchetes com 'clima', mantém o resto."""
-
-    def __init__(self) -> None:
-        self.texts: list[str] = []
-
-    def classify(self, items):
-        from buscador_midias.triage.relevance import Decision, HeadlineVerdict
-
-        self.texts += [item.text for item in items]
-        return [
-            HeadlineVerdict(
-                item.id,
-                Decision.DISCARD if "clima" in item.text else Decision.KEEP,
-                (),
-                "clima" if "clima" in item.text else "ok",
-            )
-            for item in items
-        ]
-
-
-def triage_cmd(ws: dict[str, Path], *extra: str, **kwargs: object) -> int:
-    return main(["triage", "--db", str(ws["db"]), *extra], now=NOW, **kwargs)  # type: ignore[arg-type]
-
-
-def grown_world(workspace: dict[str, Path], capsys: pytest.CaptureFixture[str]) -> World:
-    world = World()
-    assert discover(workspace, fetcher=world) == 0
-    capsys.readouterr()
-    world.pages["a.com"] += [
-        "https://a.com/policia/pf-prende-empresario-por-fraude",
-        "https://a.com/vida/previsao-do-clima-para-sexta-feira",
-    ]
-    return world
-
-
-def test_parser_da_triagem_tem_padroes_baratos_e_permissivos():
-    args = build_parser().parse_args(["triage"])
-
-    assert args.model == "google/gemini-2.5-flash-lite"
-    assert args.policy == "entities"
-    assert args.batch_size == 25
-    assert build_parser().parse_args(["discover"]).triage is False
-
-
-def test_discover_com_triagem_classifica_as_novas_e_imprime_o_custo(
-    workspace: dict[str, Path], capsys: pytest.CaptureFixture[str]
-):
-    world = grown_world(workspace, capsys)
-    llm = FakeLlm()
-
-    assert discover(workspace, "--triage", fetcher=world, classifier=llm) == 0
-    out = capsys.readouterr().out
-
-    assert sorted(llm.texts) == [
-        "pf prende empresario por fraude",
-        "previsao do clima para sexta feira",
-    ]
-    assert number(out, "triagem: mantidas") == 1
-    assert number(out, "triagem: descartadas") == 1
-    assert number(out, "triagem: pendentes") == 0
-    store = StateStore(workspace["db"])
-    assert store.triage_counts() == {"keep": 1, "discard": 1}
-
-
-def test_discover_sem_a_opcao_nao_chama_o_llm(
-    workspace: dict[str, Path], capsys: pytest.CaptureFixture[str]
-):
-    world = grown_world(workspace, capsys)
-    llm = FakeLlm()
-
-    assert discover(workspace, fetcher=world, classifier=llm) == 0
-
-    assert llm.texts == []
-
-
-def test_subcomando_triage_retoma_os_pendentes(
-    workspace: dict[str, Path], capsys: pytest.CaptureFixture[str]
-):
-    world = grown_world(workspace, capsys)
-    assert discover(workspace, fetcher=world) == 0
-    capsys.readouterr()
-    llm = FakeLlm()
-
-    assert triage_cmd(workspace, classifier=llm) == 0
-    out = capsys.readouterr().out
-
-    assert number(out, "triagem: mantidas") == 1
-    assert len(llm.texts) == 2
-    assert triage_cmd(workspace, classifier=FakeLlm()) == 0
-    assert number(capsys.readouterr().out, "triagem: manchetes") == 0
-
-
-def test_triagem_sem_chave_do_openrouter_aborta_sem_criar_rodada(
-    workspace: dict[str, Path], capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-):
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-
-    assert discover(workspace, "--triage", fetcher=World()) == 2
-
-    assert "OPENROUTER_API_KEY" in capsys.readouterr().err
-    assert not workspace["db"].exists()
-
-
-def test_subcomando_triage_sem_chave_aborta(
-    workspace: dict[str, Path], capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-):
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-
-    assert triage_cmd(workspace) == 2
-    assert "OPENROUTER_API_KEY" in capsys.readouterr().err
-
-
-def test_report_mostra_triagem_e_audita_descartes(
-    workspace: dict[str, Path], capsys: pytest.CaptureFixture[str]
-):
-    world = grown_world(workspace, capsys)
-    assert discover(workspace, "--triage", fetcher=world, classifier=FakeLlm()) == 0
-    capsys.readouterr()
-
-    assert main(["report", "--db", str(workspace["db"]), "--audit", "5"]) == 0
-    out = capsys.readouterr().out
-
-    assert "triagem LLM" in out
-    assert "amostra de descartes" in out
-    assert "previsao-do-clima" in out
-    assert "clima" in out
+    assert number(out, "filtradas (forma)") == 1
 
 
 def test_parser_do_painel_escuta_so_na_maquina_local_por_padrao():
@@ -503,6 +351,25 @@ def test_painel_sobe_o_servidor_e_mostra_o_endereco(
     assert code == 0
     assert started[0][0] == "127.0.0.1"
     assert f"http://127.0.0.1:{started[0][1]}" in capsys.readouterr().out
+
+
+def test_painel_atualiza_o_esquema_de_um_estado_antigo_antes_de_abrir_somente_leitura(
+    workspace: dict[str, Path],
+):
+    import sqlite3
+
+    assert discover(workspace, fetcher=World()) == 0
+    legacy = sqlite3.connect(workspace["db"])
+    legacy.execute(
+        "ALTER TABLE site_runs DROP COLUMN source"
+    )  # como num estado de antes da cascata
+    legacy.commit()
+    legacy.close()
+
+    code = main(["dashboard", "--db", str(workspace["db"]), "--port", "0"], serve=lambda s: None)
+
+    assert code == 0
+    assert StateStore(workspace["db"], read_only=True).site_runs(1)[0].source == ""
 
 
 def test_uso_do_bright_data_fica_gravado_na_rodada(
@@ -579,23 +446,53 @@ def test_backup_repetido_no_mesmo_segundo_nao_sobrescreve(
     assert "já existe" in capsys.readouterr().err
 
 
-def test_triage_retriage_discarded_reabre_so_os_descartes_de_outra_politica(
+def feed_xml(*links: str) -> bytes:
+    items = "".join(f"<item><title>T</title><link>{link}</link></item>" for link in links)
+    return f'<rss version="2.0"><channel>{items}</channel></rss>'.encode()
+
+
+def test_site_sem_sitemap_e_lido_pelo_feed_e_o_resumo_mostra_as_fontes(
     workspace: dict[str, Path], capsys: pytest.CaptureFixture[str]
 ):
-    world = grown_world(workspace, capsys)
-    assert discover(workspace, fetcher=world) == 0
-    assert triage_cmd(workspace, "--policy", "permissive", classifier=FakeLlm()) == 0
-    capsys.readouterr()
-    llm = FakeLlm()
+    workspace["sites"].write_text(
+        "region,name,url,country,country_code,language,source_type\n"
+        "Brasil,Feed,https://feed.com,Brasil,BR,Português,Jornal\n",
+        encoding="utf-8",
+    )
 
-    assert triage_cmd(workspace, "--retriage-discarded", classifier=llm) == 0
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/feed/":
+            return httpx.Response(200, content=feed_xml("https://feed.com/materia-um"))
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
+
+    assert discover(workspace, "--interval", "0", client=client) == 0
+
     out = capsys.readouterr().out
-
-    assert llm.texts == ["previsao do clima para sexta feira"]  # só o descartado voltou
-    assert number(out, "triagem: reabertas") == 1
-    assert triage_cmd(workspace, "--retriage-discarded", classifier=FakeLlm()) == 0
-    assert number(capsys.readouterr().out, "triagem: reabertas") == 0
+    assert "fontes: sitemap 0, feed 1, sitemap pago 0" in out
+    [record] = StateStore(workspace["db"]).site_runs(1)
+    assert (record.status, record.source, record.baseline_urls) == ("ok", "feed", 1)
 
 
-def test_retriage_discarded_e_opt_in():
-    assert build_parser().parse_args(["triage"]).retriage_discarded is False
+def test_no_feed_desliga_a_alternativa(
+    workspace: dict[str, Path], capsys: pytest.CaptureFixture[str]
+):
+    workspace["sites"].write_text(
+        "region,name,url,country,country_code,language,source_type\n"
+        "Brasil,Feed,https://feed.com,Brasil,BR,Português,Jornal\n",
+        encoding="utf-8",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/feed/":
+            return httpx.Response(200, content=feed_xml("https://feed.com/materia-um"))
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
+
+    assert discover(workspace, "--no-feed", "--interval", "0", client=client) == 0
+
+    [record] = StateStore(workspace["db"]).site_runs(1)
+    assert (record.status, record.source) == ("no_sitemap", "")
+    assert build_parser().parse_args(["discover"]).no_feed is False

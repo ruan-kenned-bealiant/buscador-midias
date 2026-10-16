@@ -8,7 +8,7 @@ from buscador_midias.cli import EnrichPorts, build_parser, main
 from buscador_midias.domain.discovered import DiscoveredUrl
 from buscador_midias.extraction.fetch import PageFetch, PageStatus
 from buscador_midias.net.fetcher import FetchResult
-from buscador_midias.state.store import StateStore, TriageRecord, UrlKind
+from buscador_midias.state.store import StateStore, UrlKind
 
 NOW = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
 TEXT = (
@@ -40,8 +40,6 @@ def db(tmp_path: Path) -> Path:
         now=NOW,
         kind=UrlKind.NEW,
     )
-    triage = store.start_triage_run(NOW, model="m", prompt_version="v")
-    store.record_triage([TriageRecord("h-pf", "keep", (), "")], triage_run_id=triage, now=NOW)
     store.close()
     return path
 
@@ -221,10 +219,6 @@ def test_limite_de_urls_por_execucao(db: Path, capsys: pytest.CaptureFixture[str
         run_id=run,
         now=NOW,
         kind=UrlKind.NEW,
-    )
-    triage = store.start_triage_run(NOW, model="m", prompt_version="v")
-    store.record_triage(
-        [TriageRecord(f"h-{n}", "keep", (), "") for n in range(3)], triage_run_id=triage, now=NOW
     )
     store.close()
 

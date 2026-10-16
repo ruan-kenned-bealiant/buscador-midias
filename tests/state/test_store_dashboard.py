@@ -5,10 +5,9 @@ import pytest
 
 from buscador_midias.domain.discovered import DiscoveredUrl
 from buscador_midias.state.store import (
+    AnalysisRecord,
     SiteRunRecord,
     StateStore,
-    TriageRecord,
-    TriageRunTotals,
     UrlKind,
 )
 
@@ -71,61 +70,77 @@ def test_urls_novas_por_hora_ignoram_o_que_e_mais_antigo_que_o_limite():
     assert store.new_urls_per_hour(since=T0 - timedelta(days=1)) == {}
 
 
-def test_vereditos_por_hora_e_decisao():
+def test_ultimas_urls_novas_trazem_a_situacao_da_analise():
     store = StateStore()
     run = store.start_run(T0)
     store.record_urls(
-        [found("a-1"), found("a-2"), found("a-3")], run_id=run, now=T0, kind=UrlKind.NEW
-    )
-    triage = store.start_triage_run(T0, model="m", prompt_version="v")
-    store.record_triage(
-        [
-            TriageRecord("hash-a.com-a-1", "keep", (), ""),
-            TriageRecord("hash-a.com-a-2", "discard", (), ""),
-        ],
-        triage_run_id=triage,
+        [found("sem-entidade-1"), found("corpus-1", title="No corpus"), found("fila-1")],
+        run_id=run,
         now=T0,
-    )
-    store.record_triage(
-        [TriageRecord("hash-a.com-a-3", "keep", (), "")],
-        triage_run_id=triage,
-        now=T0 + timedelta(hours=1),
-    )
-
-    per_hour = store.triage_per_hour(since=T0 - timedelta(hours=1))
-
-    assert per_hour == {
-        "2026-10-15T09": {"keep": 1, "discard": 1},
-        "2026-10-15T10": {"keep": 1},
-    }
-
-
-def test_ultimas_urls_novas_trazem_o_veredito_quando_existe():
-    store = StateStore()
-    run = store.start_run(T0)
-    store.record_urls([found("antiga-1", title="Antiga")], run_id=run, now=T0, kind=UrlKind.NEW)
-    store.record_urls(
-        [found("recente-1")], run_id=run, now=T0 + timedelta(minutes=5), kind=UrlKind.NEW
+        kind=UrlKind.NEW,
     )
     store.record_urls([found("base-1")], run_id=run, now=T0, kind=UrlKind.BASELINE)
-    triage = store.start_triage_run(T0, model="m", prompt_version="v")
-    store.record_triage(
-        [TriageRecord("hash-a.com-antiga-1", "discard", ("criminal",), "clima")],
-        triage_run_id=triage,
-        now=T0,
+    enrich = store.start_enrich_run(T0, model="m", prompt_version="v", evidence_mode="auto")
+    for path, entities, themes in (
+        ("corpus-1", ({"name": "João Silva", "type": "PF", "role": "citado"},), ("fiscal",)),
+        ("sem-entidade-1", (), ()),
+    ):
+        store.record_analysis(
+            AnalysisRecord(f"hash-a.com-{path}", False, themes, entities, "", "s", 0.9, "text"),
+            enrich_run_id=enrich,
+            model="m",
+            prompt_version="v",
+            now=T0,
+        )
+
+    recent = {r.url.rsplit("/", 1)[1]: r for r in store.recent_new_urls(limit=10)}
+
+    assert set(recent) == {"sem-entidade-1", "corpus-1", "fila-1"}
+    assert recent["fila-1"].status == "pending"
+    assert recent["sem-entidade-1"].status == "no_entity"
+    assert (recent["corpus-1"].status, recent["corpus-1"].themes) == ("in_corpus", ("fiscal",))
+    assert recent["corpus-1"].title == "No corpus"
+    assert len(store.recent_new_urls(limit=1)) == 1
+
+
+def test_ultimas_urls_novas_vem_da_mais_recente_para_a_mais_antiga():
+    store = StateStore()
+    run = store.start_run(T0)
+    store.record_urls([found("antiga-1")], run_id=run, now=T0, kind=UrlKind.NEW)
+    store.record_urls(
+        [found("recente-1")], run_id=run, now=T0 + timedelta(minutes=5), kind=UrlKind.NEW
     )
 
     recent = store.recent_new_urls(limit=10)
 
     assert [r.url for r in recent] == ["https://a.com/recente-1", "https://a.com/antiga-1"]
-    assert recent[0].decision is None
-    assert (recent[1].decision, recent[1].themes, recent[1].reason) == (
-        "discard",
-        ("criminal",),
-        "clima",
-    )
-    assert recent[1].title == "Antiga"
-    assert len(store.recent_new_urls(limit=1)) == 1
+
+
+def test_analises_por_hora_separam_as_que_atendem_ao_criterio():
+    store = StateStore()
+    enrich = store.start_enrich_run(T0, model="m", prompt_version="v", evidence_mode="auto")
+    person = ({"name": "João Silva", "type": "PF", "role": "citado"},)
+
+    def analyze(name: str, entities: tuple, basis: str, when: datetime) -> None:
+        store.record_analysis(
+            AnalysisRecord(f"h-{name}", False, (), entities, "", "s", 0.9, basis),
+            enrich_run_id=enrich,
+            model="m",
+            prompt_version="v",
+            now=when,
+        )
+
+    analyze("a", person, "text", T0)
+    analyze("b", (), "text", T0)
+    analyze("c", person, "headline", T0 + timedelta(hours=1))  # só manchete: não atende
+    analyze("d", person, "text", T0 - timedelta(days=3))  # antes do limite
+
+    per_hour = store.analyzed_per_hour(since=T0 - timedelta(hours=1))
+
+    assert per_hour == {
+        "2026-10-15T09": {"meets": 1, "not_meets": 1},
+        "2026-10-15T10": {"not_meets": 1},
+    }
 
 
 def test_resumo_por_fonte_junta_contagens_e_ultima_nova():
@@ -144,18 +159,6 @@ def test_resumo_por_fonte_junta_contagens_e_ultima_nova():
 
     assert counts == {"a.com": {"new": 1, "baseline": 1}, "b.com": {"baseline": 1}}
     assert last_new == {"a.com": T0}
-
-
-def test_execucao_da_triagem_informa_se_terminou():
-    store = StateStore()
-    open_run = store.start_triage_run(T0, model="m", prompt_version="v")
-    done_run = store.start_triage_run(T0, model="m", prompt_version="v")
-    store.finish_triage_run(done_run, T0 + timedelta(minutes=1), TriageRunTotals(headlines=1))
-
-    runs = {r.id: r for r in store.triage_runs()}
-
-    assert runs[open_run].finished_at is None
-    assert runs[done_run].finished_at == T0 + timedelta(minutes=1)
 
 
 def test_progresso_da_rodada_conta_os_sites_ja_gravados():

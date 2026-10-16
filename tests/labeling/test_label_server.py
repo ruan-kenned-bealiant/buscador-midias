@@ -14,7 +14,7 @@ from buscador_midias.labeling.server import make_label_server
 
 @pytest.fixture
 def folder(tmp_path: Path) -> Path:
-    export_batch(build_store(findings=2, kept_no=2, discarded=2), tmp_path, per_group=2, seed=1)
+    export_batch(build_store(findings=2, no_entity=2), tmp_path, per_group=2, seed=1)
     return tmp_path
 
 
@@ -72,10 +72,10 @@ def test_itens_trazem_so_o_que_e_cego(port: int):
 
     data = json.loads(body)
     assert status == 200
-    assert data["total"] == 6 and data["done"] == 0
+    assert data["total"] == 4 and data["done"] == 0
     assert set(data["items"][0]) == {"id", "source", "url", "headline", "excerpt", "verdict"}
     text = body.decode()
-    assert "kept_no_entity" not in text and "triage_discarded" not in text
+    assert "no_entity" not in text and "in_corpus" not in text
     assert "João Silva" not in text  # entidade do modelo fica na chave
 
 
@@ -85,7 +85,7 @@ def test_voto_grava_no_csv_e_atualiza_o_progresso(port: int, folder: Path):
     status, _, body = vote(port, first, "nao")
 
     assert status == 200
-    assert json.loads(body) == {"ok": True, "done": 1, "total": 6}
+    assert json.loads(body) == {"ok": True, "done": 1, "total": 4}
     assert saved(folder)[0]["veredito"] == "nao"
     assert json.loads(call(port, "GET", "/api/items")[2])["done"] == 1
 

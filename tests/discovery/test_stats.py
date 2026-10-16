@@ -164,50 +164,29 @@ def test_resumo_traz_o_que_o_l0_descartou_e_por_que():
     assert "listing 2" in text
 
 
-def test_relatorio_traz_execucoes_da_triagem_e_o_custo_acumulado():
-    from buscador_midias.state.store import TriageRecord, TriageRunTotals
-
-    store = seeded_store()
-    first = store.start_triage_run(T1, model="google/x", prompt_version="v1")
-    store.record_triage(
-        [
-            TriageRecord("h-n1", "keep", ("fiscal",), "fraude"),
-            TriageRecord("h-n2", "discard", (), "clima"),
-        ],
-        triage_run_id=first,
-        now=T1,
+def test_rodada_conta_de_que_fonte_veio_cada_site():
+    store = StateStore()
+    run = store.start_run(T0)
+    store.record_site_run(run, record("a.com", seen_urls=1))
+    store.record_site_run(run, SiteRunRecord("b.com", "ok", 0, 0, 0, 1, 1, 0, "", source="feed"))
+    store.record_site_run(run, SiteRunRecord("c.com", "ok", 0, 0, 0, 1, 1, 0, "", source="feed"))
+    store.record_site_run(
+        run, SiteRunRecord("d.com", "ok", 0, 0, 0, 1, 1, 0, "", source="sitemap_bd")
     )
-    store.finish_triage_run(
-        first,
-        T1,
-        TriageRunTotals(
-            headlines=2,
-            kept=1,
-            discarded=1,
-            prompt_tokens=900,
-            completion_tokens=80,
-            cost_usd=0.0004,
-        ),
-    )
-    second = store.start_triage_run(T1, model="google/x", prompt_version="v1")
-    store.finish_triage_run(second, T1, TriageRunTotals(headlines=1, pending=1, cost_usd=0.0001))
+    store.record_site_run(run, SiteRunRecord("e.com", "ok", 0, 0, 0, 1, 1, 0, "", source="sitemap"))
 
-    report = build_report(store)
-    text = format_report(report)
+    summary = build_report(store).runs[0]
 
-    assert [r.id for r in report.triage_runs] == [first, second]
-    assert report.triage_counts == {"keep": 1, "discard": 1}
-    assert report.triage_cost_usd == 0.0005
-    assert "triagem LLM" in text
-    assert "google/x" in text
-    assert "mantidas 1" in text
-    assert "custo total US$ 0.0005" in text
+    assert (summary.via_sitemap, summary.via_feed, summary.via_paid) == (1, 2, 1)
+    assert "fontes: sitemap 1, feed 2, sitemap pago 1" in format_report(build_report(store))
 
 
-def test_sem_triagem_o_relatorio_nao_menciona_custo():
-    text = format_report(build_report(seeded_store()))
+def test_relatorio_so_fala_das_fontes_quando_feed_ou_pago_foram_usados():
+    store = StateStore()
+    run = store.start_run(T0)
+    store.record_site_run(run, SiteRunRecord("a.com", "ok", 0, 0, 0, 1, 1, 0, "", source="sitemap"))
 
-    assert "triagem LLM" not in text
+    assert "fontes:" not in format_report(build_report(store))
 
 
 def test_rodada_mostra_o_uso_do_bright_data():
@@ -253,7 +232,16 @@ def test_relatorio_traz_execucoes_do_enriquecimento_e_o_acumulado():
         ),
     )
     store.record_analysis(
-        AnalysisRecord("h-n1", True, (), (), "x", "y", 0.9, "text"),
+        AnalysisRecord(
+            "h-n1",
+            True,
+            (),
+            ({"name": "João Silva", "type": "PF", "role": "acusado"},),
+            "x",
+            "y",
+            0.9,
+            "text",
+        ),
         enrich_run_id=run,
         model="m",
         prompt_version="v",
@@ -315,7 +303,6 @@ def test_relatorio_traz_as_gravacoes_no_corpus_e_o_acumulado():
             entities=5,
             keywords=4,
             failed=0,
-            withheld=6,
             rewritten=1,
         ),
     )
@@ -327,7 +314,6 @@ def test_relatorio_traz_as_gravacoes_no_corpus_e_o_acumulado():
     assert report.corpus_counts == {"written": 1, "created": 1}
     assert "corpus #1: candidatos 3 | criados 2, já existiam 1" in text
     assert "evidências atualizadas 1" in text
-    assert "retidos 6" in text
     assert "corpus acumulado: gravados 1, criados por nós 1" in text
 
 

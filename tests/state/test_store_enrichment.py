@@ -7,7 +7,6 @@ from buscador_midias.state.store import (
     EnrichTotals,
     EvidenceRecord,
     StateStore,
-    TriageRecord,
     UrlKind,
 )
 
@@ -26,17 +25,12 @@ def found(path: str, *, title: str | None = None) -> DiscoveredUrl:
     )
 
 
-def seeded(*paths: str, keep: tuple[str, ...] | None = None) -> StateStore:
-    """URLs ``new``; só as de ``keep`` (padrão: todas) têm veredito ``keep`` da triagem."""
+def seeded(*paths: str, other: tuple[str, ...] = ()) -> StateStore:
+    """URLs ``new`` e, em ``other``, URLs de linha de base (que nunca entram na análise)."""
     store = StateStore()
     run = store.start_run(T0)
     store.record_urls([found(p) for p in paths], run_id=run, now=T0, kind=UrlKind.NEW)
-    triage = store.start_triage_run(T0, model="m", prompt_version="v")
-    store.record_triage(
-        [TriageRecord(f"h-{p}", "keep", (), "") for p in (keep if keep is not None else paths)],
-        triage_run_id=triage,
-        now=T0,
-    )
+    store.record_urls([found(p) for p in other], run_id=run, now=T0, kind=UrlKind.BASELINE)
     return store
 
 
@@ -73,8 +67,8 @@ def analysis(path: str, *, finding: bool = True, **kw) -> AnalysisRecord:
     return AnalysisRecord(**base)
 
 
-def test_so_urls_mantidas_pela_triagem_e_sem_analise_estao_pendentes():
-    store = seeded("a-1", "b-2", "c-3", keep=("a-1", "b-2"))
+def test_so_urls_novas_e_sem_analise_estao_pendentes():
+    store = seeded("a-1", "b-2", other=("c-3",))
     run = store.start_enrich_run(T0, model="m", prompt_version="v", evidence_mode="auto")
     store.record_content(content("a-1"), now=T0)
     store.record_analysis(analysis("a-1"), enrich_run_id=run, model="m", prompt_version="v", now=T0)
@@ -82,6 +76,22 @@ def test_so_urls_mantidas_pela_triagem_e_sem_analise_estao_pendentes():
     pending = store.pending_enrichment()
 
     assert [p.url_hash for p in pending] == ["h-b-2"]
+
+
+def test_fila_de_analise_intercala_as_fontes_para_o_intervalo_por_host_nao_travar_o_bloco():
+    store = StateStore()
+    run = store.start_run(T0)
+
+    def on(site: str, n: int) -> DiscoveredUrl:
+        return DiscoveredUrl(f"https://{site}/m-{n}", f"h-{site}-{n}", site, "s", None, None, None)
+
+    urls = [on("a.com", n) for n in range(3)] + [on("b.com", n) for n in range(2)]
+    store.record_urls(urls, run_id=run, now=T0, kind=UrlKind.NEW)
+
+    order = [p.url_hash for p in store.pending_enrichment()]
+
+    assert order == ["h-a.com-0", "h-b.com-0", "h-a.com-1", "h-b.com-1", "h-a.com-2"]
+    assert [p.url_hash for p in store.pending_enrichment(limit=3)] == order[:3]
 
 
 def test_falha_de_download_conta_tentativas_e_segue_pendente_ate_ter_analise():
@@ -272,7 +282,7 @@ def test_contagens_para_o_painel():
         "findings": 1,
         "no_finding": 1,
         "headline_only": 1,
-        "relevant": 2,
+        "relevant": 1,  # a análise só pela manchete não atende ao critério
     }
     assert counts["evidence"] == {"captured:direct": 1}
     assert counts["pending_enrichment"] == 1  # c-3 ainda sem análise
@@ -397,16 +407,16 @@ def test_materia_neutra_com_entidade_tambem_espera_evidencia_e_nao_e_adversa():
     assert store.count_pending_evidence() == 2
 
 
-def test_so_manchete_sem_achado_ou_sem_entidade_nao_espera_evidencia():
+def test_so_manchete_ou_sem_entidade_nao_espera_evidencia():
     store = seeded("a-1", "b-2", "c-3", "d-4")
     neutral = ({"name": "Empresa X", "type": "PJ", "role": "outro"},)
     record(store, "a-1", finding=False, themes=(), entities=neutral, basis="headline")
     record(store, "b-2", finding=False, themes=(), entities=())
-    record(store, "c-3", basis="headline")  # achado só pela manchete: continua pedindo evidência
+    record(store, "c-3", basis="headline")  # achado só pela manchete: não atende ao critério
     record(store, "d-4", finding=False, themes=(), entities=neutral)
 
-    assert {p.url_hash for p in store.pending_evidence()} == {"h-c-3", "h-d-4"}
-    assert store.count_pending_evidence() == 2
+    assert {p.url_hash for p in store.pending_evidence()} == {"h-d-4"}
+    assert store.count_pending_evidence() == 1
 
 
 def test_contagem_do_painel_separa_achados_adversos_das_materias_com_entidade():

@@ -15,7 +15,6 @@ from buscador_midias.state.store import (
     RunRecord,
     SiteRunRecord,
     StateStore,
-    TriageRun,
 )
 
 
@@ -39,8 +38,11 @@ class RunSummary:
         sitemaps_skipped: Sitemaps dispensados por ``lastmod`` inalterado.
         partial_sites: Sites ``ok`` em que algum sitemap falhou (leitura parcial).
         sitemaps_failed: Sitemaps que falharam nos sites ``ok``.
-        filtered: URLs frescas descartadas pela camada L0.
+        filtered: URLs frescas descartadas pela forma da URL (L0).
         bright_data_requests: Chamadas pagas ao Bright Data na rodada.
+        via_sitemap: Sites cujas URLs vieram do sitemap gratuito.
+        via_feed: Sites cujas URLs vieram do feed.
+        via_paid: Sites cujas URLs vieram do sitemap pelo Bright Data.
     """
 
     run_id: int
@@ -60,6 +62,9 @@ class RunSummary:
     sitemaps_failed: int
     filtered: int
     bright_data_requests: int = 0
+    via_sitemap: int = 0
+    via_feed: int = 0
+    via_paid: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,11 +92,7 @@ class Report:
             URL inédita: sinal de sitemap parado ou ``lastmod`` que não reflete publicações.
         latency: Atraso de publicação até a descoberta, quando há dados.
         fallback_hosts: Hosts que dependem do fallback pago.
-        filter_reasons: URLs descartadas no L0, por motivo (para auditar o filtro).
-        triage_runs: Execuções da triagem por LLM, da mais antiga à mais nova.
-        triage_counts: URLs com veredito do LLM, por decisão.
-        triage_pending: URLs novas ainda sem veredito.
-        triage_cost_usd: Custo total informado pelo provedor (``None`` se nunca informou).
+        filter_reasons: URLs descartadas pela forma da URL (L0), por motivo (para auditar o filtro).
         enrich_runs: Execuções do enriquecimento (texto, análise de contexto, evidência).
         enrich_cost_usd: Custo total da análise de contexto (``None`` se nunca informado).
         enrichment_counts: Contagens de conteúdo, análises, evidências e pendências.
@@ -105,10 +106,6 @@ class Report:
     latency: LatencyStats | None
     fallback_hosts: tuple[str, ...]
     filter_reasons: dict[str, int]
-    triage_runs: tuple[TriageRun, ...] = ()
-    triage_counts: dict[str, int] | None = None
-    triage_pending: int = 0
-    triage_cost_usd: float | None = None
     enrich_runs: tuple[EnrichRun, ...] = ()
     enrich_cost_usd: float | None = None
     enrichment_counts: dict[str, Any] | None = None
@@ -126,7 +123,6 @@ def build_report(store: StateStore) -> Report:
         by_site[record.site_key].append(record)
 
     runs = tuple(_summarize(run, by_run.get(run.id, [])) for run in store.list_runs())
-    triage_runs = tuple(store.triage_runs())
     enrich_runs = tuple(store.enrich_runs())
     return Report(
         runs=runs,
@@ -134,10 +130,6 @@ def build_report(store: StateStore) -> Report:
         latency=_latency(store.new_url_latencies_hours()),
         fallback_hosts=tuple(sorted(store.fallback_hosts())),
         filter_reasons=store.filtered_by_reason(),
-        triage_runs=triage_runs,
-        triage_counts=store.triage_counts(),
-        triage_pending=store.count_pending_triage(),
-        triage_cost_usd=_total_cost(triage_runs),
         enrich_runs=enrich_runs,
         enrich_cost_usd=_enrich_cost(enrich_runs),
         enrichment_counts=store.enrichment_counts(),
@@ -164,6 +156,12 @@ def format_report(report: Report) -> str:
                 else ""
             )
             + (f" | bright data {run.bright_data_requests} req" if run.bright_data_requests else "")
+            + (
+                f" | fontes: sitemap {run.via_sitemap}, feed {run.via_feed}, "
+                f"sitemap pago {run.via_paid}"
+                if run.via_feed or run.via_paid
+                else ""
+            )
         )
     if report.latency is not None:
         lat = report.latency
@@ -179,41 +177,14 @@ def format_report(report: Report) -> str:
     if report.filter_reasons:
         ranked = sorted(report.filter_reasons.items(), key=lambda item: -item[1])
         lines.append(
-            "descartes do L0: " + ", ".join(f"{reason} {count}" for reason, count in ranked)
+            "descartes pela forma da URL (L0): "
+            + ", ".join(f"{reason} {count}" for reason, count in ranked)
         )
-    lines.extend(_triage_lines(report))
     lines.extend(_enrich_lines(report))
     lines.extend(_corpus_lines(report))
     if report.fallback_hosts:
         lines.append("hosts em fallback (Bright Data): " + ", ".join(report.fallback_hosts))
     return "\n".join(lines) if lines else "nenhuma rodada registrada"
-
-
-def _triage_lines(report: Report) -> list[str]:
-    """Linhas da triagem por LLM: uma por execução e o acumulado com o custo total."""
-    if not report.triage_runs:
-        return []
-    lines = []
-    for run in report.triage_runs:
-        t = run.totals
-        cost = f"US$ {t.cost_usd:.4f}" if t.cost_usd is not None else "custo não informado"
-        lines.append(
-            f"triagem LLM #{run.id} ({run.model}, {run.prompt_version}): manchetes {t.headlines} | "
-            f"mantidas {t.kept} | descartadas {t.discarded} | pendentes {t.pending} | "
-            f"tokens {t.prompt_tokens}/{t.completion_tokens} | {cost}"
-        )
-    counts = report.triage_counts or {}
-    total = (
-        f"custo total US$ {report.triage_cost_usd:.4f}"
-        if report.triage_cost_usd is not None
-        else "custo total não informado"
-    )
-    lines.append(
-        f"triagem LLM acumulada: mantidas {counts.get('keep', 0)}, "
-        f"descartadas {counts.get('discard', 0)}, novas sem veredito {report.triage_pending} | "
-        f"{total}"
-    )
-    return lines
 
 
 def _enrich_lines(report: Report) -> list[str]:
@@ -268,7 +239,7 @@ def _corpus_lines(report: Report) -> list[str]:
             f"corpus #{run.id}: candidatos {t.candidates} | criados {t.created}, "
             f"já existiam {t.existing}, evidências atualizadas {t.evidence_updated}, "
             f"refeitos {t.rewritten} | entidades {t.entities}, temas {t.keywords} | "
-            f"falhas {t.failed} | retidos {t.withheld}"
+            f"falhas {t.failed}"
         )
     counts = report.corpus_counts or {}
     lines.append(
@@ -279,12 +250,6 @@ def _corpus_lines(report: Report) -> list[str]:
 
 
 def _enrich_cost(runs: tuple[EnrichRun, ...]) -> float | None:
-    """Soma do custo das execuções que o informaram (``None`` se nenhuma informou)."""
-    costs = [r.totals.cost_usd for r in runs if r.totals.cost_usd is not None]
-    return round(sum(costs), 8) if costs else None
-
-
-def _total_cost(runs: tuple[TriageRun, ...]) -> float | None:
     """Soma do custo das execuções que o informaram (``None`` se nenhuma informou)."""
     costs = [r.totals.cost_usd for r in runs if r.totals.cost_usd is not None]
     return round(sum(costs), 8) if costs else None
@@ -310,6 +275,9 @@ def _summarize(run: RunRecord, records: list[SiteRunRecord]) -> RunSummary:
         partial_sites=sum(1 for r in records if r.status == "ok" and r.sitemaps_failed),
         sitemaps_failed=sum(r.sitemaps_failed for r in records if r.status == "ok"),
         filtered=sum(r.filtered_urls for r in records),
+        via_sitemap=sum(1 for r in records if r.source == "sitemap"),
+        via_feed=sum(1 for r in records if r.source == "feed"),
+        via_paid=sum(1 for r in records if r.source == "sitemap_bd"),
     )
 
 

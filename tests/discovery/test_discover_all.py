@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 from buscador_midias.discovery.incremental import discover_all
+from buscador_midias.discovery.sources import cascade_for
 from buscador_midias.domain.site import Site
 from buscador_midias.net.fetcher import FetchResult
 from buscador_midias.state.store import StateStore, UrlKind
@@ -48,6 +49,13 @@ class World:
         return FetchResult(url=url, status=200, content=body, error=None)
 
 
+def sources_for(fetcher):
+    """Cascata só com o sitemap gratuito, para cada site."""
+    return lambda site: cascade_for(
+        site, free=fetcher, paid=None, user_agent=UA, known_blocked=False, use_feed=False
+    )
+
+
 def clock_from(*instants: datetime):
     pending = list(instants)
     return lambda: pending.pop(0) if len(pending) > 1 else pending[0]
@@ -59,9 +67,8 @@ def test_rodada_cria_run_grava_resultado_por_site_e_fecha_a_run():
 
     result = discover_all(
         sites,
-        World(),
+        sources_for(World()),
         store,
-        user_agent=UA,
         workers=2,
         clock=clock_from(T0, T0 + timedelta(minutes=3)),
     )
@@ -80,12 +87,12 @@ def test_segunda_rodada_junta_as_novas_de_todos_os_sites_na_ordem_dos_sites():
     store = StateStore()
     world = World()
     sites = [make_site("a.com"), make_site("b.com")]
-    discover_all(sites, world, store, user_agent=UA, clock=clock_from(T0))
+    discover_all(sites, sources_for(world), store, clock=clock_from(T0))
     world.pages["a.com"].append("https://a.com/2")
     world.pages["b.com"].append("https://b.com/3")
 
     result = discover_all(
-        sites, world, store, user_agent=UA, clock=clock_from(T0 + timedelta(hours=8))
+        sites, sources_for(world), store, clock=clock_from(T0 + timedelta(hours=8))
     )
 
     assert result.run_id == 2
@@ -97,7 +104,7 @@ def test_falha_inesperada_em_um_site_nao_derruba_os_demais():
     store = StateStore()
     sites = [make_site("a.com"), make_site("quebra.com"), make_site("b.com")]
 
-    result = discover_all(sites, World(), store, user_agent=UA, clock=clock_from(T0))
+    result = discover_all(sites, sources_for(World()), store, clock=clock_from(T0))
 
     assert [r.site_key for r in result.records] == ["a.com", "quebra.com", "b.com"]
     assert result.records[1].status == "error"
@@ -112,9 +119,8 @@ def test_progresso_e_avisado_a_cada_site_concluido():
 
     discover_all(
         sites,
-        World(),
+        sources_for(World()),
         store,
-        user_agent=UA,
         workers=1,
         clock=clock_from(T0),
         on_progress=lambda done, total, record: seen.append((done, total)),

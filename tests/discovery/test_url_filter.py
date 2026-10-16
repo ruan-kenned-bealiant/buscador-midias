@@ -1,6 +1,6 @@
 import pytest
 
-from buscador_midias.triage.l0 import DEFAULT_OFF_TOPIC_SEGMENTS, FilterReason, l0_filter
+from buscador_midias.discovery.url_filter import DEFAULT_OFF_TOPIC_SEGMENTS, FilterReason, l0_filter
 
 
 @pytest.mark.parametrize(

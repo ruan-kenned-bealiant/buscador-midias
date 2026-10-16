@@ -111,12 +111,10 @@ def corpus_sync(db: Path, *extra: str, writer=None):
     return main(["corpus-sync", "--db", str(db), *extra], now=NOW, corpus_writer=writer)
 
 
-def test_parser_tem_padroes_conservadores():
+def test_parser_tem_padroes():
     args = build_parser().parse_args(["corpus-sync"])
 
     assert args.batch_size == 50
-    assert args.include_headline_only is False
-    assert args.min_confidence == 0.0
     assert args.dry_run is False
     assert args.db.name == "state.db"
 
@@ -130,7 +128,7 @@ def test_grava_os_achados_e_imprime_o_resumo(tmp_path: Path, capsys: pytest.Capt
     out = capsys.readouterr().out
     assert code == 0
     assert set(writer.corpus) == {"h-1"}
-    assert "corpus: candidatos" in out and "criados" in out and "retidos" in out
+    assert "corpus: candidatos" in out and "criados" in out
     assert writer.closed is True
     assert StateStore(db, read_only=True).corpus_write_counts() == {"written": 1, "created": 1}
 
@@ -146,15 +144,13 @@ def test_dry_run_so_conta(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
     assert StateStore(db, read_only=True).corpus_write_counts() == {"written": 0, "created": 0}
 
 
-def test_so_manchete_so_entra_com_a_opcao(tmp_path: Path):
+def test_analise_so_pela_manchete_nao_atende_ao_criterio_e_nao_entra(tmp_path: Path):
     db = make_db(tmp_path, basis="headline")
     writer = FakeWriter()
 
-    corpus_sync(db, writer=writer)
-    assert writer.corpus == {}
+    assert corpus_sync(db, writer=writer) == 0
 
-    corpus_sync(db, "--include-headline-only", writer=writer)
-    assert set(writer.corpus) == {"h-1"}
+    assert writer.corpus == {}
 
 
 def test_sem_estado_aborta(tmp_path: Path, capsys: pytest.CaptureFixture[str]):

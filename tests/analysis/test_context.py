@@ -10,9 +10,9 @@ from buscador_midias.analysis.context import (
     build_user_message,
     parse_analysis,
 )
+from buscador_midias.analysis.openrouter import OpenRouterChat
 from buscador_midias.analysis.prompt import SYSTEM_PROMPT
-from buscador_midias.triage.openrouter import OpenRouterChat
-from buscador_midias.triage.relevance import THEME_SLUGS
+from buscador_midias.analysis.themes import THEME_SLUGS
 
 ITEMS = [
     AnalysisItem(

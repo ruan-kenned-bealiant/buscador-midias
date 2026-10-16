@@ -13,6 +13,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from buscador_midias.criteria import MEETS_CRITERIA_SQL
 from buscador_midias.domain.discovered import DiscoveredUrl
 from buscador_midias.domain.roles import is_adverse_role
 
@@ -73,32 +74,8 @@ CREATE TABLE IF NOT EXISTS site_runs (
     known_urls INTEGER NOT NULL DEFAULT 0,
     sitemaps_failed INTEGER NOT NULL DEFAULT 0,
     filtered_urls INTEGER NOT NULL DEFAULT 0,
+    source TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (run_id, site_key)
-);
-CREATE TABLE IF NOT EXISTS triage_runs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    started_at TEXT NOT NULL,
-    finished_at TEXT,
-    model TEXT NOT NULL,
-    prompt_version TEXT NOT NULL,
-    headlines INTEGER NOT NULL DEFAULT 0,
-    kept INTEGER NOT NULL DEFAULT 0,
-    discarded INTEGER NOT NULL DEFAULT 0,
-    pending INTEGER NOT NULL DEFAULT 0,
-    calls INTEGER NOT NULL DEFAULT 0,
-    prompt_tokens INTEGER NOT NULL DEFAULT 0,
-    completion_tokens INTEGER NOT NULL DEFAULT 0,
-    cost_usd REAL,
-    retries INTEGER NOT NULL DEFAULT 0,
-    errors INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS url_triage (
-    url_hash TEXT PRIMARY KEY,
-    decision TEXT NOT NULL,
-    themes TEXT NOT NULL,
-    reason TEXT NOT NULL,
-    triage_run_id INTEGER NOT NULL,
-    triaged_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS url_content (
     url_hash TEXT PRIMARY KEY,
@@ -200,22 +177,14 @@ CREATE TABLE IF NOT EXISTS fallback_hosts (
 _ADDED_COLUMNS = (
     ("site_runs", "sitemaps_failed", "INTEGER NOT NULL DEFAULT 0"),
     ("site_runs", "filtered_urls", "INTEGER NOT NULL DEFAULT 0"),
+    ("site_runs", "source", "TEXT NOT NULL DEFAULT ''"),
     ("urls_seen", "filter_reason", "TEXT"),
     ("runs", "bright_data_requests", "INTEGER NOT NULL DEFAULT 0"),
     ("runs", "bright_data_hosts", "INTEGER NOT NULL DEFAULT 0"),
 )
 
 
-LABEL_GROUPS = ("in_corpus", "kept_no_entity", "triage_discarded")
-
-# Regra de relevância do corpus (consultas sobre ``url_analysis a``). O que o projeto busca são
-# matérias com entidade identificável; ser "adverso" (``finding``) é uma marca a mais, não o filtro.
-# ``entities`` só guarda nomes que constam no texto analisado, então lista vazia = sem entidade.
-_HAS_ENTITIES = "a.entities NOT IN ('[]', '')"
-# Entra no corpus: tem entidade (todo achado adverso tem, a checagem de ``finding`` é por garantia).
-_IN_CORPUS = f"(a.finding = 1 OR {_HAS_ENTITIES})"
-# Precisa de evidência: o achado adverso (mesmo só pela manchete) ou a matéria lida com entidade.
-_NEEDS_EVIDENCE = f"(a.finding = 1 OR (a.basis = 'text' AND {_HAS_ENTITIES}))"
+LABEL_GROUPS = ("in_corpus", "no_entity")
 
 
 class UrlKind(StrEnum):
@@ -229,117 +198,8 @@ class UrlKind(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class PendingUrl:
-    """URL nova que ainda espera o veredito da triagem por LLM.
-
-    Attributes:
-        url_hash: Hash canônico.
-        url: URL.
-        title: Título do news sitemap, se houve.
-        site_key: Fonte (``Site.key``).
-    """
-
-    url_hash: str
-    url: str
-    title: str | None
-    site_key: str
-
-
-@dataclass(frozen=True, slots=True)
-class TriageRecord:
-    """Veredito definitivo (``keep`` ou ``discard``) da triagem sobre uma URL.
-
-    Attributes:
-        url_hash: Hash canônico da URL.
-        decision: ``keep`` ou ``discard``.
-        themes: Temas adversos apontados.
-        reason: Justificativa curta do modelo.
-    """
-
-    url_hash: str
-    decision: str
-    themes: tuple[str, ...]
-    reason: str
-
-
-@dataclass(frozen=True, slots=True)
-class TriagedUrl:
-    """Uma URL com veredito, para auditoria humana.
-
-    Attributes:
-        url: URL.
-        site_key: Fonte.
-        title: Título do news sitemap, se houve.
-        decision: ``keep`` ou ``discard``.
-        themes: Temas apontados.
-        reason: Justificativa do modelo.
-        model: Modelo que decidiu.
-        prompt_version: Versão do prompt usada.
-    """
-
-    url: str
-    site_key: str
-    title: str | None
-    decision: str
-    themes: tuple[str, ...]
-    reason: str
-    model: str
-    prompt_version: str
-
-
-@dataclass(frozen=True, slots=True)
-class TriageRunTotals:
-    """Totais e consumo de uma execução da triagem.
-
-    Attributes:
-        headlines: Manchetes avaliadas na execução.
-        kept: Mantidas.
-        discarded: Descartadas.
-        pending: Sem veredito (falha do provedor); ficam para a próxima execução.
-        calls: Chamadas concluídas ao provedor.
-        prompt_tokens: Tokens de entrada.
-        completion_tokens: Tokens de saída.
-        cost_usd: Custo informado pelo provedor (``None`` se não informou).
-        retries: Tentativas repetidas.
-        errors: Lotes sem resposta.
-    """
-
-    headlines: int = 0
-    kept: int = 0
-    discarded: int = 0
-    pending: int = 0
-    calls: int = 0
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    cost_usd: float | None = None
-    retries: int = 0
-    errors: int = 0
-
-
-@dataclass(frozen=True, slots=True)
-class TriageRun:
-    """Uma execução da triagem por LLM.
-
-    Attributes:
-        id: Identificador sequencial.
-        started_at: Início (UTC).
-        model: Modelo usado.
-        prompt_version: Versão do prompt.
-        totals: Totais e consumo.
-        finished_at: Fim (UTC), ou ``None`` enquanto a execução não terminou.
-    """
-
-    id: int
-    started_at: datetime
-    model: str
-    prompt_version: str
-    totals: TriageRunTotals
-    finished_at: datetime | None = None
-
-
-@dataclass(frozen=True, slots=True)
 class EnrichPending:
-    """URL mantida pela triagem que ainda espera extração e análise de contexto.
+    """URL nova que ainda espera extração e análise de contexto.
 
     Attributes:
         url_hash: Hash canônico.
@@ -594,7 +454,6 @@ class CorpusTotals:
         entities: Entidades gravadas.
         keywords: Palavras-chave (temas) gravadas.
         failed: Achados que falharam ao gravar (voltam na próxima execução).
-        withheld: Achados retidos por regra (só manchete, confiança baixa).
         rewritten: Gravações que sumiram do corpus e foram refeitas.
     """
 
@@ -605,7 +464,6 @@ class CorpusTotals:
     entities: int = 0
     keywords: int = 0
     failed: int = 0
-    withheld: int = 0
     rewritten: int = 0
 
 
@@ -667,9 +525,8 @@ class LabelCandidate:
 
     Attributes:
         url_hash: Hash canônico.
-        group: ``in_corpus`` (a análise achou entidade identificável: vai ao corpus),
-            ``kept_no_entity`` (mantida pela triagem, lida como matéria e sem entidade) ou
-            ``triage_discarded`` (descartada pela triagem).
+        group: ``in_corpus`` (a análise achou entidade identificável: vai ao corpus) ou
+            ``no_entity`` (lida como matéria e sem entidade).
         url: URL.
         site_key: Fonte.
         headline: Título (da página ou do sitemap).
@@ -694,25 +551,24 @@ class LabelCandidate:
 
 @dataclass(frozen=True, slots=True)
 class RecentUrl:
-    """Uma URL nova recém-descoberta, com o veredito da triagem quando já existe.
+    """Uma URL nova recém-descoberta, com a situação da análise de contexto.
 
     Attributes:
         first_seen_at: Quando a vimos pela primeira vez (UTC).
         url: URL.
         site_key: Fonte.
         title: Título do news sitemap, se houve.
-        decision: ``keep``/``discard``, ou ``None`` se ainda não foi triada.
-        themes: Temas apontados pela triagem.
-        reason: Justificativa da triagem.
+        status: ``pending`` (ainda sem análise), ``in_corpus`` (tem entidade identificável) ou
+            ``no_entity`` (lida e sem entidade: não entra).
+        themes: Temas apontados pela análise.
     """
 
     first_seen_at: datetime
     url: str
     site_key: str
     title: str | None
-    decision: str | None
+    status: str
     themes: tuple[str, ...]
-    reason: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -741,7 +597,7 @@ class SiteRunRecord:
     Attributes:
         site_key: Fonte (``Site.key``).
         status: Desfecho (valor de ``ProbeStatus``).
-        new_urls: URLs novas (candidatas à triagem).
+        new_urls: URLs novas (candidatas à análise).
         baseline_urls: URLs registradas como histórico na linha de base do site.
         backlog_urls: URLs inéditas para nós, mas antigas demais para contar como novas.
         seen_urls: URLs do site encontradas nos sitemaps lidos (novas ou não).
@@ -751,7 +607,8 @@ class SiteRunRecord:
         known_urls: URLs inéditas para nós, mas que o corpus de Mídias IA já tinha.
         sitemaps_failed: Sitemaps que falharam em um site ``ok`` (leitura parcial); o motivo da
             primeira falha fica em ``detail``.
-        filtered_urls: URLs inéditas e frescas descartadas pela camada L0 da triagem.
+        filtered_urls: URLs inéditas e frescas descartadas pela forma da URL (L0).
+        source: De onde vieram as URLs (``sitemap``, ``feed`` ou ``sitemap_bd``); vazio em falha.
     """
 
     site_key: str
@@ -766,6 +623,7 @@ class SiteRunRecord:
     known_urls: int = 0
     sitemaps_failed: int = 0
     filtered_urls: int = 0
+    source: str = ""
 
 
 def _to_text(value: datetime | None) -> str | None:
@@ -1009,25 +867,29 @@ class StateStore:
             ).fetchall()
         return {hour: int(count) for hour, count in rows}
 
-    def triage_per_hour(self, *, since: datetime) -> dict[str, dict[str, int]]:
-        """Vereditos da triagem por hora (UTC) e decisão desde ``since``."""
+    def analyzed_per_hour(self, *, since: datetime) -> dict[str, dict[str, int]]:
+        """Análises por hora (UTC) desde ``since``: as que atendem ao critério e as que não."""
         with self._lock:
             rows = self._conn.execute(
-                "SELECT substr(triaged_at, 1, 13), decision, COUNT(*) FROM url_triage"
-                " WHERE triaged_at >= ? GROUP BY 1, 2 ORDER BY 1",
+                "SELECT substr(a.analyzed_at, 1, 13),"
+                f" CASE WHEN {MEETS_CRITERIA_SQL} THEN 'meets' ELSE 'not_meets' END, COUNT(*)"
+                " FROM url_analysis a WHERE a.analyzed_at >= ? GROUP BY 1, 2 ORDER BY 1",
                 (_to_text(since),),
             ).fetchall()
         hours: dict[str, dict[str, int]] = {}
-        for hour, decision, count in rows:
-            hours.setdefault(hour, {})[decision] = int(count)
+        for hour, verdict, count in rows:
+            hours.setdefault(hour, {})[verdict] = int(count)
         return hours
 
     def recent_new_urls(self, limit: int) -> list[RecentUrl]:
         """Últimas URLs ``new`` descobertas, da mais recente para a mais antiga."""
         with self._lock:
             rows = self._conn.execute(
-                "SELECT u.first_seen_at, u.url, u.site_key, u.title, t.decision, t.themes,"
-                " t.reason FROM urls_seen u LEFT JOIN url_triage t ON t.url_hash = u.url_hash"
+                "SELECT u.first_seen_at, u.url, u.site_key, u.title, a.themes,"
+                " CASE WHEN a.url_hash IS NULL THEN 'pending'"
+                f" WHEN {MEETS_CRITERIA_SQL} THEN 'in_corpus' ELSE 'no_entity' END"
+                " FROM urls_seen u"
+                " LEFT JOIN url_analysis a ON a.url_hash = u.url_hash"
                 " WHERE u.kind = ? ORDER BY u.first_seen_at DESC, u.rowid DESC LIMIT ?",
                 (UrlKind.NEW.value, limit),
             ).fetchall()
@@ -1037,9 +899,8 @@ class StateStore:
                 url=row[1],
                 site_key=row[2],
                 title=row[3],
-                decision=row[4],
-                themes=tuple(theme for theme in (row[5] or "").split(",") if theme),
-                reason=row[6] or "",
+                status=row[5],
+                themes=tuple(theme for theme in (row[4] or "").split(",") if theme),
             )
             for row in rows
         ]
@@ -1144,8 +1005,8 @@ class StateStore:
             self._conn.execute(
                 "INSERT OR REPLACE INTO site_runs (run_id, site_key, status, new_urls,"
                 " baseline_urls, backlog_urls, seen_urls, sitemaps_fetched, sitemaps_skipped,"
-                " detail, known_urls, sitemaps_failed, filtered_urls)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " detail, known_urls, sitemaps_failed, filtered_urls, source)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run_id,
                     record.site_key,
@@ -1160,6 +1021,7 @@ class StateStore:
                     record.known_urls,
                     record.sitemaps_failed,
                     record.filtered_urls,
+                    record.source,
                 ),
             )
 
@@ -1169,7 +1031,7 @@ class StateStore:
             rows = self._conn.execute(
                 "SELECT site_key, status, new_urls, baseline_urls, backlog_urls, seen_urls,"
                 " sitemaps_fetched, sitemaps_skipped, detail, known_urls, sitemaps_failed,"
-                " filtered_urls FROM site_runs"
+                " filtered_urls, source FROM site_runs"
                 " WHERE run_id = ? ORDER BY site_key",
                 (run_id,),
             ).fetchall()
@@ -1181,172 +1043,9 @@ class StateStore:
             rows = self._conn.execute(
                 "SELECT run_id, site_key, status, new_urls, baseline_urls, backlog_urls,"
                 " seen_urls, sitemaps_fetched, sitemaps_skipped, detail, known_urls,"
-                " sitemaps_failed, filtered_urls FROM site_runs ORDER BY run_id, site_key"
+                " sitemaps_failed, filtered_urls, source FROM site_runs ORDER BY run_id, site_key"
             ).fetchall()
         return [(row[0], SiteRunRecord(*row[1:])) for row in rows]
-
-    # --- triagem por LLM ---
-
-    def start_triage_run(self, started_at: datetime, *, model: str, prompt_version: str) -> int:
-        """Registra o início de uma execução da triagem e devolve o seu id."""
-        with self._lock, self._conn:
-            cursor = self._conn.execute(
-                "INSERT INTO triage_runs (started_at, model, prompt_version) VALUES (?, ?, ?)",
-                (_to_text(started_at), model, prompt_version),
-            )
-            return int(cursor.lastrowid or 0)
-
-    def finish_triage_run(
-        self, triage_run_id: int, finished_at: datetime, totals: TriageRunTotals
-    ) -> None:
-        """Grava o fim de uma execução da triagem, com totais e consumo."""
-        with self._lock, self._conn:
-            self._conn.execute(
-                "UPDATE triage_runs SET finished_at = ?, headlines = ?, kept = ?, discarded = ?,"
-                " pending = ?, calls = ?, prompt_tokens = ?, completion_tokens = ?, cost_usd = ?,"
-                " retries = ?, errors = ? WHERE id = ?",
-                (
-                    _to_text(finished_at),
-                    totals.headlines,
-                    totals.kept,
-                    totals.discarded,
-                    totals.pending,
-                    totals.calls,
-                    totals.prompt_tokens,
-                    totals.completion_tokens,
-                    totals.cost_usd,
-                    totals.retries,
-                    totals.errors,
-                    triage_run_id,
-                ),
-            )
-
-    def triage_runs(self) -> list[TriageRun]:
-        """Todas as execuções da triagem, da mais antiga para a mais nova."""
-        with self._lock:
-            rows = self._conn.execute(
-                "SELECT id, started_at, model, prompt_version, finished_at, headlines, kept,"
-                " discarded, pending, calls, prompt_tokens, completion_tokens, cost_usd, retries,"
-                " errors FROM triage_runs ORDER BY id"
-            ).fetchall()
-        return [
-            TriageRun(
-                id=row[0],
-                started_at=datetime.fromisoformat(row[1]),
-                model=row[2],
-                prompt_version=row[3],
-                totals=TriageRunTotals(*row[5:]),
-                finished_at=_from_text(row[4]),
-            )
-            for row in rows
-        ]
-
-    def pending_triage(self, limit: int | None = None) -> list[PendingUrl]:
-        """URLs ``new`` ainda sem veredito, na ordem em que foram vistas."""
-        sql = (
-            "SELECT u.url_hash, u.url, u.title, u.site_key FROM urls_seen u"
-            " LEFT JOIN url_triage t ON t.url_hash = u.url_hash"
-            " WHERE u.kind = ? AND t.url_hash IS NULL ORDER BY u.rowid"
-        )
-        params: tuple[object, ...] = (UrlKind.NEW.value,)
-        if limit is not None:
-            sql += " LIMIT ?"
-            params += (limit,)
-        with self._lock:
-            rows = self._conn.execute(sql, params).fetchall()
-        return [PendingUrl(*row) for row in rows]
-
-    def triage_theme_counts(self) -> dict[str, int]:
-        """Quantas URLs mantidas citam cada tema (uma URL pode citar até três)."""
-        with self._lock:
-            rows = self._conn.execute(
-                "SELECT themes, COUNT(*) FROM url_triage WHERE decision = 'keep' AND themes <> ''"
-                " GROUP BY themes"
-            ).fetchall()
-        counts: dict[str, int] = {}
-        for themes, count in rows:
-            for theme in themes.split(","):
-                counts[theme] = counts.get(theme, 0) + int(count)
-        return counts
-
-    def count_pending_triage(self) -> int:
-        """Quantas URLs ``new`` ainda esperam veredito."""
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT COUNT(*) FROM urls_seen u LEFT JOIN url_triage t ON t.url_hash = u.url_hash"
-                " WHERE u.kind = ? AND t.url_hash IS NULL",
-                (UrlKind.NEW.value,),
-            ).fetchone()
-        return int(row[0])
-
-    def reopen_discarded_triage(self, current_prompt_version: str) -> int:
-        """Devolve à fila os descartes feitos com outra versão do prompt de triagem.
-
-        Serve para reaproveitar o que um critério mais restrito descartou quando o critério muda.
-        Os descartes da versão atual e todos os ``keep`` ficam como estão, então repetir a chamada
-        não reabre nada de novo.
-
-        Args:
-            current_prompt_version: Versão do prompt em uso (``prompt_version(policy)``).
-
-        Returns:
-            Quantas URLs voltaram a ficar pendentes de triagem.
-        """
-        with self._lock, self._conn:
-            cursor = self._conn.execute(
-                "DELETE FROM url_triage WHERE decision = 'discard' AND triage_run_id IN"
-                " (SELECT id FROM triage_runs WHERE prompt_version != ?)",
-                (current_prompt_version,),
-            )
-            return cursor.rowcount
-
-    def record_triage(
-        self, records: Sequence[TriageRecord], *, triage_run_id: int, now: datetime
-    ) -> None:
-        """Grava vereditos; o primeiro veredito de uma URL vence."""
-        rows = [
-            (r.url_hash, r.decision, ",".join(r.themes), r.reason, triage_run_id, _to_text(now))
-            for r in records
-        ]
-        with self._lock, self._conn:
-            self._conn.executemany(
-                "INSERT OR IGNORE INTO url_triage (url_hash, decision, themes, reason,"
-                " triage_run_id, triaged_at) VALUES (?, ?, ?, ?, ?, ?)",
-                rows,
-            )
-
-    def triage_counts(self) -> dict[str, int]:
-        """Quantas URLs têm cada decisão (``keep``, ``discard``)."""
-        with self._lock:
-            rows = self._conn.execute(
-                "SELECT decision, COUNT(*) FROM url_triage GROUP BY decision"
-            ).fetchall()
-        return {decision: int(count) for decision, count in rows}
-
-    def sample_triaged(self, decision: str, count: int) -> list[TriagedUrl]:
-        """Amostra aleatória de URLs com a decisão informada, para auditoria humana."""
-        with self._lock:
-            rows = self._conn.execute(
-                "SELECT u.url, u.site_key, u.title, t.decision, t.themes, t.reason, r.model,"
-                " r.prompt_version FROM url_triage t"
-                " JOIN urls_seen u ON u.url_hash = t.url_hash"
-                " JOIN triage_runs r ON r.id = t.triage_run_id"
-                " WHERE t.decision = ? ORDER BY RANDOM() LIMIT ?",
-                (decision, count),
-            ).fetchall()
-        return [
-            TriagedUrl(
-                url=row[0],
-                site_key=row[1],
-                title=row[2],
-                decision=row[3],
-                themes=tuple(theme for theme in row[4].split(",") if theme),
-                reason=row[5],
-                model=row[6],
-                prompt_version=row[7],
-            )
-            for row in rows
-        ]
 
     # --- enriquecimento: conteúdo, análise de contexto e evidência ---
 
@@ -1417,18 +1116,26 @@ class StateStore:
         ]
 
     def pending_enrichment(self, limit: int | None = None) -> list[EnrichPending]:
-        """URLs mantidas pela triagem que ainda não têm análise de contexto."""
+        """URLs ``new`` que ainda não têm análise de contexto.
+
+        A ordem intercala as fontes (a 1ª de cada uma, depois a 2ª de cada uma...) e, dentro de
+        cada fonte, segue a ordem em que foram vistas. Um bloco só com URLs de um site ficaria
+        parado no intervalo mínimo entre requisições ao mesmo host.
+        """
         sql = (
-            "SELECT u.url_hash, u.url, u.title, u.site_key, c.status FROM urls_seen u"
-            " JOIN url_triage t ON t.url_hash = u.url_hash AND t.decision = 'keep'"
+            "SELECT url_hash, url, title, site_key, status FROM ("
+            " SELECT u.url_hash, u.url, u.title, u.site_key, c.status, u.rowid AS pos,"
+            " ROW_NUMBER() OVER (PARTITION BY u.site_key ORDER BY u.rowid) AS turn"
+            " FROM urls_seen u"
             " LEFT JOIN url_content c ON c.url_hash = u.url_hash"
             " LEFT JOIN url_analysis a ON a.url_hash = u.url_hash"
-            " WHERE a.url_hash IS NULL ORDER BY u.rowid"
+            " WHERE u.kind = ? AND a.url_hash IS NULL"
+            ") ORDER BY turn, pos"
         )
-        params: tuple[object, ...] = ()
+        params: tuple[object, ...] = (UrlKind.NEW.value,)
         if limit is not None:
             sql += " LIMIT ?"
-            params = (limit,)
+            params += (limit,)
         with self._lock:
             rows = self._conn.execute(sql, params).fetchall()
         return [EnrichPending(*row) for row in rows]
@@ -1557,7 +1264,7 @@ class StateStore:
             "SELECT u.url_hash, u.url, u.title, u.site_key, a.entities, a.finding"
             " FROM url_analysis a JOIN urls_seen u ON u.url_hash = a.url_hash"
             " LEFT JOIN url_evidence e ON e.url_hash = a.url_hash"
-            f" WHERE {_NEEDS_EVIDENCE} AND (e.url_hash IS NULL OR"
+            f" WHERE {MEETS_CRITERIA_SQL} AND (e.url_hash IS NULL OR"
             " (e.status != 'captured' AND e.attempts < ?)) ORDER BY a.analyzed_at, a.url_hash"
         )
         params: tuple[object, ...] = (max_attempts,)
@@ -1589,18 +1296,19 @@ class StateStore:
             row = self._conn.execute(
                 "SELECT COUNT(*) FROM url_analysis a LEFT JOIN url_evidence e"
                 " ON e.url_hash = a.url_hash"
-                f" WHERE {_NEEDS_EVIDENCE} AND (e.url_hash IS NULL OR"
+                f" WHERE {MEETS_CRITERIA_SQL} AND (e.url_hash IS NULL OR"
                 " (e.status != 'captured' AND e.attempts < ?))",
                 (max_attempts,),
             ).fetchone()
         return int(row[0])
 
     def count_pending_enrichment(self) -> int:
-        """Quantas URLs mantidas pela triagem ainda não têm análise de contexto."""
+        """Quantas URLs ``new`` ainda não têm análise de contexto."""
         with self._lock:
             row = self._conn.execute(
-                "SELECT COUNT(*) FROM url_triage t LEFT JOIN url_analysis a"
-                " ON a.url_hash = t.url_hash WHERE t.decision = 'keep' AND a.url_hash IS NULL"
+                "SELECT COUNT(*) FROM urls_seen u LEFT JOIN url_analysis a"
+                " ON a.url_hash = u.url_hash WHERE u.kind = ? AND a.url_hash IS NULL",
+                (UrlKind.NEW.value,),
             ).fetchone()
         return int(row[0])
 
@@ -1663,31 +1371,26 @@ class StateStore:
         """Todas as URLs de um grupo de rotulagem, na ordem em que foram vistas.
 
         Args:
-            group: ``in_corpus``, ``kept_no_entity`` ou ``triage_discarded``.
+            group: ``in_corpus`` ou ``no_entity``.
 
         Raises:
             ValueError: Se o grupo for desconhecido.
         """
-        if group == "triage_discarded":
-            sql = (
-                "SELECT u.url_hash, u.url, u.site_key, u.title, NULL, '', '[]', '', NULL"
-                " FROM url_triage t JOIN urls_seen u ON u.url_hash = t.url_hash"
-                " WHERE t.decision = 'discard' ORDER BY u.rowid"
-            )
-        elif group in ("in_corpus", "kept_no_entity"):
-            condition = (
-                _IN_CORPUS if group == "in_corpus" else f"NOT {_IN_CORPUS} AND a.basis = 'text'"
-            )
-            sql = (
-                "SELECT u.url_hash, u.url, u.site_key, COALESCE(c.title, u.title), c.lede,"
-                " a.themes, a.entities, a.adverse_fact, e.provider FROM url_analysis a"
-                " JOIN urls_seen u ON u.url_hash = a.url_hash"
-                " LEFT JOIN url_content c ON c.url_hash = a.url_hash"
-                " LEFT JOIN url_evidence e ON e.url_hash = a.url_hash"
-                f" WHERE {condition} ORDER BY u.rowid"
-            )
-        else:
+        if group not in LABEL_GROUPS:
             raise ValueError(f"grupo de rotulagem desconhecido: {group!r}")
+        condition = (
+            MEETS_CRITERIA_SQL
+            if group == "in_corpus"
+            else f"NOT {MEETS_CRITERIA_SQL} AND a.basis = 'text'"
+        )
+        sql = (
+            "SELECT u.url_hash, u.url, u.site_key, COALESCE(c.title, u.title), c.lede,"
+            " a.themes, a.entities, a.adverse_fact, e.provider FROM url_analysis a"
+            " JOIN urls_seen u ON u.url_hash = a.url_hash"
+            " LEFT JOIN url_content c ON c.url_hash = a.url_hash"
+            " LEFT JOIN url_evidence e ON e.url_hash = a.url_hash"
+            f" WHERE {condition} ORDER BY u.rowid"
+        )
         with self._lock:
             rows = self._conn.execute(sql).fetchall()
         return [
@@ -1777,7 +1480,7 @@ class StateStore:
         with self._lock, self._conn:
             self._conn.execute(
                 "UPDATE corpus_runs SET finished_at = ?, candidates = ?, created = ?, existing = ?,"
-                " evidence_updated = ?, entities = ?, keywords = ?, failed = ?, withheld = ?,"
+                " evidence_updated = ?, entities = ?, keywords = ?, failed = ?,"
                 " rewritten = ? WHERE id = ?",
                 (
                     _to_text(finished_at),
@@ -1788,7 +1491,6 @@ class StateStore:
                     totals.entities,
                     totals.keywords,
                     totals.failed,
-                    totals.withheld,
                     totals.rewritten,
                     corpus_run_id,
                 ),
@@ -1799,7 +1501,7 @@ class StateStore:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT id, started_at, finished_at, candidates, created, existing,"
-                " evidence_updated, entities, keywords, failed, withheld, rewritten"
+                " evidence_updated, entities, keywords, failed, rewritten"
                 " FROM corpus_runs ORDER BY id"
             ).fetchall()
         return [
@@ -1812,18 +1514,12 @@ class StateStore:
             for row in rows
         ]
 
-    def pending_corpus_sync(
-        self,
-        *,
-        include_headline_only: bool = False,
-        min_confidence: float = 0.0,
-        limit: int | None = None,
-    ) -> list[CorpusCandidate]:
-        """Matérias que ainda não foram gravadas no corpus ou cuja evidência mudou desde a gravação.
+    def pending_corpus_sync(self, *, limit: int | None = None) -> list[CorpusCandidate]:
+        """Matérias que atendem ao critério e ainda não estão no corpus.
+
+        Inclui as já gravadas cuja evidência mudou desde a gravação.
 
         Args:
-            include_headline_only: Inclui achados só da manchete (por padrão ficam retidos).
-            min_confidence: Confiança mínima da análise.
             limit: Máximo de achados.
         """
         sql = (
@@ -1835,13 +1531,11 @@ class StateStore:
             " LEFT JOIN url_content c ON c.url_hash = a.url_hash"
             " LEFT JOIN url_evidence e ON e.url_hash = a.url_hash"
             " LEFT JOIN corpus_writes w ON w.url_hash = a.url_hash"
-            f" WHERE {_IN_CORPUS} AND a.confidence >= ?"
+            f" WHERE {MEETS_CRITERIA_SQL}"
             " AND (w.url_hash IS NULL OR w.evidence_state != COALESCE(e.status, 'pending'))"
+            " ORDER BY a.analyzed_at, a.url_hash"
         )
-        params: list[object] = [min_confidence]
-        if not include_headline_only:
-            sql += " AND a.basis = 'text'"
-        sql += " ORDER BY a.analyzed_at, a.url_hash"
+        params: list[object] = []
         if limit is not None:
             sql += " LIMIT ?"
             params.append(limit)
@@ -1872,17 +1566,6 @@ class StateStore:
             )
             for row in rows
         ]
-
-    def count_corpus_withheld(self, *, include_headline_only: bool, min_confidence: float) -> int:
-        """Matérias que as regras de gravação seguram (só manchete ou confiança baixa)."""
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT COUNT(*) FROM url_analysis a LEFT JOIN corpus_writes w"
-                f" ON w.url_hash = a.url_hash WHERE {_IN_CORPUS} AND w.url_hash IS NULL"
-                " AND (a.confidence < ? OR (? = 0 AND a.basis != 'text'))",
-                (min_confidence, int(include_headline_only)),
-            ).fetchone()
-        return int(row[0])
 
     def record_corpus_write(
         self,
@@ -1944,7 +1627,7 @@ class StateStore:
             analysis = self._conn.execute(
                 "SELECT COALESCE(SUM(finding = 1), 0), COALESCE(SUM(finding = 0), 0),"
                 " COALESCE(SUM(basis = 'headline'), 0),"
-                f" COALESCE(SUM({_IN_CORPUS}), 0) FROM url_analysis a"
+                f" COALESCE(SUM({MEETS_CRITERIA_SQL}), 0) FROM url_analysis a"
             ).fetchone()
             evidence = self._conn.execute(
                 "SELECT status || ':' || COALESCE(provider, '-'), COUNT(*) FROM url_evidence"

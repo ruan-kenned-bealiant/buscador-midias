@@ -1,6 +1,6 @@
 import pytest
 
-from buscador_midias.triage.headline import features, headline_text, tokens
+from buscador_midias.analysis.headline import headline_text, tokens
 
 
 def test_tokens_sem_acento_minusculos_e_sem_numeros():
@@ -33,16 +33,6 @@ def test_tokens_ignora_letra_solta_e_id_colado_em_digitos():
 )
 def test_sufixo_de_veiculo_so_sai_quando_e_curto_e_sobra_manchete(title, expected):
     assert tokens(title) == expected
-
-
-def test_features_sao_palavras_e_bigramas():
-    assert features("PF prende empresario") == [
-        "pf",
-        "prende",
-        "empresario",
-        "pf_prende",
-        "prende_empresario",
-    ]
 
 
 def test_manchete_prefere_o_titulo_do_news_sitemap():

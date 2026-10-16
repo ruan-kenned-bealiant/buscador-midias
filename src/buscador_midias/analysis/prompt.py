@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from buscador_midias.triage.relevance import THEME_SLUGS
+from buscador_midias.analysis.themes import THEME_SLUGS
 
 PROMPT_VERSION = "context-2026-10-15.3"
 

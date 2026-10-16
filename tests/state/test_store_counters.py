@@ -162,18 +162,12 @@ def test_consultas_de_novas_usam_o_indice_e_nao_varrem_a_tabela():
 
 
 def test_contagens_de_pendentes_batem_com_as_listas():
-    from buscador_midias.state.store import AnalysisRecord, EvidenceRecord, TriageRecord
+    from buscador_midias.state.store import AnalysisRecord, EvidenceRecord
 
     store = StateStore()
     run = store.start_run(T0)
     paths = [f"p-{n}" for n in range(5)]
     store.record_urls([found(p) for p in paths], run_id=run, now=T0, kind=UrlKind.NEW)
-    triage = store.start_triage_run(T0, model="m", prompt_version="v")
-    store.record_triage(
-        [TriageRecord(f"h-a.com-{p}", "keep", (), "") for p in paths[:4]],
-        triage_run_id=triage,
-        now=T0,
-    )
     enrich = store.start_enrich_run(T0, model="m", prompt_version="v", evidence_mode="auto")
     for p in paths[:2]:
         store.record_analysis(
@@ -199,6 +193,5 @@ def test_contagens_de_pendentes_batem_com_as_listas():
         now=T0,
     )
 
-    assert store.count_pending_triage() == len(store.pending_triage()) == 1
-    assert store.count_pending_enrichment() == len(store.pending_enrichment()) == 2
+    assert store.count_pending_enrichment() == len(store.pending_enrichment()) == 3
     assert store.count_pending_evidence() == len(store.pending_evidence()) == 1

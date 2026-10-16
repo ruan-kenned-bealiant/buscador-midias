@@ -230,26 +230,14 @@ def test_falha_na_gravacao_nao_registra_e_volta_na_proxima_execucao():
     assert (second.totals.created, second.totals.failed) == (1, 0)
 
 
-def test_so_manchete_fica_retido_por_padrao_e_e_contado():
+def test_analise_so_pela_manchete_nao_atende_ao_criterio_e_nunca_entra_no_corpus():
     store = seed("a-1", "b-2", basis="headline")
     writer = FakeWriter()
 
     summary = run(store, writer)
 
     assert writer.corpus == {}
-    assert summary.totals.withheld == 2
-    included = run(store, writer, include_headline_only=True)
-    assert included.totals.created == 2
-
-
-def test_confianca_minima_retem_o_que_ficou_abaixo():
-    store = seed("a-1", confidence=0.55)
-    writer = FakeWriter()
-
-    summary = run(store, writer, min_confidence=0.7)
-
-    assert writer.corpus == {} and summary.totals.withheld == 1
-    assert run(store, writer, min_confidence=0.5).totals.created == 1
+    assert summary.totals.candidates == 0
 
 
 def test_gravacao_que_sumiu_do_corpus_e_refeita():
@@ -352,11 +340,11 @@ def test_materia_sem_entidade_nunca_entra_no_corpus():
     assert writer.corpus == {}
 
 
-def test_neutra_so_da_manchete_fica_retida_como_o_achado_so_da_manchete():
+def test_neutra_so_da_manchete_tambem_nao_atende_ao_criterio():
     store = seed_neutral("a-1", basis="headline")
     writer = FakeWriter()
 
     summary = sync_corpus(store, writer, sites={"a.com": site()}, now=NOW)
 
-    assert summary.totals.withheld == 1
+    assert summary.totals.candidates == 0
     assert writer.corpus == {}

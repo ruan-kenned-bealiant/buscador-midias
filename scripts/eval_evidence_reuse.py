@@ -3,9 +3,9 @@
 Uso (precisa de BRIGHTDATA_API_KEY e BRIGHTDATA_ZONE_UNLOCKER no ambiente; FAZ CHAMADAS PAGAS,
 no máximo uma por URL amostrada):
     python scripts/eval_evidence_reuse.py [--n 30] [--per-site 3] [--seed 0] [--out CSV]
-                                          [--source triage|recent]
+                                          [--source new|recent]
 
-``--source triage`` amostra URLs mantidas pela triagem; ``--source recent`` pega, de cada
+``--source new`` amostra URLs novas (``kind = 'new'``); ``--source recent`` pega, de cada
 fonte, URLs recentes (``lastmod``, ou a ordem do sitemap) que o L0 deixaria passar, cobrindo
 fontes sem URLs ``new`` ainda.
 
@@ -31,13 +31,13 @@ from pathlib import Path
 
 import httpx
 
+from buscador_midias.analysis.headline import headline_text
+from buscador_midias.discovery.url_filter import l0_filter
 from buscador_midias.extraction.compare import compare_pages
 from buscador_midias.extraction.fetch import ArticleFetcher, PageStatus
 from buscador_midias.extraction.reliability import PageSnapshot, assess_evidence
 from buscador_midias.net.fetcher import USER_AGENT
 from buscador_midias.net.stack import build_fetcher, build_unlocker
-from buscador_midias.triage.headline import headline_text
-from buscador_midias.triage.l0 import l0_filter
 
 ROOT = Path(__file__).resolve().parents[1]
 MIN_SIMILARITY = 0.9
@@ -72,11 +72,11 @@ class Row:
 
 
 def sample_urls(
-    state: Path, n: int, per_site: int, rng: random.Random, source: str = "triage"
+    state: Path, n: int, per_site: int, rng: random.Random, source: str = "new"
 ) -> list[tuple[str, str | None, str]]:
     """Amostra (url, título, fonte), até ``per_site`` por fonte.
 
-    ``triage``: URLs mantidas pela triagem. ``recent``: as mais recentes por ``lastmod`` de cada
+    ``new``: URLs novas. ``recent``: as mais recentes por ``lastmod`` de cada
     fonte, para cobrir fontes que ainda não têm URLs novas.
     """
     connection = sqlite3.connect(state)
@@ -95,8 +95,7 @@ def sample_urls(
             rows += rng.sample(candidates, min(per_site, len(candidates)))
     else:
         rows = connection.execute(
-            "SELECT u.url, u.title, u.site_key FROM urls_seen u"
-            " JOIN url_triage t ON t.url_hash = u.url_hash AND t.decision = 'keep'"
+            "SELECT url, title, site_key FROM urls_seen WHERE kind = 'new'"
         ).fetchall()
     rng.shuffle(rows)
     taken: Counter[str] = Counter()
@@ -116,7 +115,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--n", type=int, default=30)
     parser.add_argument("--per-site", type=int, default=3)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--source", choices=["triage", "recent"], default="triage")
+    parser.add_argument("--source", choices=["new", "recent"], default="new")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--interval", type=float, default=1.0)
     parser.add_argument("--state", type=Path, default=ROOT / "var/state.db")

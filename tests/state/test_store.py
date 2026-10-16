@@ -328,6 +328,47 @@ def test_banco_antigo_ganha_as_colunas_do_l0(tmp_path):
     assert store.site_runs(1)[0].filtered_urls == 0
 
 
+def test_resultado_do_site_guarda_de_que_fonte_vieram_as_urls():
+    store = StateStore()
+    run = store.start_run(T0)
+    via_feed = SiteRunRecord("a.com", "ok", 2, 0, 0, 2, 1, 0, "", source="feed")
+    failed = SiteRunRecord("b.com", "blocked", 0, 0, 0, 0, 1, 0, "sitemap: 403")
+
+    store.record_site_run(run, via_feed)
+    store.record_site_run(run, failed)
+
+    assert store.site_runs(run) == [via_feed, failed]
+    assert failed.source == ""
+    assert [r.source for _, r in store.all_site_runs()] == ["feed", ""]
+
+
+def test_banco_antigo_ganha_a_coluna_da_fonte_da_descoberta(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "antigo.db"
+    legacy = sqlite3.connect(path)
+    legacy.executescript(
+        """
+        CREATE TABLE site_runs (
+            run_id INTEGER NOT NULL, site_key TEXT NOT NULL, status TEXT NOT NULL,
+            new_urls INTEGER NOT NULL, baseline_urls INTEGER NOT NULL,
+            backlog_urls INTEGER NOT NULL, seen_urls INTEGER NOT NULL,
+            sitemaps_fetched INTEGER NOT NULL, sitemaps_skipped INTEGER NOT NULL,
+            detail TEXT NOT NULL, known_urls INTEGER NOT NULL DEFAULT 0,
+            sitemaps_failed INTEGER NOT NULL DEFAULT 0, filtered_urls INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (run_id, site_key)
+        );
+        INSERT INTO site_runs VALUES (1, 'a.com', 'ok', 4, 0, 0, 4, 1, 0, '', 0, 0, 0);
+        """
+    )
+    legacy.commit()
+    legacy.close()
+
+    store = StateStore(path)
+
+    assert store.site_runs(1)[0].source == ""
+
+
 def test_rodada_guarda_o_uso_do_bright_data():
     store = StateStore()
     run = store.start_run(T0)

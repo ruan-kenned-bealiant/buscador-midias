@@ -1,0 +1,132 @@
+import json
+
+import httpx
+
+from buscador_midias.analysis.openrouter import OpenRouterChat
+
+SECRET = "sk-or-segredo-123"
+
+
+def completion(*entries: dict, cost: float | None = 0.0001) -> dict:
+    body: dict = {
+        "choices": [{"message": {"content": json.dumps({"items": list(entries)})}}],
+        "usage": {"prompt_tokens": 400, "completion_tokens": 60},
+    }
+    if cost is not None:
+        body["usage"]["cost"] = cost
+    return body
+
+
+ENTRY = {"id": 1, "entities": []}
+
+
+def make(handler, **kwargs) -> OpenRouterChat:
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    return OpenRouterChat(
+        client,
+        api_key=SECRET,
+        model="google/gemini-2.5-flash-lite",
+        sleep=lambda _seconds: None,
+        **kwargs,
+    )
+
+
+def test_chamada_traz_modelo_temperatura_zero_prompt_e_mensagem():
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["auth"] = request.headers["authorization"]
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json=completion(ENTRY))
+
+    chat = make(handler, base_url="https://openrouter.ai/api/v1/")
+
+    text = chat.complete("SISTEMA", "USUARIO", max_tokens=321)
+
+    assert text is not None and '"items"' in text
+    assert seen["url"] == "https://openrouter.ai/api/v1/chat/completions"
+    assert seen["auth"] == f"Bearer {SECRET}"
+    body = seen["body"]
+    assert body["model"] == "google/gemini-2.5-flash-lite"
+    assert body["temperature"] == 0
+    assert body["max_tokens"] == 321
+    assert body["response_format"] == {"type": "json_object"}
+    assert body["messages"] == [
+        {"role": "system", "content": "SISTEMA"},
+        {"role": "user", "content": "USUARIO"},
+    ]
+
+
+def test_uso_e_custo_sao_acumulados_entre_chamadas():
+    chat = make(lambda request: httpx.Response(200, json=completion(ENTRY)))
+
+    chat.complete("S", "U", max_tokens=10)
+    chat.complete("S", "U", max_tokens=10)
+
+    usage = chat.usage
+    assert (usage.calls, usage.prompt_tokens, usage.completion_tokens) == (2, 800, 120)
+    assert usage.cost_usd == 0.0002
+
+
+def test_sem_custo_informado_o_total_fica_nulo():
+    chat = make(lambda request: httpx.Response(200, json=completion(ENTRY, cost=None)))
+
+    chat.complete("S", "U", max_tokens=10)
+
+    assert chat.usage.cost_usd is None
+
+
+def test_429_e_5xx_sao_repetidos_e_depois_funciona():
+    statuses = iter([429, 503])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        status = next(statuses, 200)
+        if status != 200:
+            return httpx.Response(status, text="tente depois")
+        return httpx.Response(200, json=completion(ENTRY))
+
+    chat = make(handler)
+
+    assert chat.complete("S", "U", max_tokens=10) is not None
+    assert chat.usage.retries == 2
+
+
+def test_falha_persistente_devolve_none_sem_vazar_a_chave():
+    chat = make(lambda request: httpx.Response(500, text=f"erro interno {SECRET}"))
+
+    assert chat.complete("S", "U", max_tokens=10) is None
+    assert chat.usage.errors == 1
+    assert SECRET not in (chat.usage.last_error or "")
+
+
+def test_erro_de_rede_tambem_devolve_none():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("sem rede")
+
+    chat = make(handler)
+
+    assert chat.complete("S", "U", max_tokens=10) is None
+    assert chat.usage.errors == 1
+
+
+def test_erro_4xx_que_nao_e_429_nao_e_repetido():
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(401, text=SECRET)
+
+    chat = make(handler)
+
+    assert chat.complete("S", "U", max_tokens=10) is None
+    assert len(calls) == 1
+    assert "401" in (chat.usage.last_error or "")
+    assert SECRET not in (chat.usage.last_error or "")
+
+
+def test_resposta_sem_conteudo_devolve_none():
+    chat = make(lambda request: httpx.Response(200, json={"choices": []}))
+
+    assert chat.complete("S", "U", max_tokens=10) is None
+    assert chat.usage.errors == 1

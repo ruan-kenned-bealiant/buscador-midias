@@ -2,6 +2,7 @@ import time
 from datetime import UTC, datetime, timedelta
 
 from buscador_midias.discovery.incremental import discover_site
+from buscador_midias.discovery.sources import cascade_for
 from buscador_midias.domain.site import Site
 from buscador_midias.domain.url import legacy_url_hash, url_hash
 from buscador_midias.net.fetcher import FetchResult
@@ -93,10 +94,23 @@ def simple(*entries: tuple[str, str | None]) -> FakeFetcher:
     )
 
 
+def sitemap_only(site: Site, fetcher: FakeFetcher, **kwargs):
+    """Cascata só com o sitemap gratuito: o comportamento clássico da descoberta."""
+    return cascade_for(
+        site, free=fetcher, paid=None, user_agent=UA, known_blocked=False, use_feed=False, **kwargs
+    )
+
+
 def run(store: StateStore, fetcher: FakeFetcher, *, site: Site | None = None, **kwargs):
+    site = site or make_site()
+    budget = (
+        {"max_sitemap_fetches": kwargs.pop("max_sitemap_fetches")}
+        if "max_sitemap_fetches" in kwargs
+        else {}
+    )
     run_id = store.start_run(NOW)
     return discover_site(
-        site or make_site(), fetcher, store, run_id=run_id, now=NOW, user_agent=UA, **kwargs
+        site, sitemap_only(site, fetcher, **budget), store, run_id=run_id, now=NOW, **kwargs
     )
 
 
@@ -517,96 +531,147 @@ def test_url_filtrada_nao_volta_a_ser_avaliada_na_rodada_seguinte():
     assert again.record.new_urls == 0
 
 
-def _l1_filter():
-    from buscador_midias.triage.l1 import L1Filter, NaiveBayesHeadlineModel
+# --- cascata: sitemap -> feed -> sitemap pago ---
 
-    positives = ["pf prende empresario por fraude e lavagem de dinheiro"] * 10
-    negatives = ["previsao do tempo hoje com sol e nuvens em recife"] * 10
-    model = NaiveBayesHeadlineModel.train(positives, negatives, min_count=2)
-    return L1Filter(model, threshold=0.0)
+RSS_HOME = (
+    b'<html><head><link rel="alternate" type="application/rss+xml" href="/feed/"></head></html>'
+)
 
 
-def test_l1_descarta_manchete_de_baixo_sinal_depois_do_l0():
+def rss(*items: tuple[str, str, str]) -> bytes:
+    """Cada item: (link, título, data RFC 822)."""
+    body = "".join(
+        f"<item><title>{title}</title><link>{link}</link><pubDate>{date}</pubDate></item>"
+        for link, title, date in items
+    )
+    return f'<rss version="2.0"><channel>{body}</channel></rss>'.encode()
+
+
+BLOCKED_ROBOTS = {
+    "https://exemplo.com/robots.txt": FetchResult("u", status=403, content=b"", error=None)
+}
+
+
+def cascade_run(store: StateStore, free: FakeFetcher, paid=None, *, known_blocked=False):
+    site = make_site()
+    sources = cascade_for(
+        site, free=free, paid=paid, user_agent=UA, known_blocked=known_blocked, use_feed=True
+    )
+    return discover_site(site, sources, store, run_id=store.start_run(NOW), now=NOW)
+
+
+def test_o_registro_do_site_diz_de_que_fonte_vieram_as_urls():
     store = StateStore()
-    run(store, simple(("https://exemplo.com/materia-base-1", None)))
-    fetcher = simple(
-        ("https://exemplo.com/materia-base-1", None),
-        ("https://exemplo.com/cotidiano/previsao-do-tempo-hoje-com-sol-e-nuvens-em-recife", None),
-        ("https://exemplo.com/policia/pf-prende-empresario-por-fraude-e-lavagem-de-dinheiro", None),
-        ("https://exemplo.com/tag/eleicoes", None),
+
+    result = run(store, simple(("https://exemplo.com/a", None)))
+
+    assert result.record.source == "sitemap"
+
+
+def test_sitemap_bloqueado_cai_para_o_feed_e_as_novas_vem_dele():
+    store = StateStore()
+    run(store, simple(("https://exemplo.com/a", None)))  # linha de base pelo sitemap
+    free = FakeFetcher(
+        {
+            "https://exemplo.com/sitemap.xml": FetchResult("u", 403, b"", None),
+            "https://exemplo.com": RSS_HOME,
+            "https://exemplo.com/feed/": rss(
+                (
+                    "https://exemplo.com/politica/pf-prende-empresario",
+                    "PF prende empresário",
+                    "Thu, 15 Oct 2026 10:00:00 +0000",
+                )
+            ),
+        }
     )
 
-    result = run(store, fetcher, l1=_l1_filter())
+    result = cascade_run(store, free)
 
-    assert [u.url for u in result.new] == [
-        "https://exemplo.com/policia/pf-prende-empresario-por-fraude-e-lavagem-de-dinheiro"
-    ]
-    assert result.record.filtered_urls == 2
-    assert store.filtered_by_reason() == {"l1_low_signal": 1, "listing": 1}
+    assert result.record.status == "ok"
+    assert result.record.source == "feed"
+    [found] = result.new
+    assert found.title == "PF prende empresário"
+    assert found.publication_date == datetime(2026, 10, 15, 10, 0, tzinfo=UTC)
+    assert store.sitemap_lastmod("feed:exemplo.com") is None
 
 
-def test_l1_nao_se_aplica_a_linha_de_base():
+def test_urls_do_feed_antigas_demais_viram_backlog_como_as_do_sitemap():
     store = StateStore()
-    fetcher = simple(
-        ("https://exemplo.com/cotidiano/previsao-do-tempo-hoje-com-sol-e-nuvens-em-recife", None)
+    run(store, simple(("https://exemplo.com/a", None)))
+    feed = FakeFetcher(
+        {
+            "https://exemplo.com": RSS_HOME,
+            "https://exemplo.com/feed/": rss(
+                ("https://exemplo.com/velha-materia", "Velha", "Mon, 01 Jun 2026 10:00:00 +0000"),
+                ("https://exemplo.com/fresca-materia", "Fresca", "Thu, 15 Oct 2026 10:00:00 +0000"),
+            ),
+            "https://exemplo.com/sitemap.xml": FetchResult("u", 404, b"", None),
+        }
     )
 
-    result = run(store, fetcher, l1=_l1_filter())
+    result = cascade_run(store, feed)
 
+    assert [u.url for u in result.new] == ["https://exemplo.com/fresca-materia"]
+    assert result.record.backlog_urls == 1
+
+
+def test_primeira_leitura_pelo_feed_tambem_e_linha_de_base():
+    store = StateStore()
+    feed = FakeFetcher(
+        {
+            "https://exemplo.com": RSS_HOME,
+            "https://exemplo.com/feed/": rss(
+                ("https://exemplo.com/materia-um", "Um", "Thu, 15 Oct 2026 10:00:00 +0000")
+            ),
+        }
+    )
+
+    result = cascade_run(store, feed)
+
+    assert result.record.source == "feed"
     assert result.record.baseline_urls == 1
-    assert result.record.filtered_urls == 0
-
-
-def test_l1_so_vale_para_os_idiomas_que_cobre():
-    store = StateStore()
-    english = Site.create(
-        name="Example",
-        url="https://exemplo.com",
-        region="US",
-        country="US",
-        country_code="US",
-        language="Inglês",
-        source_type="Jornal",
-    )
-    run(store, simple(("https://exemplo.com/materia-base-1", None)), site=english)
-    fetcher = simple(
-        ("https://exemplo.com/materia-base-1", None),
-        ("https://exemplo.com/cotidiano/previsao-do-tempo-hoje-com-sol-e-nuvens-em-recife", None),
-    )
-
-    result = run(store, fetcher, site=english, l1=_l1_filter())
-
-    assert len(result.new) == 1
-
-
-def test_l1_usa_o_titulo_do_news_sitemap_quando_existe():
-    store = StateStore()
-    run(store, simple(("https://exemplo.com/materia-base-1", None)))
-    fetcher = simple(
-        ("https://exemplo.com/materia-base-1", None),
-        (
-            "https://exemplo.com/cotidiano/1234",
-            None,
-            "2026-10-15T10:00:00Z",
-            "Previsão do tempo hoje com sol e nuvens em Recife",
-        ),
-    )
-
-    result = run(store, fetcher, l1=_l1_filter())
-
     assert result.new == ()
-    assert store.filtered_by_reason() == {"l1_low_signal": 1}
 
 
-def test_corpus_nao_e_consultado_para_o_que_o_l1_descartou():
+def test_sem_nenhuma_fonte_o_registro_vem_sem_fonte_e_junta_os_motivos():
     store = StateStore()
-    run(store, simple(("https://exemplo.com/materia-base-1", None)))
-    fetcher = simple(
-        ("https://exemplo.com/materia-base-1", None),
-        ("https://exemplo.com/cotidiano/previsao-do-tempo-hoje-com-sol-e-nuvens-em-recife", None),
+    free = FakeFetcher(dict(BLOCKED_ROBOTS))
+
+    result = cascade_run(store, free)
+
+    assert result.record.status == "blocked"
+    assert result.record.source == ""
+    assert result.record.detail.startswith("sitemap: robots.txt: HTTP 403; feed:")
+    assert store.site_has_baseline("exemplo.com") is False
+
+
+def test_sitemap_pago_resgata_o_bloqueio_e_marca_o_host_como_dependente():
+    store = StateStore()
+    free = FakeFetcher(dict(BLOCKED_ROBOTS))
+    paid = simple(("https://exemplo.com/a", None))
+
+    result = cascade_run(store, free, paid)
+
+    assert result.record.source == "sitemap_bd"
+    assert result.record.baseline_urls == 1
+    assert store.fallback_hosts() == frozenset({"exemplo.com"})
+
+
+def test_host_conhecido_como_bloqueado_tenta_o_feed_antes_de_pagar():
+    store = StateStore()
+    run(store, simple(("https://exemplo.com/a", None)))
+    free = FakeFetcher(
+        {
+            "https://exemplo.com": RSS_HOME,
+            "https://exemplo.com/feed/": rss(
+                ("https://exemplo.com/materia-nova", "Nova", "Thu, 15 Oct 2026 10:00:00 +0000")
+            ),
+        }
     )
-    corpus = FakeCorpus()
+    paid = simple(("https://exemplo.com/a", None))
 
-    run(store, fetcher, l1=_l1_filter(), corpus=corpus)
+    result = cascade_run(store, free, paid, known_blocked=True)
 
-    assert corpus.calls == []
+    assert result.record.source == "feed"
+    assert paid.calls == []
+    assert "https://exemplo.com/sitemap.xml" not in free.calls

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import os
 import sys
 from collections import Counter
@@ -17,6 +18,14 @@ import httpx
 
 from buscador_midias.analysis.context import DEFAULT_BATCH_SIZE as ANALYSIS_BATCH_SIZE
 from buscador_midias.analysis.context import ContextAnalyzer, OpenRouterContextAnalyzer
+from buscador_midias.analysis.openrouter import (
+    DEFAULT_BASE_URL as OPENROUTER_BASE_URL,
+)
+from buscador_midias.analysis.openrouter import (
+    DEFAULT_MODEL,
+    MissingOpenRouterKeyError,
+    OpenRouterChat,
+)
 from buscador_midias.analysis.prompt import PROMPT_VERSION as ANALYSIS_PROMPT_VERSION
 from buscador_midias.corpus.index import CorpusConfigError, CorpusIndex, PostgresCorpusIndex
 from buscador_midias.corpus.sync import DEFAULT_BATCH_SIZE as CORPUS_BATCH_SIZE
@@ -27,7 +36,9 @@ from buscador_midias.discovery.explore import DEFAULT_MAX_SITEMAP_FETCHES
 from buscador_midias.discovery.incremental import DEFAULT_FRESH_DAYS, RunResult, discover_all
 from buscador_midias.discovery.probe import SiteProbe
 from buscador_midias.discovery.report import probe_all, summarize, write_probe_report
+from buscador_midias.discovery.sources import DiscoverySource, cascade_for
 from buscador_midias.discovery.stats import build_report, format_report
+from buscador_midias.discovery.url_filter import DEFAULT_OFF_TOPIC_SEGMENTS
 from buscador_midias.domain.site import Site
 from buscador_midias.enrich.pipeline import ArticleSource, enrich_pending
 from buscador_midias.evidence.capture import EvidenceCapturer
@@ -37,7 +48,7 @@ from buscador_midias.extraction.fetch import ArticleFetcher
 from buscador_midias.labeling.export import KEY_FILE, export_batch
 from buscador_midias.labeling.score import format_label_report, score_labels
 from buscador_midias.labeling.server import make_label_server
-from buscador_midias.net.fetcher import USER_AGENT, Fetcher
+from buscador_midias.net.fetcher import USER_AGENT, Fetcher, ThrottledFetcher
 from buscador_midias.net.stack import (
     FetchStack,
     MissingCredentialsError,
@@ -46,20 +57,6 @@ from buscador_midias.net.stack import (
 )
 from buscador_midias.sites.loader import load_sites
 from buscador_midias.state.store import CorpusTotals, EnrichTotals, SiteRunRecord, StateStore
-from buscador_midias.triage.l0 import DEFAULT_OFF_TOPIC_SEGMENTS
-from buscador_midias.triage.l1 import L1Filter
-from buscador_midias.triage.openrouter import (
-    DEFAULT_BASE_URL as OPENROUTER_BASE_URL,
-)
-from buscador_midias.triage.openrouter import (
-    DEFAULT_MODEL,
-    MissingOpenRouterKeyError,
-    OpenRouterChat,
-    classifier_from_env,
-)
-from buscador_midias.triage.pipeline import triage_pending
-from buscador_midias.triage.prompt import Policy, prompt_version
-from buscador_midias.triage.relevance import DEFAULT_BATCH_SIZE, HeadlineClassifier
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SITES = _REPO_ROOT / "data" / "sites.csv"
@@ -112,7 +109,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     discover = commands.add_parser(
         "discover",
-        help="Rodada de descoberta incremental: grava no estado e lista o que é novo.",
+        help=(
+            "Rodada de descoberta incremental (sitemap, depois feed, depois Bright Data): grava no "
+            "estado e lista o que é novo."
+        ),
     )
     _add_site_args(discover)
     _add_network_args(discover)
@@ -133,17 +133,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--skip-off-topic",
         action="store_true",
         help=(
-            "Descarta no L0 as seções de temas sem interesse (esporte, culinária, horóscopo). "
+            "Descarta pela forma da URL as seções de temas sem interesse (esporte, culinária, "
+            "horóscopo). "
             "Fica desligado por padrão: essas seções também trazem matérias de gestão e denúncia."
-        ),
-    )
-    discover.add_argument(
-        "--l1-model",
-        type=Path,
-        default=None,
-        help=(
-            "Filtro por manchete (gerado por scripts/train_l1.py): descarta, entre as URLs novas, "
-            "as de baixo sinal de notícia adversa. Só vale para os idiomas que o modelo cobre."
         ),
     )
     discover.add_argument(
@@ -155,30 +147,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    triage = commands.add_parser(
-        "triage",
-        help="Triagem por LLM das URLs novas ainda sem veredito (CONSOME CRÉDITOS do OpenRouter).",
-    )
-    triage.add_argument("--db", type=Path, default=DEFAULT_DB, help="Arquivo SQLite do estado.")
-    triage.add_argument(
-        "--retriage-discarded",
-        action="store_true",
-        help=(
-            "Antes de triar, devolve à fila os descartes feitos com outra versão do prompt "
-            "(use ao mudar o critério). Repetir o comando não reabre nada de novo."
-        ),
-    )
-    _add_triage_options(triage, prefix="")
-
     discover.add_argument(
-        "--triage",
+        "--no-feed",
         action="store_true",
-        help=(
-            "Depois da descoberta, classifica as URLs novas com o LLM (OpenRouter, CONSOME "
-            "CRÉDITOS). Exige OPENROUTER_API_KEY no ambiente."
-        ),
+        help="Não usa o feed (RSS/Atom) como alternativa quando o sitemap não serve.",
     )
-    _add_triage_options(discover, prefix="triage-")
 
     dashboard = commands.add_parser(
         "dashboard",
@@ -201,8 +174,8 @@ def build_parser() -> argparse.ArgumentParser:
     enrich = commands.add_parser(
         "enrich",
         help=(
-            "Para as URLs mantidas pela triagem: baixa o texto, analisa o contexto (OpenRouter) e "
-            "captura a evidência dos achados (CONSOME CRÉDITOS)."
+            "Para as URLs novas: baixa o texto, analisa o contexto (OpenRouter), confere o "
+            "critério e captura a evidência das que atendem (CONSOME CRÉDITOS)."
         ),
     )
     enrich.add_argument("--db", type=Path, default=DEFAULT_DB, help="Arquivo SQLite do estado.")
@@ -265,20 +238,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     corpus_sync.add_argument("--limit", type=int, default=None, help="Máximo de achados.")
     corpus_sync.add_argument(
-        "--include-headline-only",
-        action="store_true",
-        help="Grava também achados baseados só na manchete (por padrão ficam retidos).",
-    )
-    corpus_sync.add_argument(
-        "--min-confidence", type=float, default=0.0, help="Confiança mínima da análise."
-    )
-    corpus_sync.add_argument(
         "--dry-run", action="store_true", help="Só mostra o que seria gravado; não grava nada."
     )
 
     labels = commands.add_parser(
         "labels",
-        help="Rotulagem humana às cegas para medir a precisão da triagem e da análise.",
+        help="Rotulagem humana às cegas para medir a precisão da análise de contexto.",
     )
     labels_commands = labels.add_subparsers(dest="labels_command", required=True)
     labels_export = labels_commands.add_parser(
@@ -304,9 +269,60 @@ def build_parser() -> argparse.ArgumentParser:
     )
     labels_serve.add_argument("--port", type=int, default=8766, help="Porta da tela.")
     labels_export.add_argument(
-        "--per-group", type=int, default=70, help="URLs por grupo (achados, mantidas, descartadas)."
+        "--per-group", type=int, default=70, help="URLs por grupo (com entidade, sem entidade)."
     )
     labels_export.add_argument("--seed", type=int, default=1, help="Semente do sorteio.")
+
+    run = commands.add_parser(
+        "run",
+        help=(
+            "O fluxo todo, em ordem: descobrir notícias novas, analisar o contexto, conferir o "
+            "critério, capturar a evidência e gravar no corpus (CONSOME CRÉDITOS). É o comando "
+            "que o agendador chama."
+        ),
+    )
+    _add_site_args(run)
+    run.add_argument("--db", type=Path, default=DEFAULT_DB, help="Arquivo SQLite do estado.")
+    run.add_argument("--workers", type=int, default=8, help="Fontes lidas em paralelo.")
+    run.add_argument(
+        "--enrich-workers", type=int, default=8, help="Downloads e chamadas ao LLM em paralelo."
+    )
+    run.add_argument(
+        "--interval", type=float, default=1.0, help="Segundos mínimos entre pedidos ao mesmo host."
+    )
+    run.add_argument(
+        "--fresh-days", type=int, default=DEFAULT_FRESH_DAYS, help="Janela de frescor."
+    )
+    run.add_argument(
+        "--max-sitemap-fetches", type=int, default=DEFAULT_MAX_SITEMAP_FETCHES, help="Por site."
+    )
+    run.add_argument("--skip-off-topic", action="store_true", help="Veja `discover --help`.")
+    run.add_argument("--no-feed", action="store_true", help="Não usa o feed como alternativa.")
+    run.add_argument(
+        "--no-bright-data",
+        action="store_true",
+        help="Não usa o Bright Data (pago) em nenhuma etapa.",
+    )
+    run.add_argument(
+        "--discovery-bright-data-max",
+        type=int,
+        default=60,
+        help="Teto de chamadas pagas na descoberta (sitemaps de sites que bloqueiam).",
+    )
+    run.add_argument(
+        "--enrich-bright-data-max",
+        type=int,
+        default=100,
+        help="Teto de chamadas pagas na captura de evidência.",
+    )
+    run.add_argument("--model", default=DEFAULT_MODEL, help="Modelo do OpenRouter.")
+    run.add_argument(
+        "--evidence-dir", type=Path, default=DEFAULT_EVIDENCE_DIR, help="Evidências no disco local."
+    )
+    run.add_argument(
+        "--evidence-store", choices=["auto", "local", "s3"], default="auto", help="Onde gravar."
+    )
+    run.add_argument("--progress-every", type=int, default=100, help="Progresso a cada N fontes.")
 
     backup = commands.add_parser(
         "backup", help="Cópia consistente do estado (SQLite), com data e hora UTC no nome."
@@ -318,48 +334,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     report = commands.add_parser("report", help="Estatísticas das rodadas de descoberta.")
     report.add_argument("--db", type=Path, default=DEFAULT_DB, help="Arquivo SQLite do estado.")
-    report.add_argument(
-        "--audit",
-        type=int,
-        default=0,
-        metavar="N",
-        help="Mostra N URLs descartadas pela triagem por LLM, escolhidas ao acaso, para conferir.",
-    )
     return parser
-
-
-def _add_triage_options(parser: argparse.ArgumentParser, *, prefix: str) -> None:
-    """Opções da triagem por LLM (``prefix`` evita colisão quando vêm junto do ``discover``)."""
-    parser.add_argument(
-        f"--{prefix}model",
-        dest="model",
-        default=DEFAULT_MODEL,
-        help="Modelo do OpenRouter.",
-    )
-    parser.add_argument(
-        f"--{prefix}policy",
-        dest="policy",
-        choices=[policy.value for policy in Policy],
-        default=Policy.ENTITIES.value,
-        help=(
-            "Critério do descarte (entities: só descarta o que não tem pessoa ou organização "
-            "identificável; permissive/balanced: só mantêm o que sugere fato adverso)."
-        ),
-    )
-    parser.add_argument(
-        f"--{prefix}batch-size",
-        dest="batch_size",
-        type=int,
-        default=DEFAULT_BATCH_SIZE,
-        help="Manchetes por chamada ao LLM.",
-    )
-    parser.add_argument(
-        f"--{prefix}limit",
-        dest="triage_limit",
-        type=int,
-        default=None,
-        help="Máximo de URLs pendentes avaliadas nesta execução.",
-    )
 
 
 def _add_site_args(parser: argparse.ArgumentParser) -> None:
@@ -419,7 +394,7 @@ def main(
     now: datetime | None = None,
     corpus: CorpusIndex | None = None,
     client: httpx.Client | None = None,
-    classifier: HeadlineClassifier | None = None,
+    paid_fetcher: Fetcher | None = None,
     serve: Callable[[ThreadingHTTPServer], None] | None = None,
     enrich_ports: EnrichPorts | None = None,
     corpus_writer: CorpusWriter | None = None,
@@ -434,8 +409,8 @@ def main(
         corpus: Índice do corpus a usar em ``discover`` (os testes injetam um fake).
         client: Cliente httpx a usar quando ``fetcher`` não for dado (os testes injetam um com
             transporte simulado).
-        classifier: Classificador da triagem por LLM; se ausente, monta o do OpenRouter com as
-            variáveis do ambiente (os testes injetam um fake).
+        paid_fetcher: Fetcher pago (Bright Data) da descoberta; se ausente e ``--bright-data`` foi
+            pedido, monta o real com as credenciais do ambiente (os testes injetam um fake).
         serve: Como o painel atende as requisições (padrão: ``serve_forever``); os testes injetam
             uma função que não bloqueia.
         enrich_ports: Dependências do ``enrich``; os testes injetam fakes.
@@ -446,9 +421,7 @@ def main(
     """
     args = build_parser().parse_args(argv)
     if args.command == "report":
-        return _report(args.db, args.audit)
-    if args.command == "triage":
-        return _triage(args, classifier, now)
+        return _report(args.db)
     if args.command == "labels":
         return _labels(args)
     if args.command == "corpus-sync":
@@ -460,13 +433,111 @@ def main(
     if args.command == "backup":
         return _backup(args, now or datetime.now(UTC))
 
+    if args.command == "run":
+        return _run(
+            args,
+            fetcher=fetcher,
+            now=now,
+            corpus=corpus,
+            client=client,
+            paid_fetcher=paid_fetcher,
+            enrich_ports=enrich_ports,
+            corpus_writer=corpus_writer,
+        )
+
     sites = _select_sites(args)
     if sites is None:
         return 2
     reference = now or datetime.now(UTC)
     if args.command == "probe":
         return _probe(args, sites, fetcher, client, reference)
-    return _discover(args, sites, fetcher, client, corpus, now, classifier)
+    return _discover(args, sites, fetcher, client, corpus, now, paid_fetcher)
+
+
+def _run(
+    args: argparse.Namespace,
+    *,
+    fetcher: Fetcher | None,
+    now: datetime | None,
+    corpus: CorpusIndex | None,
+    client: httpx.Client | None,
+    paid_fetcher: Fetcher | None,
+    enrich_ports: EnrichPorts | None,
+    corpus_writer: CorpusWriter | None,
+) -> int:
+    """Subcomando ``run``: as etapas do fluxo em sequência, cada uma retomável pelo estado.
+
+    Cada etapa é o subcomando de mesmo nome (``discover``, ``enrich``, ``corpus-sync``), então o
+    que vale para elas vale aqui. Uma etapa que falha não impede as seguintes (o que ficou
+    pendente é retomado na próxima execução); o código de saída é 1 se alguma falhou. Duas
+    execuções ao mesmo tempo não se atropelam: a segunda sai com código 3.
+    """
+    args.db.parent.mkdir(parents=True, exist_ok=True)
+    with (args.db.parent / "run.lock").open("w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print("já existe uma execução em andamento; esta foi dispensada", file=sys.stderr)
+            return 3
+        db = str(args.db)
+        site_args = ["--sites", str(args.sites)]
+        for flag, value in (("--limit", args.limit), ("--only-file", args.only_file)):
+            if value is not None:
+                site_args += [flag, str(value)]
+        if args.only:
+            site_args += ["--only", *args.only]
+        discover = [
+            "discover",
+            *site_args,
+            "--db", db,
+            "--corpus",
+            "--workers", str(args.workers),
+            "--interval", str(args.interval),
+            "--fresh-days", str(args.fresh_days),
+            "--max-sitemap-fetches", str(args.max_sitemap_fetches),
+            "--bright-data-max-requests", str(args.discovery_bright_data_max),
+            "--progress-every", str(args.progress_every),
+        ]  # fmt: skip
+        enrich = [
+            "enrich",
+            "--db", db,
+            "--model", args.model,
+            "--workers", str(args.enrich_workers),
+            "--interval", str(args.interval),
+            "--evidence-dir", str(args.evidence_dir),
+            "--evidence-store", args.evidence_store,
+            "--bright-data-max-requests", str(args.enrich_bright_data_max),
+        ]  # fmt: skip
+        sync = ["corpus-sync", "--db", db, "--sites", str(args.sites)]
+        if not args.no_bright_data:
+            discover.append("--bright-data")
+        discover += ["--skip-off-topic"] * args.skip_off_topic + ["--no-feed"] * args.no_feed
+        steps = (
+            ("DESCOBERTA", "a descoberta", discover),
+            ("ANÁLISE, CRITÉRIO E EVIDÊNCIA", "a análise", enrich),
+            ("CORPUS", "a gravação no corpus", sync),
+        )
+        worst = 0
+        for title, label, argv in steps:
+            print(f"== {title} {(now or datetime.now().astimezone()):%F %T}", flush=True)
+            try:
+                code = main(
+                    argv,
+                    fetcher=fetcher,
+                    now=now,
+                    corpus=corpus,
+                    client=client,
+                    paid_fetcher=paid_fetcher,
+                    enrich_ports=enrich_ports,
+                    corpus_writer=corpus_writer,
+                )
+            except Exception as error:  # noqa: BLE001 - uma etapa não derruba as seguintes
+                print(f"{type(error).__name__}: {error}", file=sys.stderr)
+                code = 1
+            if code != 0:
+                print(f"ERRO: {label} terminou com código {code}", flush=True)
+                worst = 1
+        return worst
 
 
 def _select_sites(args: argparse.Namespace) -> list[Site] | None:
@@ -714,8 +785,6 @@ def _corpus_sync(
             writer,
             sites=sites,
             now=now or datetime.now(UTC),
-            include_headline_only=args.include_headline_only,
-            min_confidence=args.min_confidence,
             batch_size=args.batch_size,
             limit=args.limit,
             dry_run=args.dry_run,
@@ -741,7 +810,6 @@ def _print_corpus(totals: CorpusTotals, *, dry_run: bool) -> None:
         "entidades": totals.entities,
         "temas": totals.keywords,
         "falhas": totals.failed,
-        "retidos por regra": totals.withheld,
         "refeitos (sumiram)": totals.rewritten,
     }
     for name, count in rows.items():
@@ -829,6 +897,9 @@ def _dashboard(
     if not args.db.is_file():
         print(f"estado não encontrado em {args.db}: rode `discover` antes", file=sys.stderr)
         return 2
+    # O painel abre o estado só para leitura, que não migra o esquema: um estado de antes de uma
+    # versão nova precisa ser atualizado uma vez, por um abridor normal.
+    StateStore(args.db).close()
     server = make_server(args.db, args.host, args.port, schedule_path=args.schedule)
     port = server.server_address[1]
     print(f"painel em http://{args.host}:{port}  (Ctrl+C para sair)", flush=True)
@@ -841,65 +912,6 @@ def _dashboard(
     return 0
 
 
-def _open_classifier(args: argparse.Namespace, exit_stack: ExitStack) -> HeadlineClassifier:
-    """Monta o classificador do OpenRouter com as variáveis do ambiente.
-
-    Raises:
-        MissingOpenRouterKeyError: Se ``OPENROUTER_API_KEY`` não estiver definida.
-    """
-    http = exit_stack.enter_context(httpx.Client())
-    return classifier_from_env(os.environ, http, model=args.model, policy=Policy(args.policy))
-
-
-def _triage(
-    args: argparse.Namespace, classifier: HeadlineClassifier | None, now: datetime | None
-) -> int:
-    """Subcomando ``triage``: dá veredito às URLs novas pendentes e imprime o resumo."""
-    with ExitStack() as exit_stack:
-        try:
-            classifier = classifier or _open_classifier(args, exit_stack)
-        except MissingOpenRouterKeyError as error:
-            print(error, file=sys.stderr)
-            return 2
-        if not args.db.is_file():
-            print("nenhuma rodada registrada")
-            return 0
-        store = StateStore(args.db)
-        exit_stack.callback(store.close)
-        if args.retriage_discarded:
-            reopened = store.reopen_discarded_triage(prompt_version(Policy(args.policy)))
-            print(f"{'triagem: reabertas':>20}: {reopened}")
-        _run_triage(args, store, classifier, now or datetime.now(UTC))
-    return 0
-
-
-def _run_triage(
-    args: argparse.Namespace, store: StateStore, classifier: HeadlineClassifier, now: datetime
-) -> None:
-    """Executa a triagem das pendentes e imprime totais, consumo e custo."""
-    usage_source = (lambda: classifier.usage) if hasattr(classifier, "usage") else None
-    summary = triage_pending(
-        store,
-        classifier,
-        now=now,
-        model=args.model,
-        prompt_version=prompt_version(Policy(args.policy)),
-        batch_size=args.batch_size,
-        limit=args.triage_limit,
-        usage_source=usage_source,
-    )
-    totals = summary.totals
-    print(f"{'triagem: manchetes':>20}: {totals.headlines}")
-    print(f"{'triagem: mantidas':>20}: {totals.kept}")
-    print(f"{'triagem: descartadas':>20}: {totals.discarded}")
-    print(f"{'triagem: pendentes':>20}: {totals.pending}")
-    cost = f"US$ {totals.cost_usd:.4f}" if totals.cost_usd is not None else "não informado"
-    print(
-        f"{'triagem: custo':>20}: {cost} "
-        f"({totals.prompt_tokens} tokens de entrada, {totals.completion_tokens} de saída)"
-    )
-
-
 def _discover(
     args: argparse.Namespace,
     sites: Sequence[Site],
@@ -907,42 +919,48 @@ def _discover(
     client: httpx.Client | None,
     corpus: CorpusIndex | None,
     now: datetime | None,
-    classifier: HeadlineClassifier | None,
+    paid_fetcher: Fetcher | None,
 ) -> int:
     """Roda uma rodada de descoberta incremental e imprime o resumo."""
-    l1: L1Filter | None = None
-    if args.l1_model is not None:
-        try:
-            l1 = L1Filter.load(args.l1_model)
-        except (OSError, ValueError, KeyError) as error:
-            print(f"não consegui ler o modelo L1 {args.l1_model}: {error}", file=sys.stderr)
-            return 2
-
     with ExitStack() as exit_stack:
-        if args.triage:
-            try:
-                classifier = classifier or _open_classifier(args, exit_stack)
-            except MissingOpenRouterKeyError as error:
-                print(error, file=sys.stderr)
-                return 2
-
         if corpus is None and args.corpus:
             try:
                 owned = PostgresCorpusIndex.from_env(os.environ)
             except CorpusConfigError as error:
                 print(error, file=sys.stderr)
                 return 2
-            exit_stack.callback(owned.close)
-            corpus = owned
+            except Exception as error:  # noqa: BLE001 - corpus fora do ar não pode parar a coleta
+                # Sem o corpus só se perde a marca "já conhecida": o que ele já tem é reconhecido
+                # na gravação (idempotente). Parar a coleta perderia notícias que saem do feed.
+                print(
+                    f"aviso: corpus indisponível ({type(error).__name__}); seguindo sem marcar "
+                    "o que já é conhecido",
+                    file=sys.stderr,
+                )
+            else:
+                exit_stack.callback(owned.close)
+                corpus = owned
 
         args.db.parent.mkdir(parents=True, exist_ok=True)
         store = StateStore(args.db)
         exit_stack.callback(store.close)
         try:
-            stack = _open_stack(args, fetcher, client, exit_stack, store.fallback_hosts())
+            fetchers = _open_discovery_fetchers(args, fetcher, paid_fetcher, client, exit_stack)
         except MissingCredentialsError as error:
             print(error, file=sys.stderr)
             return 2
+        known_blocked = store.fallback_hosts()
+
+        def sources_for(site: Site) -> list[DiscoverySource]:
+            return cascade_for(
+                site,
+                free=fetchers.free,
+                paid=fetchers.paid,
+                user_agent=USER_AGENT,
+                known_blocked=site.host in known_blocked,
+                max_sitemap_fetches=args.max_sitemap_fetches,
+                use_feed=not args.no_feed,
+            )
 
         statuses: Counter[str] = Counter()
 
@@ -952,51 +970,89 @@ def _discover(
 
         result = discover_all(
             sites,
-            stack.fetcher,
+            sources_for,
             store,
-            user_agent=USER_AGENT,
             workers=args.workers,
-            max_sitemap_fetches=args.max_sitemap_fetches,
             fresh_days=args.fresh_days,
             corpus=corpus,
             off_topic_segments=DEFAULT_OFF_TOPIC_SEGMENTS if args.skip_off_topic else frozenset(),
-            l1=l1,
             clock=(lambda: now) if now is not None else None,
             on_progress=report_progress,
         )
-        reference = now or datetime.now(UTC)
-        if stack.fallback is not None:
-            store.add_fallback_hosts(stack.fallback.fallback_hosts, reference)
+        paid_requests = fetchers.paid_requests()
+        paid_sites = sum(1 for record in result.records if record.source == "sitemap_bd")
+        if fetchers.paid is not None:
             store.record_run_usage(
-                result.run_id,
-                bright_data_requests=stack.fallback.fallback_requests,
-                bright_data_hosts=len(stack.fallback.fallback_hosts),
+                result.run_id, bright_data_requests=paid_requests, bright_data_hosts=paid_sites
             )
         _print_run(result)
-        if stack.fallback is not None:
-            print(f"{'bright_data_requests':>20}: {stack.fallback.fallback_requests}")
-            print(f"{'bright_data_hosts':>20}: {len(stack.fallback.fallback_hosts)}")
-        if args.triage and classifier is not None:
-            _run_triage(args, store, classifier, now or datetime.now(UTC))
+        if fetchers.paid is not None:
+            print(f"{'bright_data_requests':>20}: {paid_requests}")
+            print(f"{'bright_data_hosts':>20}: {paid_sites}")
     return 0
 
 
-def _report(db: Path, audit: int) -> int:
-    """Imprime as estatísticas do estado (sem criar o arquivo se ele não existir).
+@dataclass(frozen=True, slots=True)
+class DiscoveryFetchers:
+    """Os fetchers da cascata de descoberta.
 
-    Com ``audit`` > 0 inclui uma amostra aleatória de URLs descartadas pela triagem por LLM.
+    Attributes:
+        free: Acesso gratuito (sitemap e feed).
+        paid: Acesso pago (Bright Data), ou ``None`` se não está habilitado.
+        paid_requests: Quantas chamadas pagas foram feitas até agora.
     """
+
+    free: Fetcher
+    paid: Fetcher | None
+    paid_requests: Callable[[], int]
+
+
+def _open_discovery_fetchers(
+    args: argparse.Namespace,
+    fetcher: Fetcher | None,
+    paid_fetcher: Fetcher | None,
+    client: httpx.Client | None,
+    exit_stack: ExitStack,
+) -> DiscoveryFetchers:
+    """Fetchers da cascata: o gratuito e, se pedido, o pago (Bright Data, com teto de chamadas).
+
+    Raises:
+        MissingCredentialsError: Se ``--bright-data`` for pedido sem credenciais no ambiente.
+    """
+
+    def counter(paid: Fetcher | None) -> Callable[[], int]:
+        return lambda: int(getattr(paid, "requests_made", 0))
+
+    if fetcher is not None:
+        paid = paid_fetcher if args.bright_data else None
+        return DiscoveryFetchers(fetcher, paid, counter(paid))
+    http = client or exit_stack.enter_context(
+        httpx.Client(timeout=_REQUEST_TIMEOUT_SECONDS, follow_redirects=True)
+    )
+    free = build_fetcher(
+        client=http,
+        interval=args.interval,
+        bright_data=False,
+        env=os.environ,
+        max_fallback_requests=0,
+    ).fetcher
+    if not args.bright_data:
+        return DiscoveryFetchers(free, None, counter(None))
+    if paid_fetcher is not None:
+        return DiscoveryFetchers(free, paid_fetcher, counter(paid_fetcher))
+    limited = build_unlocker(http, os.environ, max_requests=args.bright_data_max_requests)
+    paid = ThrottledFetcher(limited, min_interval=args.interval)
+    return DiscoveryFetchers(free, paid, counter(limited))
+
+
+def _report(db: Path) -> int:
+    """Imprime as estatísticas do estado (sem criar o arquivo se ele não existir)."""
     if not db.is_file():
         print("nenhuma rodada registrada")
         return 0
     store = StateStore(db)
     try:
         print(format_report(build_report(store)))
-        if audit > 0:
-            print(f"\namostra de descartes da triagem LLM (até {audit}):")
-            for row in store.sample_triaged("discard", audit):
-                themes = ",".join(row.themes) or "-"
-                print(f"- [{row.site_key}] {row.url} | temas: {themes} | motivo: {row.reason}")
     finally:
         store.close()
     return 0
@@ -1021,10 +1077,15 @@ def _print_run(result: RunResult) -> None:
         "linha de base": sum(r.baseline_urls for r in records),
         "backlog": sum(r.backlog_urls for r in records),
         "no corpus": sum(r.known_urls for r in records),
-        "filtradas (L0)": sum(r.filtered_urls for r in records),
+        "filtradas (forma)": sum(r.filtered_urls for r in records),
         "sitemaps lidos": sum(r.sitemaps_fetched for r in records),
         "sitemaps pulados": sum(r.sitemaps_skipped for r in records),
     }
     print(f"rodada {result.run_id}")
     for name, count in totals.items():
         print(f"{name:>20}: {count}")
+    sources = Counter(r.source for r in records if r.source)
+    print(
+        f"{'fontes':>20}: sitemap {sources['sitemap']}, feed {sources['feed']}, "
+        f"sitemap pago {sources['sitemap_bd']}"
+    )

@@ -38,7 +38,7 @@ def make_server(
     """Cria o servidor do painel (sem iniciá-lo).
 
     O estado é aberto somente leitura a cada requisição e fechado em seguida, então o painel
-    nunca grava nem segura o banco enquanto a descoberta e a triagem trabalham.
+    nunca grava nem segura o banco enquanto a descoberta e o enriquecimento trabalham.
 
     Args:
         db: Arquivo SQLite do estado.

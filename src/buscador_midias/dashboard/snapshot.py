@@ -6,31 +6,28 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from buscador_midias.analysis.headline import headline_text
 from buscador_midias.dashboard.schedule import build_schedule
 from buscador_midias.discovery.stats import RunSummary, build_report
-from buscador_midias.state.store import CorpusRun, EnrichRun, StateStore, TriageRun
-from buscador_midias.triage.headline import headline_text
+from buscador_midias.state.store import CorpusRun, EnrichRun, RecentUrl, StateStore
 
 DEFAULT_HOURS = 48
 DEFAULT_RECENT = 40
 DEFAULT_MAX_SITES = 300
 STALE_AFTER = timedelta(hours=3)
 _RUNS_SHOWN = 30
-_TRIAGE_RUNS_SHOWN = 15
-_PER_THOUSAND = 1000
+_RECENT_RUNS_SHOWN = 15
 
 _FUNNEL = (
     ("urls", "URLs vistas"),
     ("baseline", "Linha de base"),
     ("backlog", "Backlog"),
     ("known", "Já no corpus"),
-    ("filtered", "Filtradas (L0/L1)"),
+    ("filtered", "Filtradas (forma da URL)"),
     ("new", "Novas"),
-    ("keep", "Mantidas (LLM)"),
-    ("discard", "Descartadas (LLM)"),
-    ("pending", "Aguardando LLM"),
+    ("pending", "Aguardando análise"),
     ("analyzed", "Analisadas (contexto)"),
-    ("relevant", "Com entidade (vão ao corpus)"),
+    ("relevant", "Atendem ao critério (entidade)"),
     ("findings", "Achados adversos"),
     ("evidence", "Evidência capturada"),
     ("corpus", "Gravadas no corpus"),
@@ -49,7 +46,7 @@ def build_snapshot(
     """Reúne tudo o que o painel mostra a partir do estado persistido.
 
     Só lê o estado. É pensado para ser chamado a cada poucos segundos enquanto outros processos
-    (descoberta, triagem) gravam.
+    (descoberta, enriquecimento) gravam.
 
     Args:
         store: Estado (pode estar aberto somente leitura).
@@ -61,17 +58,11 @@ def build_snapshot(
 
     Returns:
         O retrato, com chaves ``status``, ``totals``, ``funnel``, ``runs``, ``hourly``, ``sites``,
-        ``triage``, ``enrich``, ``corpus``, ``filter_reasons``, ``latency``, ``recent``,
+        ``enrich``, ``corpus``, ``filter_reasons``, ``latency``, ``recent``,
         ``fallback_hosts`` e ``schedule``.
     """
     report = build_report(store)
     by_kind = store.count_urls_by_kind()
-    counts = store.triage_counts()
-    triage_totals = {
-        "keep": counts.get("keep", 0),
-        "discard": counts.get("discard", 0),
-        "pending": store.count_pending_triage(),
-    }
     enrichment = store.enrichment_counts()
     corpus_runs = store.corpus_runs()
     corpus_counts = store.corpus_write_counts()
@@ -82,17 +73,15 @@ def build_snapshot(
         "totals": {
             "urls": sum(by_kind.values()),
             "by_kind": by_kind,
-            "triage": triage_totals,
             "bright_data_requests": sum(run.bright_data_requests for run in report.runs),
         },
-        "funnel": _funnel(by_kind, triage_totals, enrichment, corpus_counts["written"]),
+        "funnel": _funnel(by_kind, enrichment, corpus_counts["written"]),
         "runs": [_run(store, run) for run in report.runs[-_RUNS_SHOWN:]],
         "hourly": _hourly(store, now, hours),
         "sites": sites,
         "sites_total": sites_total,
-        "triage": _triage(store, report.triage_runs, report.triage_cost_usd),
         "enrich": _enrich(store, report.enrich_runs, report.enrich_cost_usd, enrichment, recent),
-        "corpus": _corpus(store, corpus_runs, corpus_counts),
+        "corpus": _corpus(corpus_runs, corpus_counts),
         "filter_reasons": report.filter_reasons,
         "latency": (
             {
@@ -108,7 +97,6 @@ def build_snapshot(
         "schedule": build_schedule(
             path=schedule_path,
             discovery_runs=store.list_runs(),
-            triage_runs=list(report.triage_runs),
             now=now,
             enrich_runs=list(report.enrich_runs),
             corpus_runs=corpus_runs,
@@ -117,7 +105,7 @@ def build_snapshot(
 
 
 def _status(store: StateStore, runs: tuple[RunSummary, ...], now: datetime) -> dict[str, Any]:
-    """Situação da descoberta e da triagem: rodando, ociosa, interrompida ou nunca executada."""
+    """Situação da descoberta e do enriquecimento: rodando, ociosa, interrompida ou nunca."""
     discovery: dict[str, Any] = {"state": "never"}
     last_finished: datetime | None = None
     records = store.list_runs()
@@ -139,20 +127,6 @@ def _status(store: StateStore, runs: tuple[RunSummary, ...], now: datetime) -> d
                 "elapsed_seconds": int(elapsed.total_seconds()),
             }
 
-    triage: dict[str, Any] = {"state": "never"}
-    triage_runs = store.triage_runs()
-    triage_finished = [r.finished_at for r in triage_runs if r.finished_at]
-    if triage_runs:
-        last_triage = triage_runs[-1]
-        if last_triage.finished_at is None:
-            elapsed = now - last_triage.started_at
-            triage = {
-                "state": "stale" if elapsed > STALE_AFTER else "running",
-                "run_id": last_triage.id,
-                "elapsed_seconds": int(elapsed.total_seconds()),
-            }
-        else:
-            triage = {"state": "idle", "run_id": last_triage.id}
     enrich: dict[str, Any] = {"state": "never"}
     enrich_runs = store.enrich_runs()
     if enrich_runs:
@@ -169,17 +143,14 @@ def _status(store: StateStore, runs: tuple[RunSummary, ...], now: datetime) -> d
     enrich_finished = [r.finished_at for r in enrich_runs if r.finished_at]
     return {
         "discovery": discovery,
-        "triage": triage,
         "enrich": enrich,
         "last_enrich_finished_at": max(enrich_finished).isoformat() if enrich_finished else None,
         "last_discovery_finished_at": last_finished.isoformat() if last_finished else None,
-        "last_triage_finished_at": max(triage_finished).isoformat() if triage_finished else None,
     }
 
 
 def _funnel(
     by_kind: dict[str, int],
-    triage: dict[str, int],
     enrichment: dict[str, Any],
     corpus_written: int,
 ) -> list[dict[str, Any]]:
@@ -189,7 +160,7 @@ def _funnel(
     values = {
         "urls": sum(by_kind.values()),
         **{k: by_kind.get(k, 0) for k in by_kind},
-        **triage,
+        "pending": enrichment["pending_enrichment"],
         "analyzed": analysis["findings"] + analysis["no_finding"],
         "relevant": analysis["relevant"],
         "findings": analysis["findings"],
@@ -222,25 +193,28 @@ def _run(store: StateStore, run: RunSummary) -> dict[str, Any]:
         "partial_sites": run.partial_sites,
         "sitemaps_failed": run.sitemaps_failed,
         "bright_data_requests": run.bright_data_requests,
+        "via_sitemap": run.via_sitemap,
+        "via_feed": run.via_feed,
+        "via_paid": run.via_paid,
     }
 
 
 def _hourly(store: StateStore, now: datetime, hours: int) -> list[dict[str, Any]]:
-    """Série contínua por hora (UTC): novas descobertas e vereditos, com zeros nos vazios."""
+    """Série contínua por hora (UTC): novas descobertas e análises, com zeros nos vazios."""
     current = now.replace(minute=0, second=0, microsecond=0)
     start = current - timedelta(hours=hours)
     new = store.new_urls_per_hour(since=start)
-    verdicts = store.triage_per_hour(since=start)
+    analyses = store.analyzed_per_hour(since=start)
     series = []
     for offset in range(hours + 1):
         key = (start + timedelta(hours=offset)).strftime("%Y-%m-%dT%H")
-        decisions = verdicts.get(key, {})
+        verdicts = analyses.get(key, {})
         series.append(
             {
                 "hour": key,
                 "new": new.get(key, 0),
-                "keep": decisions.get("keep", 0),
-                "discard": decisions.get("discard", 0),
+                "meets": verdicts.get("meets", 0),
+                "not_meets": verdicts.get("not_meets", 0),
             }
         )
     return series
@@ -263,6 +237,7 @@ def _sites(store: StateStore, limit: int) -> tuple[list[dict[str, Any]], int]:
                 "site": site,
                 "status": record.status,
                 "detail": record.detail,
+                "source": record.source,
                 "partial_failed": record.sitemaps_failed,
                 "last_run_id": run_id,
                 "new": kinds.get("new", 0),
@@ -282,62 +257,23 @@ def _sites(store: StateStore, limit: int) -> tuple[list[dict[str, Any]], int]:
     return rows[:limit], len(rows)
 
 
-def _triage(
-    store: StateStore, runs: tuple[TriageRun, ...], cost_total: float | None
-) -> dict[str, Any]:
-    """Execuções, custo, custo por mil manchetes e temas citados pela triagem."""
-    priced = [r for r in runs if r.totals.cost_usd is not None]
-    headlines = sum(r.totals.headlines for r in priced)
-    per_thousand = (
-        round(cost_total / headlines * _PER_THOUSAND, 6)
-        if cost_total is not None and headlines
-        else None
-    )
-    return {
-        "runs": [
-            {
-                "id": r.id,
-                "started_at": r.started_at.isoformat(),
-                "finished_at": r.finished_at.isoformat() if r.finished_at else None,
-                "model": r.model,
-                "prompt_version": r.prompt_version,
-                "headlines": r.totals.headlines,
-                "kept": r.totals.kept,
-                "discarded": r.totals.discarded,
-                "pending": r.totals.pending,
-                "prompt_tokens": r.totals.prompt_tokens,
-                "completion_tokens": r.totals.completion_tokens,
-                "cost_usd": r.totals.cost_usd,
-                "retries": r.totals.retries,
-                "errors": r.totals.errors,
-            }
-            for r in runs[-_TRIAGE_RUNS_SHOWN:]
-        ],
-        "cost_total_usd": cost_total,
-        "cost_per_1000_usd": per_thousand,
-        "themes": store.triage_theme_counts(),
-    }
-
-
-def _recent(item: Any) -> dict[str, Any]:
-    """Uma URL do feed: manchete (título ou slug) e veredito, se houver."""
+def _recent(item: RecentUrl) -> dict[str, Any]:
+    """Uma URL do feed: manchete (título ou slug) e situação da análise."""
     return {
         "first_seen_at": item.first_seen_at.isoformat(),
         "site": item.site_key,
         "url": item.url,
         "headline": headline_text(item.url, item.title),
-        "decision": item.decision,
+        "status": item.status,
         "themes": list(item.themes),
-        "reason": item.reason,
     }
 
 
-def _corpus(store: StateStore, runs: list[CorpusRun], counts: dict[str, int]) -> dict[str, Any]:
-    """Gravação no corpus: totais, achados retidos pelas regras e as últimas execuções."""
+def _corpus(runs: list[CorpusRun], counts: dict[str, int]) -> dict[str, Any]:
+    """Gravação no corpus: totais e as últimas execuções."""
     return {
         "written": counts["written"],
         "created": counts["created"],
-        "withheld": store.count_corpus_withheld(include_headline_only=False, min_confidence=0.0),
         "runs": [
             {
                 "id": r.id,
@@ -350,10 +286,9 @@ def _corpus(store: StateStore, runs: list[CorpusRun], counts: dict[str, int]) ->
                 "entities": r.totals.entities,
                 "keywords": r.totals.keywords,
                 "failed": r.totals.failed,
-                "withheld": r.totals.withheld,
                 "rewritten": r.totals.rewritten,
             }
-            for r in runs[-_TRIAGE_RUNS_SHOWN:]
+            for r in runs[-_RECENT_RUNS_SHOWN:]
         ],
     }
 
@@ -393,7 +328,7 @@ def _enrich(
                 "cost_usd": r.totals.cost_usd,
                 "errors": r.totals.errors,
             }
-            for r in runs[-_TRIAGE_RUNS_SHOWN:]
+            for r in runs[-_RECENT_RUNS_SHOWN:]
         ],
         "cost_total_usd": cost_total,
         "counts": counts,

@@ -1,6 +1,6 @@
-"""Enriquecimento das URLs mantidas pela triagem: texto, análise de contexto e evidência.
+"""Enriquecimento das URLs novas: texto, análise de contexto, critério e evidência.
 
-Para cada URL mantida, em blocos:
+Para cada URL nova, em blocos:
 
 1. **Texto** pelo download direto (HTTP educado, sem Bright Data). Site que bloqueia, matéria que
    sumiu ou página inutilizável não impedem a análise: ela segue só pela manchete, com a base
@@ -8,10 +8,10 @@ Para cada URL mantida, em blocos:
    seguintes, até esgotar as tentativas.
 2. **Análise de contexto** pelo LLM (entidades, temas, fato adverso). Resposta ausente ou inválida
    deixa a URL pendente; nunca vira "sem achado".
-3. **Evidência** das matérias com entidade identificável (adversas ou não): o HTML do download
-   direto é oferecido ao capturador, que o reaproveita se for confiável. O Bright Data (pago) só
-   entra para o achado adverso, quando o HTML direto não serve (ou sempre, no modo
-   ``brightdata``).
+3. **Critério** (``criteria.meets_criteria``): só a matéria lida com entidade identificável segue.
+4. **Evidência** das que atendem ao critério (adversas ou não): o HTML do download direto é
+   oferecido ao capturador, que o reaproveita se for confiável. O Bright Data (pago) só entra
+   para o achado adverso, quando o HTML direto não serve (ou sempre, no modo ``brightdata``).
 
 A evidência é capturada **bloco a bloco**, logo depois da análise do bloco, e o HTML é solto em
 seguida: com milhares de matérias por dia, acumular as páginas até o fim estouraria a memória.
@@ -30,9 +30,11 @@ from buscador_midias.analysis.context import (
     DEFAULT_BATCH_SIZE,
     AnalysisItem,
     ContextAnalyzer,
-    ContextVerdict,
     analyze_all,
 )
+from buscador_midias.analysis.headline import headline_text
+from buscador_midias.analysis.openrouter import Usage
+from buscador_midias.criteria import meets_criteria
 from buscador_midias.extraction.fetch import PageFetch, PageStatus
 from buscador_midias.extraction.html import extract_article
 from buscador_midias.extraction.reliability import looks_like_challenge_page, looks_like_error_page
@@ -45,8 +47,6 @@ from buscador_midias.state.store import (
     FindingUrl,
     StateStore,
 )
-from buscador_midias.triage.headline import headline_text
-from buscador_midias.triage.openrouter import Usage
 
 DEFAULT_CHUNK_SIZE = 60
 DEFAULT_MAX_FETCH_ATTEMPTS = 3
@@ -118,7 +118,7 @@ def enrich_pending(
     analyzer_usage: Callable[[], Usage] | None = None,
     bright_data_requests: Callable[[], int] | None = None,
 ) -> EnrichSummary:
-    """Extrai, analisa e captura a evidência das URLs mantidas que ainda não foram analisadas.
+    """Extrai, analisa e captura a evidência das URLs novas que ainda não foram analisadas.
 
     Args:
         store: Estado persistente.
@@ -282,13 +282,11 @@ def _process_chunk(
         counters.analyzed += 1
         if verdict.finding:
             counters.findings += 1
-        if _needs_evidence(verdict) and pending.url_hash in fetched_by_hash:
+        if (
+            meets_criteria(basis=verdict.basis, entities=verdict.entities)
+            and pending.url_hash in fetched_by_hash
+        ):
             pages[pending.url] = fetched_by_hash[pending.url_hash]
-
-
-def _needs_evidence(verdict: ContextVerdict) -> bool:
-    """Mesma regra do estado (``pending_evidence``): achado adverso ou matéria lida com entidade."""
-    return verdict.finding or (verdict.basis == "text" and bool(verdict.entities))
 
 
 def _count_fetch(counters: _Counters, page: PageFetch) -> None:

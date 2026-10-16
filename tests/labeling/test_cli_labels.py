@@ -11,7 +11,7 @@ from buscador_midias.state.store import StateStore
 @pytest.fixture
 def db(tmp_path: Path) -> Path:
     path = tmp_path / "estado.db"
-    source = build_store(findings=6, kept_no=6, discarded=6)
+    source = build_store(findings=6, no_entity=6)
     source.backup(path)
     return path
 
@@ -35,7 +35,7 @@ def test_export_grava_o_lote_e_diz_o_que_fazer(
     text = capsys.readouterr().out
     assert "rotulagem-01.csv" in text
     assert "veredito" in text and "sim" in text and "corpus" in text
-    assert len(list(csv.DictReader((out / "rotulagem-01.csv").open(encoding="utf-8-sig")))) == 9
+    assert len(list(csv.DictReader((out / "rotulagem-01.csv").open(encoding="utf-8-sig")))) == 6
 
 
 def test_score_sem_rotulos_explica_o_que_falta(

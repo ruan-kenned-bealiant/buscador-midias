@@ -3,13 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 from buscador_midias.dashboard.snapshot import build_snapshot
 from buscador_midias.domain.discovered import DiscoveredUrl
-from buscador_midias.state.store import (
-    SiteRunRecord,
-    StateStore,
-    TriageRecord,
-    TriageRunTotals,
-    UrlKind,
-)
+from buscador_midias.state.store import SiteRunRecord, StateStore, UrlKind
 
 NOW = datetime(2026, 10, 15, 12, 30, tzinfo=UTC)
 T0 = NOW - timedelta(hours=3)
@@ -70,29 +64,6 @@ def seeded() -> StateStore:
         kind=UrlKind.FILTERED,
         reasons={"hash-a.com-tag-1": "listing"},
     )
-    triage = store.start_triage_run(
-        NOW - timedelta(minutes=40), model="google/x", prompt_version="v1"
-    )
-    store.record_triage(
-        [
-            TriageRecord("hash-a.com-pf-prende-1", "keep", ("fiscal", "criminal"), "fraude"),
-            TriageRecord("hash-a.com-clima-1", "discard", (), "clima"),
-        ],
-        triage_run_id=triage,
-        now=NOW - timedelta(minutes=40),
-    )
-    store.finish_triage_run(
-        triage,
-        NOW - timedelta(minutes=39),
-        TriageRunTotals(
-            headlines=2,
-            kept=1,
-            discarded=1,
-            prompt_tokens=900,
-            completion_tokens=80,
-            cost_usd=0.002,
-        ),
-    )
     return store
 
 
@@ -102,24 +73,22 @@ def test_snapshot_e_serializavel_em_json():
     assert json.loads(json.dumps(snapshot))["generated_at"] == NOW.isoformat()
 
 
-def test_funil_acumulado_soma_os_tipos_e_a_triagem():
+def test_funil_acumulado_soma_os_tipos_e_as_que_aguardam_analise():
     snapshot = build_snapshot(seeded(), now=NOW)
 
     totals = snapshot["totals"]
     assert totals["by_kind"] == {"baseline": 1, "new": 2, "filtered": 1}
     assert totals["urls"] == 4
-    assert totals["triage"] == {"keep": 1, "discard": 1, "pending": 0}
     funnel = {step["key"]: step["value"] for step in snapshot["funnel"]}
     assert funnel["new"] == 2
-    assert funnel["keep"] == 1
-    assert funnel["discard"] == 1
+    assert funnel["pending"] == 2
+    assert "keep" not in funnel and "discard" not in funnel
 
 
 def test_status_ocioso_quando_a_ultima_rodada_terminou():
     status = build_snapshot(seeded(), now=NOW)["status"]
 
     assert status["discovery"]["state"] == "idle"
-    assert status["triage"]["state"] == "idle"
     assert status["last_discovery_finished_at"] == (NOW - timedelta(minutes=50)).isoformat()
 
 
@@ -152,13 +121,6 @@ def test_sem_nenhuma_rodada_o_estado_e_never():
     assert snapshot["recent"] == []
 
 
-def test_triagem_em_andamento():
-    store = seeded()
-    store.start_triage_run(NOW - timedelta(seconds=30), model="m", prompt_version="v")
-
-    assert build_snapshot(store, now=NOW)["status"]["triage"]["state"] == "running"
-
-
 def test_rodadas_trazem_duracao_e_falhas_parciais():
     runs = build_snapshot(seeded(), now=NOW)["runs"]
 
@@ -168,18 +130,7 @@ def test_rodadas_trazem_duracao_e_falhas_parciais():
     assert runs[1]["filtered"] == 1
     assert runs[1]["partial_sites"] == 1
     assert runs[1]["failed"] == 1
-
-
-def test_serie_por_hora_e_continua_e_preenche_zeros():
-    hourly = build_snapshot(seeded(), now=NOW, hours=6)["hourly"]
-
-    assert len(hourly) == 7  # as 6 horas anteriores e a hora corrente
-    assert hourly[-1]["hour"] == "2026-10-15T12"
-    by_hour = {h["hour"]: h for h in hourly}
-    assert by_hour["2026-10-15T11"]["new"] == 2
-    assert by_hour["2026-10-15T11"]["keep"] == 1
-    assert by_hour["2026-10-15T11"]["discard"] == 1
-    assert by_hour["2026-10-15T09"] == {"hour": "2026-10-15T09", "new": 0, "keep": 0, "discard": 0}
+    assert (runs[1]["via_sitemap"], runs[1]["via_feed"], runs[1]["via_paid"]) == (0, 0, 0)
 
 
 def test_fontes_com_problema_vem_primeiro():
@@ -200,31 +151,56 @@ def test_limite_de_fontes_e_informado():
     assert snapshot["sites_total"] == 3
 
 
-def test_triagem_agrega_custo_temas_e_custo_por_mil():
-    triage = build_snapshot(seeded(), now=NOW)["triage"]
-
-    assert triage["cost_total_usd"] == 0.002
-    assert triage["cost_per_1000_usd"] == 1.0
-    assert triage["themes"] == {"fiscal": 1, "criminal": 1}
-    assert triage["runs"][0]["model"] == "google/x"
-    assert triage["runs"][0]["cost_usd"] == 0.002
-
-
-def test_custo_por_mil_e_nulo_sem_execucoes():
-    assert build_snapshot(StateStore(), now=NOW)["triage"]["cost_per_1000_usd"] is None
-
-
-def test_feed_recente_traz_veredito_e_manchete():
-    recent = build_snapshot(seeded(), now=NOW)["recent"]
+def test_feed_recente_traz_a_situacao_da_analise_e_a_manchete():
+    recent = build_snapshot(with_enrichment(), now=NOW)["recent"]
 
     by_url = {r["url"]: r for r in recent}
     pf = by_url["https://a.com/pf-prende-1"]
-    assert pf["decision"] == "keep"
-    assert pf["themes"] == ["fiscal", "criminal"]
+    assert pf["status"] == "in_corpus"
+    assert pf["themes"] == ["fiscal"]
     assert pf["headline"] == "PF prende"
     clima = by_url["https://a.com/clima-1"]
-    assert clima["decision"] == "discard"
+    assert clima["status"] == "no_entity"
     assert clima["headline"] == "clima 1"  # slug quando não há título
+
+
+def test_feed_recente_marca_o_que_ainda_nao_foi_analisado():
+    recent = build_snapshot(seeded(), now=NOW)["recent"]
+
+    assert {r["status"] for r in recent} == {"pending"}
+
+
+def test_serie_por_hora_e_continua_e_preenche_zeros():
+    hourly = build_snapshot(with_enrichment(), now=NOW, hours=6)["hourly"]
+
+    assert len(hourly) == 7  # as 6 horas anteriores e a hora corrente
+    assert hourly[-1]["hour"] == "2026-10-15T12"
+    by_hour = {h["hour"]: h for h in hourly}
+    assert by_hour["2026-10-15T11"]["new"] == 2
+    assert by_hour["2026-10-15T12"]["meets"] == 1
+    assert by_hour["2026-10-15T12"]["not_meets"] == 1
+    assert by_hour["2026-10-15T09"] == {
+        "hour": "2026-10-15T09",
+        "new": 0,
+        "meets": 0,
+        "not_meets": 0,
+    }
+
+
+def test_fonte_de_cada_site_aparece_na_lista_e_na_rodada():
+    store = seeded()
+    run = store.start_run(NOW)
+    store.record_site_run(run, site_run("a.com", seen_urls=1, source="feed"))
+    store.record_site_run(run, site_run("b.com", seen_urls=1, source="sitemap_bd"))
+
+    snapshot = build_snapshot(store, now=NOW)
+
+    by_site = {s["site"]: s for s in snapshot["sites"]}
+    assert by_site["a.com"]["source"] == "feed"
+    assert by_site["b.com"]["source"] == "sitemap_bd"
+    assert by_site["c.com"]["source"] == ""
+    last = snapshot["runs"][-1]
+    assert (last["via_feed"], last["via_paid"], last["via_sitemap"]) == (1, 1, 0)
 
 
 def test_motivos_do_l0_e_hosts_em_fallback():
@@ -367,6 +343,7 @@ def test_funil_ganha_analisadas_achados_e_evidencia():
     funnel = {s["key"]: s["value"] for s in build_snapshot(with_enrichment(), now=NOW)["funnel"]}
 
     assert (funnel["analyzed"], funnel["findings"], funnel["evidence"]) == (2, 1, 1)
+    assert funnel["pending"] == 0
 
 
 def test_estado_do_enriquecimento_ocioso_em_execucao_e_nunca():
@@ -392,7 +369,7 @@ def with_corpus() -> StateStore:
     from buscador_midias.state.store import AnalysisRecord, CorpusTotals
 
     store = with_enrichment()
-    store.record_analysis(  # achado só da manchete: as regras o seguram fora do corpus
+    store.record_analysis(  # análise só da manchete: não atende ao critério
         AnalysisRecord("hash-so-manchete", True, ("fiscal",), (), "x", "y", 0.8, "headline"),
         enrich_run_id=1,
         model="google/x",
@@ -411,7 +388,7 @@ def with_corpus() -> StateStore:
     store.finish_corpus_run(
         run,
         NOW - timedelta(minutes=18),
-        CorpusTotals(candidates=1, created=1, entities=2, keywords=1, withheld=3),
+        CorpusTotals(candidates=1, created=1, entities=2, keywords=1),
     )
     return store
 
@@ -421,8 +398,7 @@ def test_snapshot_traz_a_secao_do_corpus():
 
     assert corpus["written"] == 1
     assert corpus["created"] == 1
-    assert corpus["withheld"] == 1
-    assert corpus["runs"][0]["withheld"] == 3
+    assert "withheld" not in corpus
     assert corpus["runs"][0]["created"] == 1
     assert corpus["runs"][0]["entities"] == 2
     assert corpus["runs"][0]["finished_at"] is not None

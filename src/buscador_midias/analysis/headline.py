@@ -1,4 +1,4 @@
-"""Texto de manchete e seus atributos: a base comum das camadas de triagem por título."""
+"""Texto de manchete: título do sitemap ou slug da URL, e as palavras que o compõem."""
 
 from __future__ import annotations
 
@@ -26,12 +26,6 @@ def tokens(text: str) -> list[str]:
         As palavras, na ordem em que aparecem.
     """
     return _TOKEN.findall(_fold(_without_publisher(text)))
-
-
-def features(text: str) -> list[str]:
-    """Atributos de uma manchete: cada palavra e cada par de palavras vizinhas (``a_b``)."""
-    words = tokens(text)
-    return words + [f"{first}_{second}" for first, second in zip(words, words[1:], strict=False)]
 
 
 def headline_text(url: str, title: str | None) -> str:

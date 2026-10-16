@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 import pytest
 
 from buscador_midias.analysis.context import AnalysisItem, ContextVerdict
+from buscador_midias.analysis.openrouter import Usage
 from buscador_midias.domain.discovered import DiscoveredUrl
 from buscador_midias.enrich.pipeline import enrich_pending
 from buscador_midias.extraction.fetch import PageFetch, PageStatus
@@ -11,10 +12,8 @@ from buscador_midias.state.store import (
     EvidenceRecord,
     FindingUrl,
     StateStore,
-    TriageRecord,
     UrlKind,
 )
-from buscador_midias.triage.openrouter import Usage
 
 NOW = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
 TEXT = (
@@ -57,10 +56,6 @@ def seeded(*paths: str, titles: dict[str, str] | None = None) -> StateStore:
         run_id=run,
         now=NOW,
         kind=UrlKind.NEW,
-    )
-    triage = store.start_triage_run(NOW, model="m", prompt_version="v")
-    store.record_triage(
-        [TriageRecord(f"h-{p}", "keep", (), "") for p in paths], triage_run_id=triage, now=NOW
     )
     return store
 
@@ -228,7 +223,7 @@ def test_o_modelo_recebe_titulo_da_pagina_descricao_e_texto():
     ("status", "http"),
     [(PageStatus.BLOCKED, 403), (PageStatus.NOT_FOUND, 404), (PageStatus.ROBOTS_DISALLOWED, None)],
 )
-def test_sem_texto_a_analise_usa_so_a_manchete_com_base_headline(status, http):
+def test_sem_texto_a_analise_usa_so_a_manchete_e_nao_gasta_evidencia(status, http):
     store = seeded("fraude-bloqueada-1", titles={"fraude-bloqueada-1": "PF prende por fraude"})
     articles = FakeArticles()
     articles.add_status("fraude-bloqueada-1", status, http)
@@ -241,9 +236,9 @@ def test_sem_texto_a_analise_usa_so_a_manchete_com_base_headline(status, http):
     assert (item.basis, item.headline, item.text) == ("headline", "PF prende por fraude", "")
     assert store.get_content("h-fraude-bloqueada-1").status == status.value  # type: ignore[union-attr]
     assert store.get_analysis("h-fraude-bloqueada-1").basis == "headline"  # type: ignore[union-attr]
-    # o capturador recebe o desfecho do download direto para justificar o Bright Data
-    assert capturer.calls[0][1] is not None and capturer.calls[0][1].status is status
-    assert summary.totals.evidence_brightdata == 1
+    # só pela manchete a matéria não atende ao critério: nada de evidência (nem paga)
+    assert capturer.calls == []
+    assert summary.totals.evidence_brightdata == 0
 
 
 def test_contagem_de_downloads_por_desfecho():
@@ -479,10 +474,11 @@ def test_sem_pendentes_nada_e_chamado_e_a_execucao_e_registrada():
     assert len(store.enrich_runs()) == 1
 
 
-def test_url_nao_mantida_pela_triagem_nao_e_processada():
+def test_so_url_nova_e_processada_linha_de_base_e_backlog_ficam_de_fora():
     store = StateStore()
     run_id = store.start_run(NOW)
-    store.record_urls([found("fraude-1")], run_id=run_id, now=NOW, kind=UrlKind.NEW)  # sem veredito
+    store.record_urls([found("fraude-1")], run_id=run_id, now=NOW, kind=UrlKind.BASELINE)
+    store.record_urls([found("fraude-2")], run_id=run_id, now=NOW, kind=UrlKind.BACKLOG)
     articles = FakeArticles()
 
     summary = run(store, articles)

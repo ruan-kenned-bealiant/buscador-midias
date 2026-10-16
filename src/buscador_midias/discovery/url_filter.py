@@ -1,17 +1,27 @@
-"""Camada L0 da triagem: decide só pela forma da URL, sem baixar nada.
+"""Filtro pela forma da URL (L0): decide sem baixar nada.
 
 O objetivo é descartar o que **certamente** não é uma matéria noticiosa (página inicial, listagens
 de tag/autor/categoria, seções, arquivos de mídia) e, **se pedido**, seções de temas sem interesse
 (esporte, culinária, horóscopo). Na dúvida a URL passa: descartar uma matéria relevante
-custa mais do que triar uma página a mais nas camadas seguintes.
+custa mais do que analisar uma página a mais.
 """
 
 from __future__ import annotations
 
 import re
+from enum import StrEnum
 from urllib.parse import unquote, urlsplit
 
-from buscador_midias.triage.reasons import FilterReason
+
+class FilterReason(StrEnum):
+    """Por que uma URL foi descartada pela forma."""
+
+    HOME = "home"
+    LISTING = "listing"
+    SECTION = "section"
+    ASSET = "asset"
+    OFF_TOPIC = "off_topic"
+
 
 DEFAULT_OFF_TOPIC_SEGMENTS: frozenset[str] = frozenset(
     {

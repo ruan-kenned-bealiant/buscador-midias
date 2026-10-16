@@ -9,11 +9,12 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from buscador_midias.analysis.headline import tokens
+from buscador_midias.analysis.openrouter import OpenRouterChat, Usage
 from buscador_midias.analysis.prompt import SYSTEM_PROMPT
+from buscador_midias.analysis.replies import json_items
+from buscador_midias.analysis.themes import THEME_SLUGS
 from buscador_midias.domain.roles import is_adverse_role, normalize_role
-from buscador_midias.triage.headline import tokens
-from buscador_midias.triage.openrouter import OpenRouterChat, Usage
-from buscador_midias.triage.relevance import THEME_SLUGS, json_items
 
 DEFAULT_BATCH_SIZE = 6
 DEFAULT_MAX_TEXT_CHARS = 1500

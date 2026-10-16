@@ -1,13 +1,38 @@
 # buscador-midias
 
-POC de um sistema separado que varre, 3x ao dia, os **sitemaps** das 1294 fontes de notícias
-confiáveis da Mídias IA, descobre notícias novas, triagem por tema, e (nas fases seguintes)
-analisa, captura a evidência e alimenta o corpus e o bucket. A meta é aposentar o ramo de busca
-na web do pipeline de Mídias IA.
+POC de um sistema separado que varre as 1294 fontes de notícias confiáveis da Mídias IA e alimenta
+o corpus (Postgres) e o armazenamento de evidências. A meta é aposentar o ramo de busca na web do
+pipeline de Mídias IA. Corpus **por entidade, não por adversidade**: entra toda matéria que nomeia
+uma pessoa ou organização identificável (a categoria "Diversos" do KyX recebe a neutra).
 
-Status: **Fases 0 e 1** concluídas (catálogo, sondagem) e **Fase 2** (descoberta incremental com
-estado, corpus, backlog e filtro L0) validada em rede real na amostra de 25 sites. Veja o plano em
-[DESIGN.md](DESIGN.md).
+## O fluxo (3 vezes ao dia: 06h, 12h e 16h)
+
+```
+buscar notícias novas nos sites ──► analisar o contexto ──► conferir o critério ──►
+capturar a evidência ──► gravar no corpus
+```
+
+Um único comando faz tudo, em ordem, e cada etapa é retomável pelo estado (o que falhar fica
+pendente para a próxima execução):
+
+```bash
+scripts/run.sh --only-file data/poc_sample.txt     # = python -m buscador_midias run ...
+scripts/install_cron.sh                            # instala 06:00, 12:00 e 16:00 no cron
+```
+
+| Passo | Etapa | Comando avulso |
+|---|---|---|
+| 1. Buscar notícias novas | sitemap → feed → sitemap pelo Bright Data (cascata) | `discover` |
+| 2. Analisar o contexto | texto por HTTP direto + LLM: entidades, temas, fato adverso | `enrich` |
+| 3. Conferir o critério | `criteria.py`: matéria **lida** e com **entidade** identificável | (dentro do `enrich`) |
+| 4. Capturar a evidência | só das que atendem ao critério | `enrich` |
+| 5. Gravar no corpus | Postgres `pgsql_midias`, idempotente | `corpus-sync` |
+
+Não há mais triagem por manchete: ela descartava ~2% das URLs, custava mais do que poupava e a
+decisão de verdade é a análise do texto. O único filtro antes da análise é o barato, pela forma da
+URL (listagem, seção, mídia).
+
+Veja o plano em [DESIGN.md](DESIGN.md).
 
 ## Setup
 
@@ -63,15 +88,32 @@ cujos filhos falham é classificado como `blocked`/`error`, não como `ok`.
 
 O relatório vai para `var/probe-report.csv` (ignorado pelo git). Respeita o `robots.txt`.
 
-## Descoberta incremental (Fase 2)
+## Descoberta incremental
 
-Cada rodada lê os sitemaps e devolve só o que ainda não vimos. Estado em SQLite (`var/state.db`).
+Cada rodada devolve só o que ainda não vimos. Estado em SQLite (`var/state.db`).
 
 ```bash
 .venv/bin/python -m buscador_midias discover --only-file data/poc_sample.txt \
     --bright-data --bright-data-max-requests 60 --corpus
 .venv/bin/python -m buscador_midias report
 ```
+
+### Cascata de fontes: sitemap, feed e Bright Data
+
+Para cada site, a primeira fonte que traz URLs encerra a tentativa (`site_runs.source` guarda qual):
+
+1. **Sitemap gratuito** (`sitemap`).
+2. **Feed RSS/Atom gratuito** (`feed`): os feeds que a home declara (até 3) ou, sem declaração,
+   `/feed/`, `/rss.xml` e `/rss`. Respeita o `robots.txt`; só entram itens da fonte; traz título e
+   data de publicação. Resgata de graça cerca de 23% das fontes sem sitemap gratuito (medição de
+   2026-10-15, `scripts/probe_feeds.py`). Limite: o feed só lista os itens mais recentes (mediana
+   de 20); entre duas rodadas muito espaçadas (a noite, 16h→06h) pode faltar matéria. Desligue com
+   `--no-feed`.
+3. **Sitemap pelo Bright Data** (`sitemap_bd`, pago), **só** se o sitemap gratuito foi *bloqueado*
+   (401/403/429, ou HTML no lugar de XML). Ausência de sitemap ou erro de rede não paga.
+
+Um host que já precisou do Bright Data fica gravado (`fallback_hosts`): nas rodadas seguintes o
+sitemap gratuito nem é tentado, mas o **feed gratuito vem antes de pagar**.
 
 Toda URL inédita é classificada na hora e gravada:
 
@@ -80,10 +122,10 @@ Toda URL inédita é classificada na hora e gravada:
 | `baseline` | 1ª rodada bem-sucedida do site: histórico, **não** conta como novo |
 | `backlog` | inédita, mas mais antiga que `--fresh-days` (padrão 7): arquivo que só agora apareceu |
 | `known` | já está no corpus de Mídias IA (hash atual **e** legado); exige `--corpus` |
-| `filtered` | descartada pelo **L0** (forma da URL); o motivo fica gravado |
-| `new` | o resto: candidata à triagem |
+| `filtered` | descartada pela forma da URL (L0); o motivo fica gravado |
+| `new` | o resto: candidata à análise |
 
-### Filtro L0 (forma da URL)
+### Filtro pela forma da URL (L0)
 
 Descarta só o que certamente não é matéria: `home` (caminho vazio), `listing` (segmento `tag`,
 `author`, `category`, `keyword`, `topic`, `page`, `search`...), `section` (um único segmento só com
@@ -94,71 +136,6 @@ sobre URLs inéditas e frescas (linha de base e backlog não são filtrados).
 Fica **desligado por padrão**: uma seção de esporte também traz matérias de gestão e denúncia
 (ex.: dirigentes, loterias, entidades esportivas). Audite antes de ligar: `report` mostra o total
 descartado por motivo.
-
-### Filtro L1 (manchete) — opcional, fora do fluxo padrão
-
-Naive Bayes sobre palavras e pares de palavras da manchete (título do news sitemap ou, sem ele, o
-slug da URL). Treinado com títulos do corpus (positivos) contra manchetes comuns dos sitemaps
-(negativos); o limiar é calibrado para manter `--recall` dos positivos de teste.
-
-```bash
-.venv/bin/python scripts/train_l1.py --recall 0.98          # grava var/l1_model.json e imprime métricas
-.venv/bin/python -m buscador_midias discover ... --l1-model var/l1_model.json
-```
-
-- Só avalia sites do idioma que o modelo cobre (hoje **Português**, 213 das 1294 fontes); os demais
-  passam sem avaliação. Manchete curta (< 4 palavras) ou com poucas palavras conhecidas também passa.
-- Os artigos do corpus com tema confirmado **e** alerta ficam fora do treino e servem de teste
-  limpo: o recall medido neles acompanha o alvo (94,9% / 98,4% / 99,4% para 0,95 / 0,98 / 0,99).
-- Os negativos reais incluem notícia adversa (não há rótulo para eles), então "negativos que
-  passam" é um teto pessimista, não uma taxa de falso positivo.
-- O motivo do descarte é `l1_low_signal`; `report` mostra o total.
-
-### Triagem por LLM (OpenRouter)
-
-Depois do L0 (e do corpus), cada URL `new` ganha um veredito por manchete (título do news sitemap
-ou slug): `keep` ou `discard`, com temas e motivo. **Política padrão `entities`:** o corpus é por
-entidade, não por adversidade, então só se descarta o que não tem pessoa ou organização
-identificável (previsão do tempo, receita, horóscopo, loteria, tabela de mercado, serviço genérico,
-página de seção, texto sem sentido). Esporte, celebridade, cultura e vida pessoal ficam. Os temas
-continuam sendo apontados quando há fato adverso. As políticas antigas (`permissive`, `balanced`)
-só mantêm o que sugere fato adverso e seguem disponíveis com `--policy`. Modelo padrão
-`google/gemini-2.5-flash-lite`, temperatura 0, lotes de 25, JSON.
-
-```bash
-# OPENROUTER_API_KEY (e, opcional, OPENROUTER_BASE_URL) vêm do ambiente, como no KyX
-.venv/bin/python -m buscador_midias discover --only-file data/poc_sample.txt ... --triage
-.venv/bin/python -m buscador_midias triage                 # só as URLs novas ainda sem veredito
-.venv/bin/python -m buscador_midias triage --retriage-discarded   # reabre descartes de outra política
-.venv/bin/python -m buscador_midias report --audit 20      # amostra de descartes p/ conferir
-```
-
-- **Nunca descarta por falha:** erro do provedor, resposta inválida ou id faltando viram `unknown`;
-  a URL continua pendente e é retomada na execução seguinte. URL sem manchete é mantida sem chamar
-  o modelo.
-- **Auditável:** cada veredito guarda decisão, temas, motivo, modelo e versão do prompt
-  (`headline-gate-<data>-<política>`). `report` lista cada execução (manchetes, mantidas,
-  descartadas, pendentes, tokens e **custo informado pelo OpenRouter**) e o custo total acumulado.
-- **Mudou o critério?** `triage --retriage-discarded` devolve à fila só os descartes feitos com
-  outra versão do prompt (os `keep` e os descartes da versão atual ficam); repetir não reabre nada.
-- Não há teto de gasto, só o relatório. `--triage-limit N` limita as URLs avaliadas por execução.
-- Prompt e política: `triage/prompt.py`. Experimento: `scripts/eval_llm_gate.py`.
-
-Medido com `google/gemini-2.5-flash-lite` em 300 artigos "estritos" do corpus (devem ser mantidos)
-e 459 manchetes reais de 8 idiomas (duas amostras):
-
-| Política | Recall nos estritos | Manchetes reais descartadas | Custo / 1000 manchetes |
-|---|---|---|---|
-| `balanced` | 85–87% | 63–69% | US$ 0,021 |
-| `permissive` | **95–96%** | **46–49%** | US$ 0,022 |
-
-(Medidas da época em que o objetivo era só mídia adversa. A política `entities` mantém bem mais
-e ainda não tem medição própria: é para isso que serve a rotulagem abaixo.)
-
-Modelos maiores (gpt-4.1-mini, gemini-2.5-flash) não melhoraram o recall e custam 3–8x mais. O
-rótulo "estrito" depende da entidade pesquisada (o corpo da matéria traz o fato adverso), então
-parte da perda é irrecuperável só pela manchete (política de figuras públicas, manchetes
-enigmáticas). O recall alto do L1 (98%) estava inflado por viés do corpus (nomes como "Lula").
 
 ### Como os sitemaps são escolhidos
 
@@ -176,10 +153,10 @@ enigmáticas). O recall alto do L1 (98%) estava inflado por viés do corpus (nom
 - `report` mostra, por rodada, novas/linha de base/backlog/no corpus, a latência entre publicação
   (news sitemap) e descoberta, e os sites que nunca trouxeram nada inédito (sitemap parado).
 
-## Enriquecimento: texto, contexto e evidência
+## Enriquecimento: texto, contexto, critério e evidência
 
 Mesma ordem do KyX (primeiro o contexto, e a captura só depois de haver entidade): para cada URL
-mantida pela triagem,
+`new` ainda sem análise,
 
 1. **Texto por HTTP direto** (educado: `robots.txt`, intervalo por host, sem Bright Data). Site que
    bloqueia, matéria que sumiu ou página inutilizável não impedem a análise: ela segue só pela
@@ -187,14 +164,17 @@ mantida pela triagem,
 2. **Análise de contexto** pelo OpenRouter (`google/gemini-2.5-flash-lite`): entidades, temas e
    fato adverso. As **entidades** (pessoas e organizações nomeadas, nunca país ou cidade) são
    listadas em toda matéria e só valem se **constarem no texto fornecido**; nomes inventados ou
-   parafraseados são descartados. Matéria com ao menos uma entidade **vai ao corpus**, adversa ou
-   não. O **achado adverso** (`finding=true`) é uma marca à parte e continua exigindo uma entidade
-   nomeada com papel adverso (acusado, investigado, condenado, réu, responsável); autoridade,
-   vítima e "citado" não bastam.
-3. **Evidência** de toda matéria com entidade (`midias-ia/evidencias/<url_hash>.html`, como no KyX).
-   O HTML do download direto é reaproveitado se for confiável. O **Bright Data (pago) só entra
-   para o achado adverso**; a matéria neutra cujo HTML direto não serve fica sem evidência (o
-   artigo é gravado mesmo assim, com a evidência como `failed`).
+   parafraseados são descartados. O **achado adverso** (`finding=true`) é uma marca à parte e
+   continua exigindo uma entidade nomeada com papel adverso (acusado, investigado, condenado, réu,
+   responsável); autoridade, vítima e "citado" não bastam.
+3. **Critério** (`src/buscador_midias/criteria.py`, a única regra de "entra ou não"): a análise
+   **leu o texto** (`basis=text`) **e** achou ao menos uma entidade. Existe em Python e em SQL, com
+   um teste que garante que concordam. Análise só pela manchete não atende (evita pagar evidência
+   por matéria que não vai ao corpus); em 2026-10-16 eram 19 de 904 (2%).
+4. **Evidência** só das que atendem ao critério (`midias-ia/evidencias/<url_hash>.html`, como no
+   KyX). O HTML do download direto é reaproveitado se for confiável. O **Bright Data (pago) só
+   entra para o achado adverso**; a matéria neutra cujo HTML direto não serve fica sem evidência
+   (o artigo é gravado mesmo assim, com a evidência como `failed`).
 
 A evidência é capturada bloco a bloco, logo depois da análise do bloco, e o HTML é solto em seguida
 (com milhares de matérias por dia, acumular as páginas estouraria a memória).
@@ -227,7 +207,7 @@ fica `failed` (retentada até 3 vezes).
 
 `scripts/eval_evidence_reuse.py` mede isso na prática (baixa direto e pelo Bright Data e compara as
 duas cópias; faz até 1 chamada paga por URL; `--source recent` amostra URLs recentes de fontes
-diferentes, já sem o que o L0 descarta). Resultados (jornais de 60 fontes de ~40 idiomas):
+diferentes, já sem o que o L0 descarta; `--source new` amostra as URLs novas). Resultados (jornais de 60 fontes de ~40 idiomas):
 
 - **Nenhum falso aceite:** todas as páginas aceitas no direto e confiáveis no Bright Data eram
   idênticas (similaridade 1,00, mesmo título, data e tamanho), em mais de 60 comparações.
@@ -245,15 +225,15 @@ diferentes, já sem o que o L0 descarta). Resultados (jornais de 60 fontes de ~4
 
 ## Gravação no corpus de Mídias IA
 
-`corpus-sync` grava direto no Postgres do corpus (`pgsql_midias`) toda matéria que já tem contexto
-analisado e ao menos uma entidade identificável (adversa ou não). Não usa a fila do KyX: o consumer de persistência de lá exige um
-`RunContext` (entidade e tema pesquisados), que a varredura de sitemaps não tem.
+`corpus-sync` grava direto no Postgres do corpus (`pgsql_midias`) toda matéria que atende ao
+critério (lida e com ao menos uma entidade identificável, adversa ou não). Não usa a fila do KyX:
+o consumer de persistência de lá exige um `RunContext` (entidade e tema pesquisados), que a varredura de sitemaps não tem.
 
 ```bash
 # DB_MIDIAS_IA_HOST/PORT/DATABASE/USERNAME/PASSWORD vêm do ambiente, como no KyX
 .venv/bin/python -m buscador_midias corpus-sync --dry-run   # só conta; não grava nada
 .venv/bin/python -m buscador_midias corpus-sync             # grava
-.venv/bin/python -m buscador_midias corpus-sync --limit 20 --min-confidence 0.7 --include-headline-only
+.venv/bin/python -m buscador_midias corpus-sync --limit 20
 ```
 
 - **Linhas gravadas:** `midias_ia_articles` (`origin='crawler'`, `body_source='crawler_html'`,
@@ -270,9 +250,6 @@ analisado e ao menos uma entidade identificável (adversa ou não). Não usa a f
 - **Idempotente:** a chave é `url_hash` (`ON CONFLICT DO NOTHING`). Rodar de novo não duplica. Artigo
   de origem própria tem evidência, entidades e temas atualizados; artigo que veio de outra origem só
   ganha a evidência se ainda não tinha.
-- **Retidos por regra:** matéria baseada só na manchete (`basis=headline`) e abaixo de
-  `--min-confidence` **não** são gravados (ficam contados como "retidos"); `--include-headline-only`
-  muda isso. A razão: sem o texto, a análise não foi checada contra a matéria.
 - **Linha que sumiu:** antes de pular um achado já gravado, o comando confere se a linha ainda
   existe no corpus e a refaz se não existir.
 - **Falha de esquema ou conexão** aborta antes de gravar (código 2) e nunca imprime a senha.
@@ -284,7 +261,7 @@ analisado e ao menos uma entidade identificável (adversa ou não). Não usa a f
 
 ## Rotulagem às cegas (precisão e recall)
 
-Para saber se a triagem e a análise acertam, uma pessoa julga uma amostra sem ver o veredito do
+Para saber se a análise acerta, uma pessoa julga uma amostra sem ver o veredito do
 modelo. **A pergunta é "esta notícia entra no corpus?"**, isto é, é uma matéria que nomeia ao menos
 uma pessoa ou organização identificável (boa, ruim ou neutra). Não é "é adversa?". Três comandos,
 nesta ordem:
@@ -295,11 +272,12 @@ nesta ordem:
 .venv/bin/python -m buscador_midias labels score                   # precisão e recall estimados
 ```
 
-- **`export`** sorteia URLs de três grupos (as que o modelo mandou ao corpus, as mantidas sem
-  entidade e as descartadas na triagem), embaralha tudo e grava `rotulagem-NN.csv` (o que a pessoa
+- **`export`** sorteia URLs de dois grupos (as que o modelo mandou ao corpus e as lidas sem
+  entidade), embaralha tudo e grava `rotulagem-NN.csv` (o que a pessoa
   vê) e `chave.csv` (grupo, temas e entidades do modelo, usado só na pontuação). Não repete URLs já
-  exportadas. Lotes de antes da mudança de critério (grupos `finding`/`kept_no_finding`) medem outra
-  coisa: guarde-os numa pasta à parte e exporte de novo.
+  exportadas. Lotes de antes da mudança de critério (grupos `finding`/`kept_no_finding`, ou
+  `kept_no_entity`/`triage_discarded`) não batem com os grupos de hoje: guarde-os numa pasta à
+  parte e exporte de novo.
 - **`serve`** abre a tela: uma notícia por vez (fonte, link da matéria, manchete e trecho) e três
   botões, **Entra no corpus**, **Não entra** e **Incerto**, também pelas teclas `S`, `N`, `I` (ou
   `1`, `2`, `3`). O CSV recebe `sim`, `nao` ou `incerto` (as palavras antigas `adverso` e
@@ -307,8 +285,8 @@ nesta ordem:
   (`←`), pular (`→`) e limpar um rótulo. Pode fechar e voltar depois: ela continua de onde parou.
   A tela nunca abre `chave.csv`, então o veredito do modelo não aparece em lugar nenhum dela.
 - **`score`** lê os mesmos CSVs, então dá para misturar a tela com o preenchimento no Excel.
-  "Incerto" fica fora das taxas. Sai a precisão do corpus e o recall estimado da triagem, da
-  análise de entidades e do fluxo todo (taxa de "entra" de cada grupo × tamanho do grupo no estado);
+  "Incerto" fica fora das taxas. Sai a precisão do corpus e o recall estimado da análise (taxa
+  de "entra" de cada grupo × tamanho do grupo no estado);
   vale tanto quanto o tamanho da amostra: veja o intervalo de 95% no relatório.
 - A tela **grava**, ao contrário do painel (só leitura). Por isso escuta só em `127.0.0.1`, recusa
   `Host` que não seja local, `Origin` de outro site e qualquer voto que não seja JSON, e o veredito
@@ -317,31 +295,31 @@ nesta ordem:
   pela metade. Evite editar o mesmo lote no Excel enquanto a tela está aberta (quem salvar por
   último vence).
 
-## Rodadas agendadas e backup
+## Execução agendada e backup
 
-Não há agendador embutido. `scripts/run_rounds.sh` roda várias rodadas espaçadas, com triagem e
-backup opcionais no fim, e pode gravar a agenda que o painel mostra:
+`run` encadeia descoberta, análise (com o critério e a evidência) e gravação no corpus. Cada etapa
+é o subcomando de mesmo nome, então as opções valem aqui; uma etapa que falha não impede as
+seguintes (código de saída 1 se alguma falhou). `var/run.lock` impede duas execuções ao mesmo
+tempo (a segunda sai com código 3).
 
 ```bash
-scripts/run_rounds.sh --dry-run --count 5 --first-delay 3600 --interval 7200 --triage-at-end   # só o plano
-scripts/run_rounds.sh --count 5 --triage-each-round --enrich-each-round --backup-at-end --write-schedule > var/rounds.log 2>&1 &
+scripts/run.sh --only-file data/poc_sample.txt           # uma execução agora
+scripts/run.sh --no-bright-data --limit 10               # teste barato, sem gasto pago
+scripts/install_cron.sh                                  # 06:00, 12:00 e 16:00 (fuso da máquina)
+scripts/install_cron.sh --times 07:00,13:00 --dry-run    # só mostra o crontab resultante
+scripts/install_cron.sh --remove                         # tira o bloco do buscador do crontab
+tail -f var/run.log                                      # saída das execuções do cron
 ```
 
-- `--triage-each-round` roda a triagem logo após cada rodada: os vereditos ficam prontos o dia
-  todo, não só no fim. A triagem roda **separada** da descoberta (comando `triage`), então um
-  problema no OpenRouter nunca perde o resultado da rodada: o que falhar fica pendente e é retomado
-  na próxima. `--triage-at-end` serve só de resgate final.
-- `--enrich-each-round` roda o `enrich` após a triagem de cada rodada, também como comando separado
-  (falha do OpenRouter, da rede ou do Bright Data não perde a rodada; o que não terminar fica
-  pendente).
-- `--corpus-each-round` roda o `corpus-sync` ~15 min depois de cada rodada (comando separado: um
-  problema no Postgres não perde a rodada nem o enriquecimento; o que não foi gravado continua
-  pendente). Aparece na agenda do painel como tipo `corpus`.
-- Lê as credenciais do `.env` do KyX (`KYX_ENV` muda o caminho) sem imprimir nada; Bright Data é o
-  fallback (teto de 60 chamadas por rodada). Uma rodada que falha aparece no log como `ERRO` e não
-  derruba as seguintes. `var/rounds.lock` impede dois agendadores ao mesmo tempo.
-- O processo é filho do terminal/sessão: se a máquina desligar ou a sessão fechar, as rodadas
-  seguintes não acontecem (o que já rodou está no banco). Para sobreviver a isso, use cron/systemd.
+- `scripts/run.sh` lê as credenciais do `.env` do KyX (`KYX_ENV` muda o caminho), só as variáveis
+  que o buscador usa e sem imprimir nada (nunca com `eval`); o que já está no ambiente vence o
+  arquivo. O corpus é o Postgres local (`CORPUS_DB_HOST` troca o `127.0.0.1`).
+- Tetos de custo por execução: `--discovery-bright-data-max` (60 chamadas) e
+  `--enrich-bright-data-max` (100). `--no-bright-data` desliga o pago em tudo.
+- `install_cron.sh` reescreve só o bloco `# >>> buscador-midias >>>` do crontab e grava
+  `var/schedule.json` (`{"daily": [...]}`) para a agenda do painel.
+- **Escopo:** o cron usa a amostra da POC (`data/poc_sample.txt`, 125 fontes). Ampliar para as 1294
+  fontes exige antes decidir a linha de base (cada fonte nova grava milhares de URLs de histórico).
 
 ```bash
 .venv/bin/python -m buscador_midias backup        # var/backups/state-AAAAMMDD-HHMMSS.db (UTC)
@@ -359,22 +337,25 @@ scripts/run_rounds.sh --count 5 --triage-each-round --enrich-each-round --backup
 
 Servidor local, **somente leitura** (abre o SQLite com `mode=ro` a cada requisição), sem
 dependências novas e sem recursos externos. A página consulta `/api/snapshot` a cada 5 s e mostra:
-estado da descoberta (com progresso da rodada em curso) e da triagem, novas nas últimas 24 h,
-percentual mantido pelo LLM, custo total e por 1000 manchetes, latência de publicação, funil
-acumulado, atividade por hora, rodadas, execuções da triagem, temas, descartes por motivo, fontes
-(problemas primeiro, com filtro) e o feed das últimas URLs novas com o veredito.
+estado da descoberta (com progresso da rodada em curso) e do enriquecimento, novas nas últimas 24 h,
+custo da análise, latência de publicação, funil acumulado, atividade por hora, rodadas (com a fonte
+de cada site: sitemap, feed ou Bright Data), execuções do enriquecimento e do corpus, descartes por
+motivo, fontes (problemas primeiro, com filtro, e a via de cada uma) e o feed das últimas URLs
+novas com a situação da análise.
 
-- **Agenda e linha do tempo:** o sistema não tem agendador próprio, então a agenda vem de um JSON
-  opcional (`--schedule`, padrão `var/schedule.json`, relido a cada atualização) escrito por quem
-  dispara as rodadas. Sem o arquivo, o painel estima a próxima rodada pela cadência observada
+- **Agenda e linha do tempo:** a agenda vem de um JSON opcional (`--schedule`, padrão
+  `var/schedule.json`, relido a cada atualização), que o `install_cron.sh` escreve. Sem o arquivo, o painel estima a próxima rodada pela cadência observada
   (precisa de 3+ rodadas com intervalo mediano ≥ 30 min) e avisa que é estimativa. Estados:
   `concluída` (houve execução do tipo na janela do horário), `agendada`, `no horário` (até 10 min)
   e `atrasada`.
   ```json
-  {"jobs": [{"name": "Rodada 2/5", "kind": "discovery",
+  {"daily": ["06:00", "12:00", "16:00"],
+   "jobs": [{"name": "Rodada extra", "kind": "discovery",
              "at": "2026-10-15T17:22:00-03:00", "note": "aprox."}]}
   ```
-  `kind` é `discovery` ou `triage`; `at` precisa de fuso. Entradas inválidas são ignoradas.
+  `daily` são horários que se repetem todo dia no fuso da máquina (como o cron); `jobs` são
+  tarefas avulsas (`kind` é `discovery`, `enrich` ou `corpus`; `at` precisa de fuso). Entradas
+  inválidas são ignoradas.
 - **Bright Data:** cada rodada grava quantas chamadas pagas fez e quantos hosts dependeram dele;
   o painel mostra por rodada e o total acumulado (o `report` também). É contagem de chamadas, não
   dinheiro: o preço por chamada não é oficial.
@@ -385,6 +366,8 @@ acumulado, atividade por hora, rodadas, execuções da triagem, temas, descartes
 - Escuta só em `127.0.0.1` por padrão: **não tem autenticação**; não exponha na rede.
 - A página HTML é lida na subida do servidor: reinicie o painel depois de editá-la.
 - Uma rodada sem `finished_at` há mais de 3 h aparece como "interrompida?".
+- O comando `dashboard` atualiza uma vez o esquema de um estado de versão anterior antes de abri-lo
+  somente leitura.
 
 ## Catálogo de fontes
 

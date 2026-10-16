@@ -12,7 +12,6 @@ from buscador_midias.state.store import (
     ContentRecord,
     EvidenceRecord,
     StateStore,
-    TriageRecord,
     UrlKind,
 )
 
@@ -25,43 +24,32 @@ def found(path: str, site: str = "a.com") -> DiscoveredUrl:
     )
 
 
-def build_store(findings: int = 4, kept_no: int = 4, discarded: int = 4) -> StateStore:
+def build_store(findings: int = 4, no_entity: int = 4, with_text: bool = True) -> StateStore:
     store = StateStore()
     run = store.start_run(NOW)
-    triage = store.start_triage_run(NOW, model="m", prompt_version="v")
     enrich = store.start_enrich_run(NOW, model="m", prompt_version="v", evidence_mode="auto")
-    groups = {
-        "f": (findings, True, True),
-        "k": (kept_no, True, False),
-        "d": (discarded, False, False),
-    }
-    for tag, (count, kept, is_finding) in groups.items():
+    groups = {"f": (findings, True), "k": (no_entity, False)}
+    for tag, (count, is_finding) in groups.items():
         paths = [f"{tag}-{n}-materia" for n in range(count)]
         store.record_urls([found(p) for p in paths], run_id=run, now=NOW, kind=UrlKind.NEW)
-        store.record_triage(
-            [TriageRecord(f"h-{p}", "keep" if kept else "discard", (), "motivo") for p in paths],
-            triage_run_id=triage,
-            now=NOW,
-        )
-        if not kept:
-            continue
         for p in paths:
-            store.record_content(
-                ContentRecord(
-                    f"h-{p}",
-                    "ok",
-                    200,
-                    None,
-                    f"Manchete {p}",
-                    "Desc",
-                    "Trecho da matéria " * 60,
-                    900,
-                    NOW,
-                    "pt-BR",
-                    None,
-                ),
-                now=NOW,
-            )
+            if with_text:
+                store.record_content(
+                    ContentRecord(
+                        f"h-{p}",
+                        "ok",
+                        200,
+                        None,
+                        f"Manchete {p}",
+                        "Desc",
+                        "Trecho da matéria " * 60,
+                        900,
+                        NOW,
+                        "pt-BR",
+                        None,
+                    ),
+                    now=NOW,
+                )
             entities = (
                 ({"name": "João Silva", "type": "PF", "role": "acusado"},) if is_finding else ()
             )
@@ -106,15 +94,15 @@ def read(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
-def test_lote_tem_os_tres_grupos_e_o_csv_nao_revela_o_veredito_do_modelo(tmp_path: Path):
+def test_lote_tem_os_dois_grupos_e_o_csv_nao_revela_o_veredito_do_modelo(tmp_path: Path):
     store = build_store()
 
     batch = export_batch(store, tmp_path, per_group=3, seed=1)
 
     assert batch.number == 1
-    assert batch.counts == {"in_corpus": 3, "kept_no_entity": 3, "triage_discarded": 3}
+    assert batch.counts == {"in_corpus": 3, "no_entity": 3}
     blind = read(tmp_path / "rotulagem-01.csv")
-    assert len(blind) == 9
+    assert len(blind) == 6
     forbidden = {"grupo", "achado", "temas", "entidades", "fato", "evidencia", "modelo"}
     assert forbidden.isdisjoint({column.lower() for column in blind[0]})
     assert all(row["veredito"] == "" for row in blind)
@@ -138,7 +126,7 @@ def test_chave_guarda_o_grupo_e_o_veredito_do_modelo(tmp_path: Path):
     export_batch(store, tmp_path, per_group=2, seed=1)
 
     key = read(tmp_path / "chave.csv")
-    assert {row["grupo"] for row in key} == {"in_corpus", "kept_no_entity", "triage_discarded"}
+    assert {row["grupo"] for row in key} == {"in_corpus", "no_entity"}
     finding = next(row for row in key if row["grupo"] == "in_corpus")
     assert finding["temas"] == "fiscal"
     assert finding["entidades"] == "João Silva"
@@ -147,7 +135,7 @@ def test_chave_guarda_o_grupo_e_o_veredito_do_modelo(tmp_path: Path):
 
 
 def test_ordem_do_csv_e_embaralhada_para_nao_agrupar_por_veredito(tmp_path: Path):
-    store = build_store(findings=10, kept_no=10, discarded=10)
+    store = build_store(findings=10, no_entity=10)
 
     export_batch(store, tmp_path, per_group=10, seed=3)
 
@@ -157,7 +145,7 @@ def test_ordem_do_csv_e_embaralhada_para_nao_agrupar_por_veredito(tmp_path: Path
 
 
 def test_segundo_lote_nao_repete_urls_e_continua_a_numeracao(tmp_path: Path):
-    store = build_store(findings=6, kept_no=6, discarded=6)
+    store = build_store(findings=6, no_entity=6)
     first = export_batch(store, tmp_path, per_group=3, seed=1)
 
     second = export_batch(store, tmp_path, per_group=3, seed=2)
@@ -167,16 +155,16 @@ def test_segundo_lote_nao_repete_urls_e_continua_a_numeracao(tmp_path: Path):
     b = {row["url"] for row in read(tmp_path / "rotulagem-02.csv")}
     assert a.isdisjoint(b)
     ids = [row["id"] for row in read(tmp_path / "chave.csv")]
-    assert len(ids) == len(set(ids)) == 18
+    assert len(ids) == len(set(ids)) == 12
 
 
 def test_grupo_com_menos_itens_que_o_pedido_exporta_o_que_existe(tmp_path: Path):
-    store = build_store(findings=2, kept_no=5, discarded=5)
+    store = build_store(findings=2, no_entity=5)
 
     batch = export_batch(store, tmp_path, per_group=4, seed=1)
 
     assert batch.counts["in_corpus"] == 2
-    assert batch.counts["kept_no_entity"] == 4
+    assert batch.counts["no_entity"] == 4
 
 
 def test_trecho_vem_do_texto_baixado_e_e_limitado(tmp_path: Path):
@@ -187,12 +175,20 @@ def test_trecho_vem_do_texto_baixado_e_e_limitado(tmp_path: Path):
     rows = read(tmp_path / "rotulagem-01.csv")
     with_text = [r for r in rows if "Trecho da matéria" in r["trecho"]]
     assert with_text and all(len(r["trecho"]) <= 650 for r in rows)
-    assert any(r["trecho"] == "(texto não baixado: só a manchete)" for r in rows)
+
+
+def test_sem_texto_baixado_o_trecho_avisa_que_so_ha_a_manchete(tmp_path: Path):
+    store = build_store(findings=2, no_entity=2, with_text=False)
+
+    export_batch(store, tmp_path, per_group=2, seed=1)
+
+    rows = read(tmp_path / "rotulagem-01.csv")
+    assert {r["trecho"] for r in rows} == {"(texto não baixado: só a manchete)"}
 
 
 def test_mesma_semente_gera_o_mesmo_lote(tmp_path: Path):
     one, two = tmp_path / "um", tmp_path / "dois"
-    store = build_store(findings=8, kept_no=8, discarded=8)
+    store = build_store(findings=8, no_entity=8)
 
     export_batch(store, one, per_group=4, seed=5)
     export_batch(store, two, per_group=4, seed=5)
@@ -211,18 +207,14 @@ def fill(folder: Path, verdicts: dict[str, str], batch: str = "rotulagem-01.csv"
             writer.writerow(row)
 
 
-def test_pontuacao_calcula_precisao_taxas_de_perda_e_recalls_estimados(tmp_path: Path):
-    store = build_store(findings=10, kept_no=10, discarded=10)
+def test_pontuacao_calcula_precisao_e_recall_estimado_da_analise(tmp_path: Path):
+    store = build_store(findings=10, no_entity=10)
     export_batch(store, tmp_path, per_group=10, seed=1)
     rows = read(tmp_path / "rotulagem-01.csv")
     key = {row["id"]: row["grupo"] for row in read(tmp_path / "chave.csv")}
     verdicts = {}
-    counters = {"in_corpus": 0, "kept_no_entity": 0, "triage_discarded": 0}
-    plan = {
-        "in_corpus": 8,
-        "kept_no_entity": 2,
-        "triage_discarded": 1,
-    }  # quantos "sim" por grupo
+    counters = {"in_corpus": 0, "no_entity": 0}
+    plan = {"in_corpus": 8, "no_entity": 2}  # quantos "sim" por grupo
     for row in rows:
         group = key[row["id"]]
         verdicts[row["id"]] = "sim" if counters[group] < plan[group] else "nao"
@@ -233,13 +225,10 @@ def test_pontuacao_calcula_precisao_taxas_de_perda_e_recalls_estimados(tmp_path:
 
     assert report.groups["in_corpus"].labeled == 10
     assert report.groups["in_corpus"].yes_rate == 0.8
-    assert report.groups["kept_no_entity"].yes_rate == 0.2
-    assert report.groups["triage_discarded"].yes_rate == 0.1
-    # população: 10 achados, 10 mantidos sem achado, 10 descartados -> adversos estimados 8, 2, 1
+    assert report.groups["no_entity"].yes_rate == 0.2
+    # população: 10 com entidade e 10 sem -> deveriam entrar 8 e 2; a análise achou 8 de 10
     assert report.corpus_precision == 0.8
-    assert report.triage_recall == pytest.approx((8 + 2) / (8 + 2 + 1))
-    assert report.entity_recall == pytest.approx(8 / (8 + 2))
-    assert report.pipeline_recall == pytest.approx(8 / (8 + 2 + 1))
+    assert report.analysis_recall == pytest.approx(8 / (8 + 2))
 
 
 def _fill_by_id(folder: Path, verdicts: dict[str, str]) -> None:
@@ -253,7 +242,7 @@ def _fill_by_id(folder: Path, verdicts: dict[str, str]) -> None:
 
 
 def test_incertos_e_em_branco_ficam_fora_do_denominador_mas_sao_contados(tmp_path: Path):
-    store = build_store(findings=4, kept_no=0, discarded=0)
+    store = build_store(findings=4, no_entity=0)
     export_batch(store, tmp_path, per_group=4, seed=1)
     ids = [row["id"] for row in read(tmp_path / "rotulagem-01.csv")]
     _fill_by_id(tmp_path, {ids[0]: "sim", ids[1]: "nao", ids[2]: "incerto"})  # ids[3] em branco
@@ -266,7 +255,7 @@ def test_incertos_e_em_branco_ficam_fora_do_denominador_mas_sao_contados(tmp_pat
 
 
 def test_leitor_aceita_ponto_e_virgula_cp1252_e_sinonimos(tmp_path: Path):
-    store = build_store(findings=3, kept_no=0, discarded=0)
+    store = build_store(findings=3, no_entity=0)
     export_batch(store, tmp_path, per_group=3, seed=1)
     rows = read(tmp_path / "rotulagem-01.csv")
     values = ["Sim", "não", "  ENTRA "]
@@ -282,7 +271,7 @@ def test_leitor_aceita_ponto_e_virgula_cp1252_e_sinonimos(tmp_path: Path):
 
 
 def test_ids_desconhecidos_sao_ignorados_e_contados(tmp_path: Path):
-    store = build_store(findings=2, kept_no=0, discarded=0)
+    store = build_store(findings=2, no_entity=0)
     export_batch(store, tmp_path, per_group=2, seed=1)
     rows = read(tmp_path / "rotulagem-01.csv")
     rows.append({**rows[0], "id": "L9999", "veredito": "sim"})
@@ -303,7 +292,7 @@ def test_sem_rotulos_nao_ha_taxas_nem_recalls(tmp_path: Path):
     report = score_labels(store, tmp_path)
 
     assert report.corpus_precision is None
-    assert report.triage_recall is None
+    assert report.analysis_recall is None
     assert report.groups["in_corpus"].yes_rate is None
 
 

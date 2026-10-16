@@ -18,7 +18,7 @@ from buscador_midias.net.fetcher import Fetcher, FetchResult
 
 DEFAULT_MAX_SITEMAP_FETCHES = 6
 _FALLBACK_PATHS = ("/sitemap.xml", "/sitemap_index.xml")
-_BLOCKING_STATUSES = frozenset({401, 403, 429})
+BLOCKING_STATUSES = frozenset({401, 403, 429})
 _NO_ROBOTS_STATUSES = frozenset({404, 410})
 # Palavras do nome do arquivo que indicam sitemap de listagens (tags, autores...), não de matérias.
 _TAXONOMY_WORDS = frozenset(
@@ -132,8 +132,7 @@ def explore_site(
         A exploração; nunca levanta por causa do conteúdo ou da rede do site.
     """
     origin = _origin(site.url)
-    robots_result = fetcher.get(f"{origin}/robots.txt")
-    policy = _read_robots(site, robots_result, user_agent)
+    policy = read_robots(site, fetcher, user_agent)
     if isinstance(policy, Exploration):
         return policy
 
@@ -150,6 +149,21 @@ def _failed(status: ProbeStatus, detail: str, *, fetched: int = 0, skipped: int 
     return Exploration(status=status, detail=detail, sitemaps=(), fetched=fetched, skipped=skipped)
 
 
+def read_robots(site: Site, fetcher: Fetcher, user_agent: str) -> RobotsPolicy | Exploration:
+    """Baixa e interpreta o ``robots.txt`` do site (compartilhado por sitemap e feed).
+
+    Returns:
+        A política a seguir, ou uma ``Exploration`` quando o desfecho já está decidido (bloqueio,
+        erro ou acesso proibido pelo robots.txt).
+    """
+    return _read_robots(site, fetcher.get(f"{_origin(site.url)}/robots.txt"), user_agent)
+
+
+def origin_of(url: str) -> str:
+    """Esquema + host da URL (sem caminho)."""
+    return _origin(url)
+
+
 def _read_robots(site: Site, result: FetchResult, user_agent: str) -> RobotsPolicy | Exploration:
     """Interpreta a resposta do robots.txt.
 
@@ -157,7 +171,7 @@ def _read_robots(site: Site, result: FetchResult, user_agent: str) -> RobotsPoli
         A política a seguir, ou uma ``Exploration`` quando o desfecho já está decidido (bloqueio,
         erro ou acesso proibido pelo robots.txt).
     """
-    if result.status in _BLOCKING_STATUSES:
+    if result.status in BLOCKING_STATUSES:
         return _failed(ProbeStatus.BLOCKED, f"robots.txt: HTTP {result.status}")
     if result.status is None or result.error is not None:
         return _failed(ProbeStatus.ERROR, result.error or "falha de rede")
@@ -275,7 +289,7 @@ def _classify_failure(url: str, result: FetchResult) -> tuple[ProbeStatus, str] 
     """Traduz uma resposta que não é utilizável em (status da exploração, detalhe)."""
     if result.ok:
         return None
-    if result.status in _BLOCKING_STATUSES:
+    if result.status in BLOCKING_STATUSES:
         return ProbeStatus.BLOCKED, f"{url}: HTTP {result.status}"
     if result.status in _NO_ROBOTS_STATUSES:
         return ProbeStatus.NO_SITEMAP, f"{url}: HTTP {result.status}"

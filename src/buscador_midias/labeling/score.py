@@ -1,4 +1,4 @@
-"""Pontuação dos rótulos humanos: precisão do corpus e recall estimado da triagem e da análise.
+"""Pontuação dos rótulos humanos: precisão do corpus e recall estimado da análise de contexto.
 
 Cada rótulo responde "esta notícia entra no corpus?" (nomeia pessoa ou organização identificável).
 """
@@ -71,18 +71,13 @@ class LabelReport:
     Attributes:
         groups: Estatísticas por grupo.
         corpus_precision: Do que o modelo mandou para o corpus, quanto entra de fato.
-        triage_recall: Do que deveria entrar (estimado), quanto a triagem manteve.
-        entity_recall: Do que deveria entrar entre as mantidas, quanto a análise achou com entidade.
-        pipeline_recall: Do que deveria entrar (estimado), quanto chegou ao corpus (triagem e
-            análise juntas).
+        analysis_recall: Do que deveria entrar (estimado), quanto a análise mandou ao corpus.
         unknown_ids: Linhas com id que não consta na chave (ignoradas).
     """
 
     groups: dict[str, GroupStats]
     corpus_precision: float | None
-    triage_recall: float | None
-    entity_recall: float | None
-    pipeline_recall: float | None
+    analysis_recall: float | None
     unknown_ids: int
 
 
@@ -127,27 +122,20 @@ def score_labels(store: StateStore, folder: Path) -> LabelReport:
     rates = {g: s.yes_rate for g, s in stats.items()}
     precision = rates["in_corpus"]
     if any(rate is None for rate in rates.values()):
-        return LabelReport(stats, precision, None, None, None, unknown)
+        return LabelReport(stats, precision, None, unknown)
     should_enter = {g: (rates[g] or 0.0) * stats[g].population for g in LABEL_GROUPS}
     total = sum(should_enter.values())
-    kept = should_enter["in_corpus"] + should_enter["kept_no_entity"]
     return LabelReport(
         groups=stats,
         corpus_precision=precision,
-        triage_recall=kept / total if total else None,
-        entity_recall=should_enter["in_corpus"] / kept if kept else None,
-        pipeline_recall=should_enter["in_corpus"] / total if total else None,
+        analysis_recall=should_enter["in_corpus"] / total if total else None,
         unknown_ids=unknown,
     )
 
 
 def format_label_report(report: LabelReport) -> str:
     """Texto legível do relatório de rotulagem."""
-    names = {
-        "in_corpus": "mandadas ao corpus pelo modelo",
-        "kept_no_entity": "mantidas sem entidade",
-        "triage_discarded": "descartadas na triagem",
-    }
+    names = {"in_corpus": "mandadas ao corpus pelo modelo", "no_entity": "lidas sem entidade"}
     lines = []
     for group, stats in report.groups.items():
         rate = "sem rótulos"
@@ -164,9 +152,7 @@ def format_label_report(report: LabelReport) -> str:
 
     lines += [
         f"precisão do corpus: {pct(report.corpus_precision)}",
-        f"recall estimado da triagem: {pct(report.triage_recall)}",
-        f"recall estimado da análise de entidades (entre as mantidas): {pct(report.entity_recall)}",
-        f"recall estimado do fluxo todo (triagem + análise): {pct(report.pipeline_recall)}",
+        f"recall estimado da análise de contexto: {pct(report.analysis_recall)}",
     ]
     if report.unknown_ids:
         lines.append(f"aviso: {report.unknown_ids} linha(s) com id fora da chave foram ignoradas")

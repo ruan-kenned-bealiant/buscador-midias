@@ -1,29 +1,19 @@
-"""Classificador de manchetes pelo OpenRouter (API compatível com chat completions)."""
+"""Transporte do OpenRouter (API compatível com chat completions) usado pela análise de contexto."""
 
 from __future__ import annotations
 
 import threading
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
 
-from buscador_midias.triage.prompt import SYSTEM_PROMPT, Policy, build_user_message, system_prompt
-from buscador_midias.triage.relevance import (
-    Decision,
-    HeadlineItem,
-    HeadlineVerdict,
-    parse_verdicts,
-)
-
 DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_MODEL = "google/gemini-2.5-flash-lite"
 DEFAULT_TIMEOUT_SECONDS = 90.0
 DEFAULT_ATTEMPTS = 3
-_TOKENS_PER_ITEM = 70
-_BASE_TOKENS = 200
 _RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
 
 
@@ -33,7 +23,7 @@ class MissingOpenRouterKeyError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class Usage:
-    """Consumo acumulado de um classificador.
+    """Consumo acumulado de um transporte do OpenRouter.
 
     Attributes:
         calls: Chamadas concluídas com sucesso.
@@ -41,7 +31,7 @@ class Usage:
         completion_tokens: Tokens de saída.
         cost_usd: Custo informado pelo OpenRouter (``None`` se nunca informou).
         retries: Tentativas repetidas por 429/5xx/rede.
-        errors: Lotes que terminaram sem resposta (viraram ``UNKNOWN``).
+        errors: Chamadas que terminaram sem resposta.
         last_error: Última falha, sem corpo de resposta nem credenciais.
     """
 
@@ -209,104 +199,3 @@ class OpenRouterChat:
                 errors=current.errors + (1 if error is not None else 0),
                 last_error=error if error is not None else current.last_error,
             )
-
-
-class OpenRouterClassifier:
-    """Pede a um modelo do OpenRouter o veredito de cada manchete de um lote.
-
-    Qualquer falha do provedor devolve ``UNKNOWN`` para o lote: a esteira nunca descarta por
-    falha do provedor.
-    """
-
-    def __init__(
-        self,
-        client: httpx.Client,
-        *,
-        api_key: str,
-        model: str = DEFAULT_MODEL,
-        base_url: str = DEFAULT_BASE_URL,
-        timeout: float = DEFAULT_TIMEOUT_SECONDS,
-        attempts: int = DEFAULT_ATTEMPTS,
-        system_prompt: str = SYSTEM_PROMPT,
-        sleep: Callable[[float], None] = time.sleep,
-    ) -> None:
-        """Cria o classificador.
-
-        Args:
-            client: Cliente httpx (injetável para testes com ``MockTransport``).
-            api_key: Chave do OpenRouter. Nunca entra em mensagens de erro.
-            model: Identificador do modelo no OpenRouter.
-            base_url: Endereço da API.
-            timeout: Tempo limite de cada chamada, em segundos.
-            attempts: Tentativas por lote (429, 5xx e falhas de rede são repetidas).
-            system_prompt: Prompt de sistema (veja ``prompt.system_prompt`` para as políticas).
-            sleep: Espera entre tentativas (injetável para testes).
-        """
-        self._chat = OpenRouterChat(
-            client,
-            api_key=api_key,
-            model=model,
-            base_url=base_url,
-            timeout=timeout,
-            attempts=attempts,
-            sleep=sleep,
-        )
-        self._system_prompt = system_prompt
-
-    @property
-    def model(self) -> str:
-        """Modelo em uso."""
-        return self._chat.model
-
-    @property
-    def usage(self) -> Usage:
-        """Retrato do consumo acumulado até agora."""
-        return self._chat.usage
-
-    def classify(self, items: Sequence[HeadlineItem]) -> list[HeadlineVerdict]:
-        """Classifica um lote de manchetes.
-
-        Args:
-            items: Manchetes do lote.
-
-        Returns:
-            Um veredito por item, na mesma ordem; ``UNKNOWN`` se o provedor falhar.
-        """
-        content = self._chat.complete(
-            self._system_prompt,
-            build_user_message(items),
-            max_tokens=len(items) * _TOKENS_PER_ITEM + _BASE_TOKENS,
-        )
-        if content is None:
-            return [HeadlineVerdict(i.id, Decision.UNKNOWN, (), "sem resposta") for i in items]
-        return parse_verdicts(content, items)
-
-
-def classifier_from_env(
-    env: Mapping[str, str],
-    client: httpx.Client,
-    *,
-    model: str = DEFAULT_MODEL,
-    policy: Policy = Policy.ENTITIES,
-) -> OpenRouterClassifier:
-    """Monta o classificador com as variáveis do KyX (``OPENROUTER_API_KEY``/``_BASE_URL``).
-
-    Args:
-        env: Variáveis de ambiente.
-        client: Cliente httpx.
-        model: Modelo do OpenRouter.
-        policy: Política de descarte do prompt.
-
-    Raises:
-        MissingOpenRouterKeyError: Se a chave não estiver definida (a mensagem nunca a traz).
-    """
-    api_key = env.get("OPENROUTER_API_KEY")
-    if not api_key:
-        raise MissingOpenRouterKeyError("defina OPENROUTER_API_KEY para usar a triagem por LLM")
-    return OpenRouterClassifier(
-        client,
-        api_key=api_key,
-        model=model,
-        base_url=env.get("OPENROUTER_BASE_URL") or DEFAULT_BASE_URL,
-        system_prompt=system_prompt(policy),
-    )

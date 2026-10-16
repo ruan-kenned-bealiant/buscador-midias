@@ -13,7 +13,7 @@ from buscador_midias.labeling.session import LabelSession
 
 @pytest.fixture
 def folder(tmp_path: Path) -> Path:
-    store = build_store(findings=3, kept_no=3, discarded=3)
+    store = build_store(findings=3, no_entity=3)
     export_batch(store, tmp_path, per_group=3, seed=1)
     return tmp_path
 
@@ -27,7 +27,7 @@ def test_lista_so_os_campos_cegos_na_ordem_do_arquivo(folder: Path):
     items = LabelSession(folder).items()
 
     assert [i.id for i in items] == [r["id"] for r in rows(folder / "rotulagem-01.csv")]
-    assert len(items) == 9
+    assert len(items) == 6
     first = items[0]
     assert first.url.startswith("https://a.com/") and first.source == "a.com"
     assert first.verdict == ""
@@ -47,7 +47,7 @@ def test_grava_o_veredito_no_csv_e_a_pontuacao_le(folder: Path):
         session.set_verdict(item.id, "sim")
 
     assert {r["veredito"] for r in rows(folder / "rotulagem-01.csv")} == {"sim"}
-    store = build_store(findings=3, kept_no=3, discarded=3)
+    store = build_store(findings=3, no_entity=3)
     report = score_labels(store, folder)
     assert report.groups["in_corpus"].yes == 3
     assert report.groups["in_corpus"].unlabeled == 0
@@ -130,7 +130,7 @@ def test_le_e_regrava_csv_do_excel_em_cp1252_com_ponto_e_virgula(tmp_path: Path)
 
 
 def test_varios_lotes_aparecem_juntos_e_cada_voto_vai_para_o_seu_arquivo(folder: Path):
-    store = build_store(findings=3, kept_no=3, discarded=3)
+    store = build_store(findings=3, no_entity=3)
     export_batch(store, folder, per_group=3, seed=2)  # nada novo: as URLs já foram exportadas
     second = folder / "rotulagem-02.csv"
     header = rows(folder / "rotulagem-01.csv")[0]

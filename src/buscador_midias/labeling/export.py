@@ -50,11 +50,11 @@ class Batch:
 def export_batch(store: StateStore, folder: Path, *, per_group: int, seed: int) -> Batch:
     """Sorteia um lote novo (sem repetir URLs já exportadas) e grava o CSV cego e a chave.
 
-    Os itens dos três grupos são embaralhados, então a ordem do CSV não revela o grupo. O mesmo
+    Os itens dos grupos são embaralhados, então a ordem do CSV não revela o grupo. O mesmo
     ``seed`` sobre o mesmo estado gera o mesmo lote.
 
     Args:
-        store: Estado com triagem, análises e evidências.
+        store: Estado com análises e evidências.
         folder: Pasta de saída (criada se preciso).
         per_group: Itens por grupo (um grupo menor exporta o que tiver).
         seed: Semente do sorteio.

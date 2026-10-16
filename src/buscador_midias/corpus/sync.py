@@ -6,8 +6,8 @@ A cada execução:
    linhas) e refaz o que sumiu.
 2. Grava os achados ainda não gravados ou cuja evidência mudou desde a última gravação (por
    exemplo, ``pending`` virou ``captured``).
-3. Retém, por regra, o que não deve entrar no corpus: achados só pela manchete e achados abaixo da
-   confiança mínima. O que ficou retido é contado, para a regra ser visível.
+
+Só entra o que atende ao critério do corpus (``criteria.meets_criteria``).
 """
 
 from __future__ import annotations
@@ -44,8 +44,6 @@ def sync_corpus(
     *,
     sites: Mapping[str, Site],
     now: datetime,
-    include_headline_only: bool = False,
-    min_confidence: float = 0.0,
     batch_size: int = DEFAULT_BATCH_SIZE,
     limit: int | None = None,
     dry_run: bool = False,
@@ -57,8 +55,6 @@ def sync_corpus(
         writer: Porta de gravação no corpus.
         sites: Fontes do catálogo por ``Site.key`` (dão o país do artigo).
         now: Instante gravado nos registros.
-        include_headline_only: Grava também achados baseados só na manchete.
-        min_confidence: Confiança mínima da análise para gravar.
         batch_size: Artigos por chamada ao gravador.
         limit: Máximo de achados nesta execução (``None``: todos).
         dry_run: Só calcula o que seria gravado; não grava no corpus nem no estado.
@@ -72,16 +68,9 @@ def sync_corpus(
     if missing and not dry_run:
         store.forget_corpus_writes(missing)
 
-    candidates = store.pending_corpus_sync(
-        include_headline_only=include_headline_only, min_confidence=min_confidence, limit=limit
-    )
-    withheld = store.count_corpus_withheld(
-        include_headline_only=include_headline_only, min_confidence=min_confidence
-    )
+    candidates = store.pending_corpus_sync(limit=limit)
     if dry_run:
-        return CorpusSummary(
-            0, CorpusTotals(candidates=len(candidates), withheld=withheld, rewritten=len(missing))
-        )
+        return CorpusSummary(0, CorpusTotals(candidates=len(candidates), rewritten=len(missing)))
 
     run_id = store.start_corpus_run(now)
     names = writer.source_names()
@@ -107,7 +96,6 @@ def sync_corpus(
         entities=entities,
         keywords=keywords,
         failed=failed,
-        withheld=withheld,
         rewritten=len(missing),
     )
     store.finish_corpus_run(run_id, now, totals)
