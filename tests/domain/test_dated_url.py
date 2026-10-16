@@ -96,3 +96,15 @@ def test_find_date_le_o_dia_ou_o_mes_da_url_para_ordenar_filhos():
     assert find_date("https://x.com/s-2026-10.xml") == datetime(2026, 10, 1, tzinfo=UTC)
     assert find_date("https://x.com/sitemap/latest/") is None
     assert find_date("https://x.com/sitemap/1999-07-22/") == datetime(1999, 7, 22, tzinfo=UTC)
+
+
+def test_find_date_aceita_ano_sozinho_no_nome_do_arquivo():
+    """O olhardireto lista /sitemap/<categoria>/2026.xml: o ano ordena os arquivos."""
+    assert find_date("https://x.com/sitemap/conceito/2026.xml") == datetime(2026, 1, 1, tzinfo=UTC)
+    assert find_date("https://x.com/sitemap/conceito/2019.xml") == datetime(2019, 1, 1, tzinfo=UTC)
+
+
+def test_find_date_nao_toma_numero_de_pagina_ou_id_por_ano():
+    assert find_date("https://x.com/sitemap-3.xml") is None
+    assert find_date("https://x.com/sitemap/123456.xml") is None
+    assert find_date("https://x.com/posts/post-12026.xml") is None

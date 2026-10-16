@@ -25,13 +25,15 @@ FEED = f"{HOME}/feed/"
 ROBOTS = f"{HOME}/robots.txt"
 
 
-def probe(fetcher, *, hints=(), scoring=None, max_requests=40, site=None):
+def probe(fetcher, *, hints=(), scoring=None, max_requests=40, site=None, exclude=(), forced=()):
     return probe_site(
         site or make_site(),
         fetcher,
         user_agent=UA,
         now=NOW,
         hints=hints,
+        exclude=exclude,
+        forced=forced,
         scoring=scoring,
         max_requests=max_requests,
     )
@@ -245,3 +247,147 @@ def test_sitemap_de_arquivo_com_ano_antigo_nao_vira_modelo():
     result = probe(fetcher)
 
     assert old in {r.url for r in result.reports}
+
+
+def test_complemento_acrescenta_o_que_o_principal_nao_lista_e_mede_a_cobertura():
+    fetcher = FakeFetcher(
+        {
+            ROBOTS: robots(NEWS, f"{HOME}/sitemap.xml"),
+            NEWS: news_sitemap(*((f"politica/n{i}", 1) for i in range(30))),
+            f"{HOME}/sitemap.xml": plain_sitemap(*((f"esporte/s{i}", 1) for i in range(20))),
+            HOME: home_page(FEED),
+            FEED: rss(*((f"mundo/f{i}", 1) for i in range(10))),
+        }
+    )
+
+    result = probe(fetcher)
+
+    roles = {r.url: r.role for r in result.reports}
+    assert roles[NEWS] is Role.PRIMARY
+    assert roles[f"{HOME}/sitemap.xml"] is Role.BACKUP
+    assert roles[FEED] is Role.COMPLEMENT
+    assert result.primary is not None
+    assert result.primary.union_recent == 60
+    assert result.primary.coverage == 30 / 60
+    assert result.primary.cover_share == 1.0
+    assert result.complements == (by_url(result)[FEED],)
+
+
+def test_fonte_com_um_so_candidato_cobre_tudo_que_viu():
+    fetcher = FakeFetcher({ROBOTS: robots(NEWS), NEWS: news_sitemap(("a", 1), ("b", 1))})
+
+    result = probe(fetcher)
+
+    assert result.primary is not None and result.primary.cover_share == 1.0
+    assert result.complements == ()
+
+
+class FlakyFetcher(FakeFetcher):
+    """Falha com 404 as primeiras vezes que uma URL é pedida (CDN instável)."""
+
+    def __init__(self, responses, flaky: dict[str, int]) -> None:
+        super().__init__(responses)
+        self.flaky = dict(flaky)
+
+    def get(self, url):
+        if self.flaky.get(url, 0) > 0:
+            self.flaky[url] -= 1
+            self.calls.append(url)
+            return status(url, 404)
+        return super().get(url)
+
+
+def test_sitemap_declarado_no_robots_que_falha_uma_vez_ganha_outra_tentativa():
+    fetcher = FlakyFetcher(
+        {ROBOTS: robots(NEWS), NEWS: news_sitemap(*((f"n{i}", 1) for i in range(8)))},
+        flaky={NEWS: 1},
+    )
+
+    result = probe(fetcher)
+
+    assert result.primary is not None and result.primary.url == NEWS
+    assert fetcher.calls.count(NEWS) == 2
+
+
+def test_endereco_adivinhado_que_falha_nao_e_repetido():
+    fetcher = FlakyFetcher(
+        {ROBOTS: robots(), NEWS: news_sitemap(*((f"n{i}", 1) for i in range(8)))},
+        flaky={NEWS: 1},
+    )
+
+    probe(fetcher)
+
+    assert fetcher.calls.count(NEWS) == 1
+
+
+def test_sitemap_so_de_tags_declarado_no_robots_cai_nos_caminhos_comuns():
+    tags = f"{HOME}/post_tag-sitemap.xml"
+    fetcher = FakeFetcher(
+        {ROBOTS: robots(tags), f"{HOME}/sitemap.xml": plain_sitemap(("a", 1), ("b", 2))}
+    )
+
+    result = probe(fetcher)
+
+    assert tags not in fetcher.calls
+    assert result.primary is not None and result.primary.url == f"{HOME}/sitemap.xml"
+
+
+def test_endereco_excluido_a_mao_nao_e_baixado_e_aparece_como_excluido():
+    fetcher = FakeFetcher(
+        {
+            ROBOTS: robots(NEWS),
+            NEWS: news_sitemap(*((f"n{i}", 1) for i in range(8))),
+            f"{HOME}/sitemap.xml": plain_sitemap(("a", 1), ("b", 2)),
+        }
+    )
+
+    result = probe(fetcher, exclude=[NEWS])
+
+    assert NEWS not in fetcher.calls
+    excluded = by_url(result)[NEWS]
+    assert excluded.verdict is Verdict.INVALID and "excluíd" in excluded.detail
+
+
+def test_exclusao_com_asterisco_vale_para_o_prefixo():
+    fetcher = FakeFetcher(
+        {ROBOTS: robots(f"{HOME}/drtv/a.xml"), f"{HOME}/drtv/a.xml": plain_sitemap(("a", 1))}
+    )
+
+    probe(fetcher, exclude=[f"{HOME}/drtv/*"])
+
+    assert f"{HOME}/drtv/a.xml" not in fetcher.calls
+
+
+def test_endereco_forcado_a_mao_vira_o_principal_mesmo_com_nota_menor():
+    fetcher = FakeFetcher(
+        {
+            ROBOTS: robots(NEWS),
+            NEWS: news_sitemap(*((f"n{i}", 1) for i in range(30))),
+            FEED: rss(("f1", 1), ("f2", 2)),
+        }
+    )
+
+    result = probe(fetcher, forced=[FEED])
+
+    assert result.primary is not None and result.primary.url == FEED
+    assert result.backup is not None and result.backup.url == NEWS
+
+
+def test_dica_do_levantamento_que_e_listagem_de_tags_nao_e_baixada():
+    tags = f"{HOME}/post_tag-sitemap.xml"
+    fetcher = FakeFetcher({ROBOTS: robots(), tags: plain_sitemap(("x", 1))})
+
+    probe(fetcher, hints=[tags])
+
+    assert tags not in fetcher.calls
+
+
+def test_endereco_forcado_de_listagem_e_baixado():
+    tags = f"{HOME}/post_tag-sitemap.xml"
+    fetcher = FakeFetcher(
+        {ROBOTS: robots(), tags: plain_sitemap(*((f"t{i}", 1) for i in range(6)))}
+    )
+
+    result = probe(fetcher, forced=[tags])
+
+    assert result.primary is not None and result.primary.url == tags

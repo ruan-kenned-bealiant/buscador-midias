@@ -1,5 +1,6 @@
 """Medição, veredito, nota e escolha das estratégias de descoberta de uma fonte."""
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 from buscador_midias.domain.strategy import (
@@ -79,6 +80,23 @@ def test_itens_so_antigos_estao_defasados():
 def test_lista_enorme_quase_sem_itens_recentes_e_arquivo():
     policy = ScoringPolicy(archive_min_items=100)
     items = [item(n, hours_ago=1000) for n in range(150)] + [item(999, hours_ago=1)]
+
+    assert judge(measure(items=items), policy) is Verdict.ARCHIVE
+
+
+def test_lista_enorme_com_muitos_recentes_em_numero_absoluto_nao_e_arquivo():
+    """Um sitemap de 10 mil URLs com centenas de recentes é vivo, mesmo com poucos por cento."""
+    policy = ScoringPolicy(archive_min_items=100, archive_keep_recent=10)
+    items = [item(n, hours_ago=1000) for n in range(300)]
+    items += [item(1000 + n, hours_ago=1) for n in range(12)]  # 3,8% < 5%, mas são 12
+
+    assert judge(measure(items=items), policy) is Verdict.FRESH
+
+
+def test_lista_enorme_com_poucos_recentes_continua_sendo_arquivo():
+    policy = ScoringPolicy(archive_min_items=100, archive_keep_recent=10)
+    items = [item(n, hours_ago=1000) for n in range(300)]
+    items += [item(1000 + n, hours_ago=1) for n in range(5)]
 
     assert judge(measure(items=items), policy) is Verdict.ARCHIVE
 
@@ -173,6 +191,26 @@ def test_escolhe_a_melhor_como_principal_e_a_melhor_de_outro_tipo_como_reserva()
     assert chosen == {"a": None, "b": Role.PRIMARY, "c": None, "d": Role.BACKUP}
 
 
+def test_endereco_forcado_a_mao_vence_a_nota_se_serve():
+    reports = [
+        report("a", StrategyKind.NEWS_SITEMAP, 90),
+        replace(report("b", StrategyKind.FEED, 5), forced=True),
+    ]
+
+    chosen = {r.url: r.role for r in choose(reports)}
+
+    assert chosen == {"a": Role.BACKUP, "b": Role.PRIMARY}
+
+
+def test_endereco_forcado_que_nao_serve_nao_e_escolhido():
+    reports = [
+        report("a", StrategyKind.NEWS_SITEMAP, 90),
+        replace(report("b", StrategyKind.FEED, 0, Verdict.STALE), forced=True),
+    ]
+
+    assert {r.url: r.role for r in choose(reports)}["a"] is Role.PRIMARY
+
+
 def test_sem_outro_tipo_nao_ha_reserva():
     reports = [report("a", StrategyKind.FEED, 10), report("b", StrategyKind.FEED, 9)]
 
@@ -201,3 +239,139 @@ def test_a_escolha_mantem_a_ordem_e_nao_altera_o_original():
 
     assert [r.url for r in chosen] == ["a", "b"]
     assert all(r.role is None for r in reports)
+
+
+# --- seções (a fonte cobre o site todo ou só uma parte?) ---
+
+
+def test_secao_e_o_primeiro_segmento_do_caminho_depois_do_prefixo_da_fonte():
+    from buscador_midias.strategy.measure import section_of
+
+    assert section_of("https://g1.globo.com/sp/ribeirao-preto/noticia/2026/10/16/x.ghtml") == "sp"
+    assert section_of("https://g1.globo.com/globonews/a/b", "/globonews") == "a"
+    assert section_of("https://x.com/Politica/y") == "politica"
+
+
+def test_url_sem_secao_legivel_vai_para_outros():
+    from buscador_midias.strategy.measure import OTHER_SECTION, section_of
+
+    assert section_of("https://x.com/") == OTHER_SECTION
+    assert section_of("https://x.com/2026/10/16/materia") == OTHER_SECTION  # data, não seção
+    assert section_of("https://x.com/materia-1.html") == OTHER_SECTION
+    assert section_of("https://x.com/12345") == OTHER_SECTION
+
+
+def test_a_medida_conta_secoes_so_entre_os_itens_recentes():
+    items = [
+        Item("https://exemplo.com/a", NOW - timedelta(hours=1), "t", "politica"),
+        Item("https://exemplo.com/b", NOW - timedelta(hours=2), "t", "politica"),
+        Item("https://exemplo.com/c", NOW - timedelta(hours=3), "t", "esporte"),
+        Item("https://exemplo.com/d", NOW - timedelta(hours=900), "t", "arquivo"),
+    ]
+
+    result = measure(items=items)
+
+    assert result.sections == 2
+    assert result.top_sections == (("politica", 2), ("esporte", 1))
+
+
+def test_sem_itens_recentes_as_secoes_vem_de_todos_os_itens():
+    items = [Item("https://exemplo.com/a", None, "t", "politica")]
+
+    assert measure(items=items).top_sections == (("politica", 1),)
+
+
+def test_so_as_secoes_mais_frequentes_ficam_na_medida():
+    items = [Item(f"https://x.com/{n}", NOW, "t", f"s{n}") for n in range(30)]
+
+    result = measure(items=items)
+
+    assert result.sections == 30 and len(result.top_sections) == 12
+
+
+# --- cobertura: a união das fontes é o "site todo" que dá para ver ---
+
+
+def covered(url: str, urls: set[str], kind=StrategyKind.NEWS_SITEMAP, value: float = 10.0):
+    return CandidateReport(
+        url=url,
+        origin=CandidateOrigin.ROBOTS,
+        verdict=Verdict.FRESH,
+        kind=kind,
+        measure=None,
+        score=value,
+        detail="",
+        recent_urls=frozenset(urls),
+    )
+
+
+def urls(*names: str) -> set[str]:
+    return {f"https://x.com/{n}" for n in names}
+
+
+def test_cobertura_de_cada_candidato_e_a_fracao_da_uniao_que_ele_traz():
+    from buscador_midias.strategy.scoring import plan_coverage
+
+    reports = [covered("a", urls("1", "2", "3", "4")), covered("b", urls("3", "4", "5", "6"))]
+
+    planned = plan_coverage(choose(reports))
+
+    assert [r.coverage for r in planned] == [4 / 6, 4 / 6]
+    assert all(r.union_recent == 6 for r in planned)
+
+
+def test_o_complemento_e_a_fonte_que_mais_acrescenta_ao_que_ja_esta_coberto():
+    from buscador_midias.strategy.scoring import plan_coverage
+
+    reports = [
+        covered("principal", urls(*map(str, range(0, 60))), value=60),
+        covered("repete", urls(*map(str, range(0, 55))), kind=StrategyKind.FEED, value=50),
+        covered("acrescenta", urls(*map(str, range(55, 80))), kind=StrategyKind.SITEMAP, value=5),
+    ]
+
+    planned = {r.url: r for r in plan_coverage(choose(reports))}
+
+    assert planned["principal"].role is Role.PRIMARY
+    assert planned["repete"].role is Role.BACKUP
+    assert planned["acrescenta"].role is Role.COMPLEMENT
+    assert planned["acrescenta"].cover_share == 1.0
+
+
+def test_fonte_que_nao_acrescenta_quase_nada_nao_vira_complemento():
+    from buscador_midias.strategy.scoring import plan_coverage
+
+    reports = [
+        covered("principal", urls(*map(str, range(0, 100))), value=100),
+        covered("quase-igual", urls(*map(str, range(0, 101))), value=9),
+    ]
+
+    planned = {r.url: r for r in plan_coverage(choose(reports))}
+
+    assert planned["quase-igual"].role is None  # 1 URL a mais não vale outra leitura
+    assert planned["principal"].cover_share == 100 / 101
+
+
+def test_so_candidatos_frescos_entram_na_uniao_e_o_papel_ja_dado_e_mantido():
+    from buscador_midias.strategy.scoring import plan_coverage
+
+    stale = CandidateReport(
+        url="velho",
+        origin=CandidateOrigin.ROBOTS,
+        verdict=Verdict.STALE,
+        kind=StrategyKind.FEED,
+        measure=None,
+        score=0,
+        detail="",
+    )
+    reports = [covered("a", urls("1", "2")), stale]
+
+    planned = plan_coverage(choose(reports))
+
+    assert planned[0].role is Role.PRIMARY and planned[0].coverage == 1.0
+    assert planned[1].coverage is None and planned[1].role is None
+
+
+def test_sem_nenhum_candidato_fresco_nada_muda():
+    from buscador_midias.strategy.scoring import plan_coverage
+
+    assert plan_coverage(()) == ()

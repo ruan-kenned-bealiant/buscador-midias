@@ -56,7 +56,7 @@ def test_parser_tem_padroes_conservadores():
 
     assert args.max_requests == 40
     assert args.dry_run is False
-    assert args.hints.name == "discovery_hints.csv"
+    assert [h.name for h in args.hints] == ["discovery_hints.csv", "hints_manuais.csv"]
     assert args.workers == 8
 
 
@@ -294,3 +294,63 @@ def test_sondagem_manual_tambem_grava_o_estado_e_dry_run_nao(sites: Path):
     probe_sources(sites)
 
     assert set(StateStore().probe_states()) == {"a.com", "b.com"}
+
+
+def test_fonte_sem_estrategia_guarda_o_motivo_da_falha_no_estado(sites: Path):
+    probe_sources(sites, "--only", "b.com")
+
+    assert "blocked" in StateStore().probe_states()["b.com"].detail
+
+
+def test_fontes_do_mesmo_host_baixam_cada_arquivo_uma_vez(tmp_path: Path):
+    path = tmp_path / "sites.csv"
+    path.write_text(
+        "region,name,url,country,country_code,language,source_type\n"
+        "Brasil,A,https://a.com,Brasil,BR,Português,Jornal\n"
+        "Brasil,A Economia,https://a.com/economia,Brasil,BR,Português,Jornal\n"
+        "Brasil,A Mundo,https://a.com/mundo,Brasil,BR,Português,Jornal\n",
+        encoding="utf-8",
+    )
+    fetcher = world()
+
+    code = probe_sources(path, "--workers", "1", fetcher=fetcher)
+
+    assert code == 0
+    assert fetcher.calls.count("https://a.com/robots.txt") == 1
+    assert fetcher.calls.count(NEWS_A) == 1
+
+
+def test_parser_tem_o_arquivo_de_correcoes_manuais_por_padrao():
+    args = build_parser().parse_args(["probe-sources"])
+
+    assert args.manual.name == "estrategias_manuais.csv"
+
+
+def test_correcao_manual_exclui_o_endereco_e_forca_outro(tmp_path: Path, sites: Path):
+    manual = tmp_path / "manuais.csv"
+    manual.write_text(
+        "dominio,endereco,acao,motivo\n"
+        f"a.com,{NEWS_A},excluir,só tags\n"
+        "a.com,https://a.com/feed,forçar,o feed é o bom\n",
+        encoding="utf-8",
+    )
+    fetcher = world()
+
+    code = probe_sources(sites, "--manual", str(manual), fetcher=fetcher)
+
+    assert code == 0
+    assert NEWS_A not in fetcher.calls
+    primary = next(r for r in StateStore().site_strategies("a.com") if r.role is Role.PRIMARY)
+    assert primary.url == "https://a.com/feed"
+
+
+def test_acao_desconhecida_no_arquivo_manual_aborta_com_mensagem(
+    tmp_path: Path, sites: Path, capsys: pytest.CaptureFixture[str]
+):
+    manual = tmp_path / "manuais.csv"
+    manual.write_text("dominio,endereco,acao,motivo\na.com,https://a.com/x,apagar,\n")
+
+    code = probe_sources(sites, "--manual", str(manual))
+
+    assert code == 2
+    assert "apagar" in capsys.readouterr().err

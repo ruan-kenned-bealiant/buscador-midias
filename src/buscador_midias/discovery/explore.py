@@ -44,6 +44,8 @@ _TAXONOMY_WORDS = frozenset(
         "topics",
         "page",
         "pages",
+        "product",
+        "products",
         "static",
         "channel",
         "image",

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 
@@ -39,10 +39,15 @@ class Verdict(StrEnum):
 
 
 class Role(StrEnum):
-    """O papel de um candidato escolhido: o que a rodada usa e o que cobre a falha dele."""
+    """O papel de um candidato escolhido.
+
+    O principal é o que a rodada usa; a reserva cobre a falha dele (outro tipo de documento); o
+    complemento acrescenta matérias que os outros não listam (cobertura do site todo).
+    """
 
     PRIMARY = "primary"
     BACKUP = "backup"
+    COMPLEMENT = "complement"
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,11 +58,13 @@ class Item:
         url: Endereço da matéria.
         at: Melhor data disponível (publicação ou ``lastmod``), em UTC.
         title: Título, se o documento o traz.
+        section: Seção do site a que a URL pertence (primeiro segmento do caminho).
     """
 
     url: str
     at: datetime | None
     title: str | None
+    section: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +79,9 @@ class Measure:
         titled: Quantas trazem título.
         newest: A data mais recente, ou ``None`` sem nenhuma data.
         size_bytes: Bytes baixados para medir (índice e filhos somados).
+        sections: Quantas seções do site aparecem entre os itens recentes (todos, se nenhum tem
+            data): quanto mais, mais o candidato cobre o site inteiro e não só uma parte.
+        top_sections: As seções mais frequentes e quantos itens cada uma tem.
     """
 
     kind: StrategyKind
@@ -81,6 +91,8 @@ class Measure:
     titled: int
     newest: datetime | None
     size_bytes: int
+    sections: int = 0
+    top_sections: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +109,15 @@ class CandidateReport:
         detail: Explicação curta, em especial das falhas.
         requests: Requisições feitas para sondar (índice e filhos somados).
         role: O papel, se foi escolhido.
+        coverage: Fração das matérias recentes de todos os candidatos frescos que este lista.
+        union_recent: Quantas matérias recentes distintas todos os candidatos frescos listam juntos
+            (o "site todo" que dá para ver); é do site, repetido em cada candidato.
+        cover_share: Fração dessa união que o principal, a reserva e os complementos juntos cobrem
+            (do site, repetido em cada candidato).
+        recent_urls: As matérias recentes do candidato, só na memória: servem para calcular a
+            cobertura e não são gravadas.
+        forced: Se um humano mandou usar este endereço (``estrategias_manuais.csv``); só na
+            memória: o papel de principal é o que se grava.
     """
 
     url: str
@@ -108,6 +129,11 @@ class CandidateReport:
     detail: str
     requests: int = 0
     role: Role | None = None
+    coverage: float | None = None
+    union_recent: int = 0
+    cover_share: float | None = None
+    recent_urls: frozenset[str] = field(default=frozenset(), compare=False, repr=False)
+    forced: bool = field(default=False, compare=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,3 +177,4 @@ class ProbeState:
     streak: int
     cooldown_until: datetime
     refresh_at: datetime
+    detail: str = ""

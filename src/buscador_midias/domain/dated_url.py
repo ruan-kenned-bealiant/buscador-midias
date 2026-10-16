@@ -18,12 +18,14 @@ _DAY = re.compile(r"(?<!\d)(20\d{2})([-/]?)(0[1-9]|1[0-2])\2(0[1-9]|[12]\d|3[01]
 _MONTH = re.compile(r"(?<!\d)(20\d{2})([-/]?)(0[1-9]|1[0-2])(?!\d)")
 _ANY_DAY = re.compile(r"(?<!\d)(\d{4})([-/]?)(\d{2})\2(\d{2})(?!\d)")
 _ANY_MONTH = re.compile(r"(?<!\d)(\d{4})([-/]?)(\d{2})(?!\d)")
+_YEAR_IN_NAME = re.compile(r"(?<!\d)((?:19|20)\d{2})(?!\d)")
 
 
 def find_date(url: str) -> datetime | None:
-    """A data (dia, ou o dia 1 do mês) que a URL traz no caminho ou na consulta.
+    """A data (dia, ou o dia 1 do mês, ou o dia 1 do ano) que a URL traz no caminho ou na consulta.
 
-    Serve para ordenar sitemaps filhos de um índice sem ``lastmod``.
+    Serve para ordenar sitemaps filhos de um índice sem ``lastmod``. Um ano sozinho só vale no
+    nome do arquivo (``.../conceito/2026.xml``), onde costuma ser o ano do arquivo.
 
     Args:
         url: A URL (a data no host não conta).
@@ -40,7 +42,9 @@ def find_date(url: str) -> datetime | None:
                 return datetime(year, month, day, tzinfo=UTC)
             except ValueError:
                 continue
-    return None
+    stem = urlsplit(url).path.rsplit("/", 1)[-1].split(".", 1)[0]
+    named = _YEAR_IN_NAME.search(stem)
+    return datetime(int(named.group(1)), 1, 1, tzinfo=UTC) if named else None
 
 
 def templatize(url: str, now: datetime, *, max_day_age: timedelta = _MAX_DAY_AGE) -> str:

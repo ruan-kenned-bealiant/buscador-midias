@@ -168,6 +168,57 @@ O de maior nota é o **principal**; a **reserva** é o melhor de *outro tipo* de
 à falha de um formato). As regras estão em `strategy/scoring.py`, sem aprendizado de máquina. Uma
 sondagem só grava a fonte se achou um principal: falha passageira não apaga o que já servia.
 
+#### Cobertura do site e planilha de conferência
+
+Uma fonte só dificilmente lista o site todo (um feed de economia, o sitemap de esporte). Por isso a
+sondagem mede, em cada candidato, **quantas seções do site** aparecem entre as matérias recentes
+(primeiro segmento do caminho: `sp`, `politica`...) e, entre todos os candidatos frescos, a **união**
+das matérias recentes: o "site todo" que dá para ver. Cada candidato recebe a fração da união que
+lista (`coverage`). Depois do principal e da reserva, escolhem-se **complementos** (papel
+`complement`): a fonte que mais acrescenta matérias ainda não cobertas, até 3, e só se acrescentar
+pelo menos 5 matérias e 5% da união. `cover_share` diz quanto da união o conjunto cobre. **A
+descoberta ainda lê só o principal e a reserva**; ler o conjunto (principal + complementos) é o
+próximo passo.
+
+`export-strategies` gera a planilha para conferir (`var/estrategias.xlsx` por padrão; `.csv` grava
+um arquivo por aba):
+
+```bash
+scripts/bm.sh export-strategies --only-file data/teste_g1.txt --out var/estrategias-g1.xlsx
+scripts/bm.sh export-strategies --out var/estrategias.xlsx       # as 1.294 fontes do catálogo
+```
+
+Abas: **Estratégia** (uma linha por fonte, inclusive as não sondadas e as sem estratégia, com o
+motivo), **Candidatos** (tudo o que foi baixado e medido, com veredito, seções e cobertura) e
+**Seções** (as seções mais frequentes de cada candidato escolhido). As colunas "Ref." trazem o que o
+levantamento de 07/10 estimou (categoria, itens/dia no feed, artigos/dia no GDELT) só para você
+comparar com a "Estimativa por dia" (união de 48 h ÷ 2). Precisa do extra `xlsx`
+(`pip install -e '.[xlsx]'`).
+
+**Dicas manuais** (`data/hints_manuais.csv`, além do levantamento): feeds que a home não declara e só
+quem conhece o site sabe, como os do g1 (`/rss/g1/`, por editoria e por estado, `/rss/g1/ac/acre/`).
+A sondagem os mede como qualquer candidato. Uma dica de fonte de seção pode ficar fora do prefixo
+dela (o feed do g1 Acre não está sob `/ac/acre`): vale o domínio, e as matérias são conferidas uma
+a uma contra o prefixo. Os CSVs de dicas toleram colunas alinhadas por espaços (editores fazem isso).
+
+**Correções à mão** (`data/estrategias_manuais.csv`: `dominio,endereco,acao,motivo`): onde a sondagem
+erra e você sabe, `excluir` tira um endereço da sondagem (com `*` no fim vale o prefixo:
+`https://www.nature.com/subjects/*`) e `forçar` manda usá-lo como principal (se servir). Vale a cada
+rodada. Uma ação desconhecida aborta o `probe-sources` com a linha do erro, para uma correção com
+erro de digitação não ficar sem efeito em silêncio. A planilha `var/revisar-nao-noticia.xlsx` lista
+as fontes cujo principal parece listagem (tags, categorias, produtos), com 5 URLs de amostra.
+
+**Regras da sondagem que vieram de sites reais:** um sitemap de tags, categorias, autores ou produtos
+no topo nunca é baixado (só um endereço forçado); um sitemap declarado no `robots.txt` que falha ou
+dá 404 ganha uma segunda tentativa (os adivinhados não); uma lista grande só é "arquivo" se tiver
+poucos recentes **em número** (menos de 100) além de em proporção (menos de 5%); um índice de feeds
+vale como feed; um índice com várias famílias de arquivos (regiões, temas, categoria por ano) lê o
+primeiro filho de cada, até 16, e um índice de uma família só (arquivos do dia ou do mês) continua
+lendo os 3 mais recentes.
+
+**Fontes do mesmo host** (as dez do g1) baixam cada arquivo uma só vez por rodada de `probe-sources`
+(`net/memoizing.py`, só nesses hosts, para não guardar em memória o resto do catálogo).
+
 #### Reavaliação automática (`probe-sources --due`, o passo 0 do `run`)
 
 Antes de cada descoberta o `run` reavalia **só as fontes na vez** (poucas por rodada). A regra está
@@ -448,7 +499,8 @@ Todo o estado (URLs vistas, rodadas, análises, evidências, gravações) vive n
 
 - **Esquema:** `sql/postgres/001_create_midias_crawler_tables.sql` (13 tabelas) e
   `002_create_midias_crawler_source_strategies.sql` (a estratégia por fonte) e
-  `003_create_midias_crawler_source_probe_state.sql` (quando reavaliar); `999_...` desfaz tudo.
+  `003_create_midias_crawler_source_probe_state.sql` (quando reavaliar e por que falhou); `999_...`
+  desfaz tudo.
   O buscador nunca cria nem altera tabelas: se faltarem, ele diz qual arquivo rodar. O mesmo DDL deve
   virar a migration do powerdd-backend. Tipos: datas em `timestamptz`, `themes` e `rejected_reasons`
   em `text[]`, `entities` em `jsonb`, `finding` e `created` em `boolean`.

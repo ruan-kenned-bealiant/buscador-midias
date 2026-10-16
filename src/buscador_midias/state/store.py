@@ -514,18 +514,29 @@ def _text(value: str | None) -> str | None:
 
 _STRATEGY_SELECT = (
     "SELECT site_key, url, origin, verdict, kind, role, score, items, dated_items,"
-    " recent_items, titled_items, newest_at, size_bytes, requests, detail"
+    " recent_items, titled_items, newest_at, size_bytes, requests, detail, coverage,"
+    " union_recent, cover_share, section_count, top_sections, probed_at"
     " FROM midias_crawler_source_strategies"
 )
 
 
 def _strategy_from_row(row: Sequence[Any]) -> CandidateReport:
     """Monta um candidato a partir de uma linha de ``_STRATEGY_SELECT`` (sem a fonte)."""
-    url, origin, verdict, kind, role, value, items, dated, recent, titled, newest, size = row[:12]
-    requests, detail = row[12:14]
+    (url, origin, verdict, kind, role, value, items, dated, recent, titled, newest, size) = row[:12]
+    requests, detail, coverage, union_recent, cover_share, section_count, top = row[12:19]
     strategy_kind = StrategyKind(kind) if kind else None
     measure = (
-        Measure(strategy_kind, items, dated, recent, titled, newest, size)
+        Measure(
+            strategy_kind,
+            items,
+            dated,
+            recent,
+            titled,
+            newest,
+            size,
+            sections=section_count,
+            top_sections=tuple((name, count) for name, count in top),
+        )
         if strategy_kind
         else None
     )
@@ -539,6 +550,9 @@ def _strategy_from_row(row: Sequence[Any]) -> CandidateReport:
         detail=detail,
         requests=requests,
         role=Role(role) if role else None,
+        coverage=coverage,
+        union_recent=union_recent,
+        cover_share=cover_share,
     )
 
 
@@ -1597,8 +1611,10 @@ class StateStore:
                 self._run(
                     "INSERT INTO midias_crawler_source_strategies (site_key, url, origin,"
                     " verdict, kind, role, score, items, dated_items, recent_items,"
-                    " titled_items, newest_at, size_bytes, requests, detail, probed_at)"
-                    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    " titled_items, newest_at, size_bytes, requests, detail, probed_at,"
+                    " coverage, union_recent, cover_share, section_count, top_sections)"
+                    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,"
+                    " %s, %s, %s, %s, %s)",
                     (
                         site_key,
                         r.url,
@@ -1616,6 +1632,11 @@ class StateStore:
                         r.requests,
                         _text(r.detail) or "",
                         _utc(probed_at),
+                        r.coverage,
+                        r.union_recent,
+                        r.cover_share,
+                        m.sections if m else 0,
+                        Jsonb([[name, count] for name, count in m.top_sections] if m else []),
                     ),
                 )
 
@@ -1629,11 +1650,21 @@ class StateStore:
         return [_strategy_from_row(row[1:]) for row in rows]
 
     def chosen_strategies(self) -> list[tuple[str, CandidateReport]]:
-        """O principal e a reserva de todas as fontes, por fonte (o principal antes)."""
+        """O principal e a reserva de todas as fontes, por fonte (o principal antes).
+
+        São as estratégias que a descoberta usa; os complementos só aparecem em
+        ``site_strategies``.
+        """
         rows = self._all(
-            _STRATEGY_SELECT + " WHERE role IS NOT NULL ORDER BY site_key, (role <> 'primary')"
+            _STRATEGY_SELECT + " WHERE role IN ('primary', 'backup')"
+            " ORDER BY site_key, (role <> 'primary')"
         )
         return [(row[0], _strategy_from_row(row[1:])) for row in rows]
+
+    def strategy_rows(self) -> list[tuple[str, CandidateReport, datetime]]:
+        """Todos os candidatos gravados, com a fonte e o instante da sondagem."""
+        rows = self._all(_STRATEGY_SELECT + " ORDER BY site_key, score DESC, url")
+        return [(row[0], _strategy_from_row(row[1:]), row[-1]) for row in rows]
 
     def strategy_probed_at(self, site_key: str) -> datetime | None:
         """Quando a fonte foi sondada pela última vez, ou ``None`` se nunca foi."""
@@ -1654,7 +1685,7 @@ class StateStore:
     def probe_states(self) -> dict[str, ProbeState]:
         """O estado de reavaliação de cada fonte já sondada."""
         rows = self._all(
-            "SELECT site_key, probed_at, found, streak, cooldown_until, refresh_at"
+            "SELECT site_key, probed_at, found, streak, cooldown_until, refresh_at, detail"
             " FROM midias_crawler_source_probe_state"
         )
         return {row[0]: ProbeState(*row) for row in rows}
@@ -1668,11 +1699,12 @@ class StateStore:
         """
         self._run(
             "INSERT INTO midias_crawler_source_probe_state (site_key, probed_at, found, streak,"
-            " cooldown_until, refresh_at, reason) VALUES (%s, %s, %s, %s, %s, %s, %s)"
+            " cooldown_until, refresh_at, reason, detail)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
             " ON CONFLICT (site_key) DO UPDATE SET probed_at = EXCLUDED.probed_at,"
             " found = EXCLUDED.found, streak = EXCLUDED.streak,"
             " cooldown_until = EXCLUDED.cooldown_until, refresh_at = EXCLUDED.refresh_at,"
-            " reason = EXCLUDED.reason",
+            " reason = EXCLUDED.reason, detail = EXCLUDED.detail",
             (
                 state.site_key,
                 _utc(state.probed_at),
@@ -1681,6 +1713,7 @@ class StateStore:
                 _utc(state.cooldown_until),
                 _utc(state.refresh_at),
                 reason,
+                _text(state.detail) or "",
             ),
         )
 

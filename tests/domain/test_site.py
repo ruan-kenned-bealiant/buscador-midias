@@ -109,3 +109,13 @@ def test_owns_nao_confunde_prefixo_parcial():
 
 def test_owns_rejeita_esquema_nao_http():
     assert not make_site("https://folha.uol.com.br").owns("ftp://folha.uol.com.br/a")
+
+
+def test_owns_host_ignora_o_prefixo_da_secao_mas_nao_o_dominio():
+    site = make_site("https://g1.globo.com/ac/acre/")
+
+    assert site.owns_host("https://g1.globo.com/rss/g1/ac/acre/")
+    assert site.owns_host("https://www.g1.globo.com/qualquer")
+    assert not site.owns("https://g1.globo.com/rss/g1/ac/acre/")
+    assert not site.owns_host("https://oglobo.globo.com/rss/")
+    assert not site.owns_host("ftp://g1.globo.com/x")

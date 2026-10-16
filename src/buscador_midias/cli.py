@@ -10,7 +10,7 @@ from collections import Counter
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import ExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -52,6 +52,7 @@ from buscador_midias.labeling.export import KEY_FILE, export_batch
 from buscador_midias.labeling.score import format_label_report, score_labels
 from buscador_midias.labeling.server import make_label_server
 from buscador_midias.net.fetcher import USER_AGENT, Fetcher, ThrottledFetcher
+from buscador_midias.net.memoizing import MemoizingFetcher
 from buscador_midias.net.stack import (
     FetchStack,
     MissingCredentialsError,
@@ -68,13 +69,18 @@ from buscador_midias.state.store import (
     StateSchemaError,
     StateStore,
 )
+from buscador_midias.strategy.export import build_tables, write_csv, write_xlsx
 from buscador_midias.strategy.health import DueReason, HealthPolicy, adopt, due_reason, next_state
 from buscador_midias.strategy.hints import load_hints
+from buscador_midias.strategy.manual import load_manual_rules
 from buscador_midias.strategy.probe import DEFAULT_MAX_REQUESTS, SiteStrategy, probe_site
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SITES = _REPO_ROOT / "data" / "sites.csv"
 DEFAULT_HINTS = _REPO_ROOT / "data" / "discovery_hints.csv"
+DEFAULT_MANUAL_HINTS = _REPO_ROOT / "data" / "hints_manuais.csv"
+DEFAULT_MANUAL_RULES = _REPO_ROOT / "data" / "estrategias_manuais.csv"
+DEFAULT_EXPORT = _REPO_ROOT / "var" / "estrategias.xlsx"
 DEFAULT_REPORT = _REPO_ROOT / "var" / "probe-report.csv"
 DEFAULT_LOCK = _REPO_ROOT / "var" / "run.lock"
 DEFAULT_SCHEDULE = _REPO_ROOT / "var" / "schedule.json"
@@ -357,8 +363,22 @@ def build_parser() -> argparse.ArgumentParser:
     probe_sources.add_argument(
         "--hints",
         type=Path,
-        default=DEFAULT_HINTS,
-        help="CSV de dicas de endereços por fonte (só um palpite: vale o que o endereço publica).",
+        nargs="+",
+        default=[DEFAULT_HINTS, DEFAULT_MANUAL_HINTS],
+        help=(
+            "CSVs de dicas de endereços por fonte: o levantamento e as dicas manuais (feeds que "
+            "só quem conhece o site sabe, ex.: os do g1). Só um palpite: vale o que o endereço "
+            "publica."
+        ),
+    )
+    probe_sources.add_argument(
+        "--manual",
+        type=Path,
+        default=DEFAULT_MANUAL_RULES,
+        help=(
+            "CSV de correções à mão (dominio, endereco, acao, motivo): 'excluir' tira um endereço "
+            "(ou um prefixo, com * no fim) da sondagem; 'forçar' manda usá-lo como principal."
+        ),
     )
     probe_sources.add_argument(
         "--progress-every",
@@ -382,6 +402,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     probe_sources.add_argument(
         "--dry-run", action="store_true", help="Mostra o resultado sem gravar no estado."
+    )
+    export = commands.add_parser(
+        "export-strategies",
+        help="Exporta para planilha (.xlsx ou .csv) a estratégia gravada das fontes do catálogo.",
+    )
+    _add_site_args(export)
+    export.add_argument(
+        "--hints",
+        type=Path,
+        nargs="+",
+        default=[DEFAULT_HINTS, DEFAULT_MANUAL_HINTS],
+        help="CSVs do levantamento, só para as colunas de referência.",
+    )
+    export.add_argument(
+        "--out",
+        type=Path,
+        default=DEFAULT_EXPORT,
+        help="Arquivo de saída: .xlsx (três abas) ou .csv (um arquivo por aba).",
     )
     commands.add_parser("report", help="Estatísticas das rodadas de descoberta.")
     migrate = commands.add_parser(
@@ -488,6 +526,8 @@ def main(
 
     if args.command == "migrate-sqlite":
         return _migrate(args.sqlite)
+    if args.command == "export-strategies":
+        return _export_strategies(args)
     if args.command == "run":
         return _run(
             args,
@@ -1116,6 +1156,11 @@ def _probe_sources(
     Uma fonte com defeito não derruba as outras.
     """
     hints = load_hints(args.hints)
+    try:
+        manual = load_manual_rules(args.manual)
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 2
     policy = HealthPolicy()
     with ExitStack() as exit_stack:
         store = _open_state(read_only=args.dry_run)
@@ -1151,6 +1196,7 @@ def _probe_sources(
                 max_fallback_requests=0,
             ).fetcher
         )
+        free = MemoizingFetcher(free, hosts=_shared_hosts(selected))
 
         def probe(site: Site) -> SiteStrategy:
             try:
@@ -1160,6 +1206,8 @@ def _probe_sources(
                     user_agent=USER_AGENT,
                     now=now,
                     hints=hints.for_site(site),
+                    exclude=manual.for_site(site).exclude,
+                    forced=manual.for_site(site).force,
                     max_requests=args.max_requests,
                 )
             except Exception as error:  # noqa: BLE001 - uma fonte não derruba as outras
@@ -1178,6 +1226,12 @@ def _probe_sources(
                 _print_progress(done, len(selected), statuses, args.progress_every)
     _print_strategies(results, reasons, up_to_date=len(sites) - len(selected) if args.due else None)
     return 0
+
+
+def _shared_hosts(sites: Sequence[Site]) -> frozenset[str]:
+    """Hosts com mais de uma fonte (o g1 tem dez): a sondagem baixa cada arquivo deles uma vez."""
+    counts = Counter(site.host for site in sites)
+    return frozenset(host for host, count in counts.items() if count > 1)
 
 
 def _record_probe(
@@ -1203,7 +1257,39 @@ def _record_probe(
         reason=reason,
         policy=policy,
     )
+    why = "" if primary is not None else f"{result.status.value}: {result.detail}"
+    state = replace(state, detail=why)
     store.record_probe_state(state, reason.value if reason else "")
+
+
+def _export_strategies(args: argparse.Namespace) -> int:
+    """Subcomando ``export-strategies``: planilha de conferência das estratégias gravadas."""
+    suffix = args.out.suffix.lower()
+    if suffix not in (".xlsx", ".csv"):
+        print("a saída precisa terminar em .xlsx ou .csv", file=sys.stderr)
+        return 2
+    sites = _select_sites(args)
+    if sites is None:
+        return 2
+    store = _open_state(read_only=True)
+    if store is None:
+        return 2
+    try:
+        keys = {site.key for site in sites}
+        rows = [row for row in store.strategy_rows() if row[0] in keys]
+        tables = build_tables(sites, rows, store.probe_states(), load_hints(args.hints))
+    finally:
+        store.close()
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        (write_xlsx if suffix == ".xlsx" else write_csv)(tables, args.out)
+    except RuntimeError as error:
+        print(error, file=sys.stderr)
+        return 2
+    probed = sum(1 for r in tables.summary.rows if r[5] != "não sondada")
+    ok = sum(1 for r in tables.summary.rows if r[5] == "ok")
+    print(f"{len(sites)} fontes ({probed} sondadas, {ok} com estratégia) em {args.out}")
+    return 0
 
 
 def _print_strategies(

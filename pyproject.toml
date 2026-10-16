@@ -12,7 +12,9 @@ dependencies = ["httpx>=0.27", "lxml>=5", "psycopg[binary]>=3.1", "unidecode>=1.
 [project.optional-dependencies]
 # Armazenamento da evidência em S3/MinIO; import tardio em evidence/s3_storage.py.
 s3 = ["boto3>=1.34"]
-dev = ["pytest>=8", "ruff>=0.5", "mypy>=1.10", "lxml-stubs>=0.5"]
+# Planilha de conferência das estratégias (`export-strategies`); import tardio em strategy/export.py.
+xlsx = ["openpyxl>=3.1"]
+dev = ["pytest>=8", "ruff>=0.5", "mypy>=1.10", "lxml-stubs>=0.5", "openpyxl>=3.1"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -55,3 +57,7 @@ files = ["src", "scripts"]
 [[tool.mypy.overrides]]
 module = ["boto3", "boto3.*", "botocore", "botocore.*"]
 ignore_missing_imports = true  # extra opcional "s3", sem stubs
+
+[[tool.mypy.overrides]]
+module = ["openpyxl", "openpyxl.*"]
+ignore_missing_imports = true  # extra opcional "xlsx", sem stubs

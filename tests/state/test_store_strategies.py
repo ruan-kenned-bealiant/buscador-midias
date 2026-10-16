@@ -146,3 +146,72 @@ def test_chosen_traz_o_principal_antes_da_reserva_de_cada_fonte():
     )
 
     assert [r.role for _, r in store.chosen_strategies()] == [Role.PRIMARY, Role.BACKUP]
+
+
+def test_grava_e_le_secoes_cobertura_e_complemento():
+    store = StateStore()
+    measure = Measure(
+        StrategyKind.FEED,
+        items=50,
+        dated=50,
+        recent=40,
+        titled=50,
+        newest=T0,
+        size_bytes=100,
+        sections=3,
+        top_sections=(("politica", 20), ("mundo", 15), ("sp", 5)),
+    )
+    complement = CandidateReport(
+        url="https://a.com/feed",
+        origin=CandidateOrigin.HOME_LINK,
+        verdict=Verdict.FRESH,
+        kind=StrategyKind.FEED,
+        measure=measure,
+        score=30,
+        detail="",
+        requests=1,
+        role=Role.COMPLEMENT,
+        coverage=0.4,
+        union_recent=100,
+        cover_share=0.95,
+    )
+
+    store.replace_site_strategies(
+        "a.com", [report("https://a.com/n", role=Role.PRIMARY), complement], T0
+    )
+    saved = {r.url: r for r in store.site_strategies("a.com")}["https://a.com/feed"]
+
+    assert saved.role is Role.COMPLEMENT
+    assert saved.measure == measure
+    assert (saved.coverage, saved.union_recent, saved.cover_share) == (0.4, 100, 0.95)
+
+
+def test_o_que_a_descoberta_usa_e_so_o_principal_e_a_reserva():
+    store = StateStore()
+    store.replace_site_strategies(
+        "a.com",
+        [
+            report("https://a.com/n", role=Role.PRIMARY),
+            report("https://a.com/b", kind=StrategyKind.FEED, role=Role.BACKUP),
+            report("https://a.com/c", kind=StrategyKind.SITEMAP, role=Role.COMPLEMENT),
+        ],
+        T0,
+    )
+
+    assert [r.url for _, r in store.chosen_strategies()] == ["https://a.com/n", "https://a.com/b"]
+
+
+def test_strategy_rows_traz_todos_os_candidatos_com_a_fonte_e_o_instante():
+    store = StateStore()
+    store.replace_site_strategies(
+        "a.com", [report("https://a.com/n", role=Role.PRIMARY), report("https://a.com/o")], T0
+    )
+    store.replace_site_strategies("b.com", [report("https://b.com/x")], T0 + timedelta(hours=1))
+
+    rows = store.strategy_rows()
+
+    assert {(site, r.url, at) for site, r, at in rows} == {
+        ("a.com", "https://a.com/n", T0),
+        ("a.com", "https://a.com/o", T0),
+        ("b.com", "https://b.com/x", T0 + timedelta(hours=1)),
+    }

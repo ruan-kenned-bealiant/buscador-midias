@@ -29,7 +29,12 @@ gravar no corpus (`midias_ia_*`, Postgres `pgsql_midias`) e no bucket.
   uma fotografia de uma data e de uma rede. Fatia 1 (sondar e gravar) e fatia 2 (o `discover` usa o
   principal e a reserva, com a cascata de sempre de plano B) e fatia 3 (reavaliação
   automática por saúde, idade e espera crescente; modelos para URLs com data) feitas. O `run`
-  reavalia só as fontes na vez antes de cada descoberta (`probe-sources --due`).
+  reavalia só as fontes na vez antes de cada descoberta (`probe-sources --due`). Cobertura do site
+  (seções, união das fontes, complementos) e planilha de conferência (`export-strategies`) feitas;
+  a descoberta ainda não lê o conjunto principal + complementos. Correções à mão por fonte
+  (`estrategias_manuais.csv`: excluir ou forçar um endereço) e regras vindas da conferência de sites
+  reais (listagens de tags fora, nova tentativa para o que o site declara, índices de várias
+  famílias, índices de feeds) feitas.
 - **Um critério, em um lugar** (`criteria.py`): a matéria entra se a análise **leu o texto** e achou
   **entidade identificável**. Evidência e corpus olham só para ela (a regra existe em Python e em
   SQL, com teste de concordância).

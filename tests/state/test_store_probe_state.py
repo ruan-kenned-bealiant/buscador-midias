@@ -77,3 +77,11 @@ def test_instante_da_sondagem_de_cada_fonte_com_estrategia():
     store.replace_site_strategies("b.com", [report], T0 + timedelta(hours=1))
 
     assert store.strategy_probe_times() == {"a.com": T0, "b.com": T0 + timedelta(hours=1)}
+
+
+def test_guarda_o_motivo_da_ultima_sondagem_sem_estrategia():
+    store = StateStore()
+
+    store.record_probe_state(state("b.com", found=False, detail="blocked 13"), "retry")
+
+    assert store.probe_states()["b.com"].detail == "blocked 13"

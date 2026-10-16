@@ -23,19 +23,31 @@ class ScoringPolicy:
     Attributes:
         archive_min_items: Acima deste tamanho, uma lista quase sem itens recentes é arquivo (ler
             tudo custa muito e só traz o passado).
-        archive_max_recent_share: Fração de recentes abaixo da qual uma lista grande é arquivo.
+        archive_max_recent_share: Fração de recentes abaixo da qual uma lista grande é arquivo...
+        archive_keep_recent: ...a menos que tenha ao menos este número de recentes: um sitemap de
+            10 mil URLs com centenas de recentes está vivo, mesmo que sejam poucos por cento.
         coverage_cap: Teto de itens recentes que contam na nota (mais que isso não melhora a fonte).
         undated_coverage: Cobertura atribuída a uma lista sem datas (não dá para provar frescor).
         untitled_factor: Multiplicador de uma lista em que menos da metade dos itens tem título.
+        max_complements: Quantas fontes a mais, além do principal e da reserva, entram para cobrir o
+            que eles não listam.
+        min_gain_urls: Matérias novas mínimas que uma fonte precisa acrescentar para virar
+            complemento...
+        min_gain_share: ...e a fração mínima da união (vale o maior dos dois): uma fonte que traz
+            uma ou duas matérias a mais não paga outra leitura por rodada.
         kind_factor: Peso de cada tipo; o sitemap de notícias é o mais confiável e o genérico o
             menos (não traz título, e ``lastmod`` muda quando a matéria é só editada).
     """
 
     archive_min_items: int = 5000
     archive_max_recent_share: float = 0.05
+    archive_keep_recent: int = 100
     coverage_cap: int = 1000
     undated_coverage: float = 0.5
     untitled_factor: float = 0.9
+    max_complements: int = 3
+    min_gain_urls: int = 5
+    min_gain_share: float = 0.05
     kind_factor: dict[StrategyKind, float] = field(
         default_factory=lambda: {
             StrategyKind.NEWS_SITEMAP: 1.0,
@@ -62,6 +74,7 @@ def judge(measure: Measure, policy: ScoringPolicy | None = None) -> Verdict:
     if (
         measure.items >= policy.archive_min_items
         and measure.recent / measure.items < policy.archive_max_recent_share
+        and measure.recent < policy.archive_keep_recent
     ):
         return Verdict.ARCHIVE
     if measure.dated == 0:
@@ -95,7 +108,7 @@ def score(measure: Measure, verdict: Verdict, policy: ScoringPolicy | None = Non
 
 
 def choose(reports: Sequence[CandidateReport]) -> tuple[CandidateReport, ...]:
-    """Marca o principal (maior nota) e a reserva (a melhor de outro tipo de documento).
+    """Marca o principal (maior nota, ou o forçado a mão) e a reserva (a melhor de outro tipo).
 
     Outro tipo, porque o que se quer da reserva é sobreviver à falha de um formato (sitemap
     quebrado, feed removido), não repetir a mesma aposta.
@@ -110,9 +123,66 @@ def choose(reports: Sequence[CandidateReport]) -> tuple[CandidateReport, ...]:
     usable = sorted((r for r in reports if r.score > 0), key=lambda r: (-r.score, r.url))
     roles: dict[str, Role] = {}
     if usable:
-        primary = usable[0]
+        primary = next((r for r in usable if r.forced), usable[0])
         roles[primary.url] = Role.PRIMARY
-        backup = next((r for r in usable[1:] if r.kind is not primary.kind), None)
+        backup = next(
+            (r for r in usable if r.url != primary.url and r.kind is not primary.kind), None
+        )
         if backup is not None:
             roles[backup.url] = Role.BACKUP
     return tuple(replace(r, role=roles.get(r.url)) for r in reports)
+
+
+def plan_coverage(
+    reports: Sequence[CandidateReport], policy: ScoringPolicy | None = None
+) -> tuple[CandidateReport, ...]:
+    """Mede a cobertura do site e escolhe complementos para o que o principal não lista.
+
+    A união das matérias recentes dos candidatos frescos é o "site todo" que dá para ver. Cada
+    candidato recebe a fração dela que lista (``coverage``). Depois, partindo do que o principal e a
+    reserva já cobrem, escolhem-se complementos, um a um: sempre a fonte que acrescenta mais
+    matérias ainda não cobertas, enquanto acrescentar o bastante (``min_gain_*``) e até
+    ``max_complements``. O resultado diz quanto da união o conjunto escolhido cobre
+    (``cover_share``).
+
+    Args:
+        reports: Os candidatos, já com principal e reserva (``choose``).
+        policy: Parâmetros do julgamento.
+
+    Returns:
+        Os mesmos candidatos, na mesma ordem, com cobertura, união e, nos complementos, o papel.
+        Sem nenhum candidato fresco, nada muda.
+    """
+    policy = policy or ScoringPolicy()
+    fresh = [r for r in reports if r.verdict is Verdict.FRESH and r.recent_urls]
+    union: set[str] = set().union(*(r.recent_urls for r in fresh)) if fresh else set()
+    if not union:
+        return tuple(reports)
+    covered: set[str] = set()
+    for report in reports:
+        if report.role in (Role.PRIMARY, Role.BACKUP):
+            covered |= report.recent_urls
+    roles = {r.url: r.role for r in reports}
+    remaining = [r for r in fresh if r.role is None]
+    threshold = max(policy.min_gain_urls, policy.min_gain_share * len(union))
+    for _ in range(policy.max_complements):
+        if not remaining:
+            break
+        best = min(remaining, key=lambda r: (-len(r.recent_urls - covered), -r.score, r.url))
+        if len(best.recent_urls - covered) < threshold:
+            break
+        roles[best.url] = Role.COMPLEMENT
+        covered |= best.recent_urls
+        remaining.remove(best)
+    share = len(covered & union) / len(union)
+    fresh_urls = {r.url for r in fresh}
+    return tuple(
+        replace(
+            r,
+            role=roles[r.url],
+            coverage=len(r.recent_urls) / len(union) if r.url in fresh_urls else None,
+            union_recent=len(union),
+            cover_share=share,
+        )
+        for r in reports
+    )

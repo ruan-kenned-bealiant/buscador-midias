@@ -22,10 +22,21 @@ from buscador_midias.strategy.scoring import ScoringPolicy
 NEWS = f"{HOME}/news-sitemap.xml"
 
 
-def evaluate(fetcher, url=NEWS, *, robots=None, scoring=None, max_children=3, site=None):
+def evaluate(
+    fetcher,
+    url=NEWS,
+    *,
+    robots=None,
+    scoring=None,
+    max_children=3,
+    thematic_children=16,
+    site=None,
+    origin=CandidateOrigin.ROBOTS,
+    allow_listing=False,
+):
     return evaluate_candidate(
         url,
-        CandidateOrigin.ROBOTS,
+        origin,
         site=site or make_site(),
         fetcher=fetcher,
         robots=robots or RobotsPolicy.allow_all(),
@@ -33,6 +44,8 @@ def evaluate(fetcher, url=NEWS, *, robots=None, scoring=None, max_children=3, si
         now=NOW,
         scoring=scoring,
         max_children=max_children,
+        thematic_children=thematic_children,
+        allow_listing=allow_listing,
     )
 
 
@@ -157,3 +170,144 @@ def test_urls_de_outro_dominio_nao_contam_e_sitemap_so_com_elas_e_vazio():
 
     assert report.verdict is Verdict.EMPTY
     assert "nenhuma URL da fonte" in report.detail
+
+
+def test_guarda_as_materias_recentes_e_as_secoes_do_candidato():
+    fetcher = FakeFetcher(
+        {NEWS: news_sitemap(("politica/a", 1), ("politica/b", 2), ("esporte/c", 100))}
+    )
+
+    report = evaluate(fetcher)
+
+    assert report.recent_urls == {f"{HOME}/politica/a", f"{HOME}/politica/b"}
+    assert report.measure is not None
+    assert report.measure.top_sections == (("politica", 2),)
+
+
+def test_secao_da_fonte_de_secao_nao_conta_o_prefixo():
+    site = make_site(f"{HOME}/globonews")
+    fetcher = FakeFetcher({NEWS: news_sitemap(("globonews/mundo/a", 1), ("globonews/mundo/b", 1))})
+
+    report = evaluate(fetcher, site=site)
+
+    assert report.measure is not None and report.measure.top_sections == (("mundo", 2),)
+
+
+def test_candidato_que_nao_e_fresco_nao_guarda_materias_recentes():
+    fetcher = FakeFetcher({NEWS: news_sitemap(("a", 900))})
+
+    assert evaluate(fetcher).recent_urls == frozenset()
+
+
+def test_indice_cujos_filhos_sao_feeds_vale_como_feed():
+    """O índice do The Age lista dezenas de feeds por seção, não sitemaps."""
+    index = sitemap_index((f"{HOME}/rss/a.xml", None), (f"{HOME}/rss/b.xml", None))
+    fetcher = FakeFetcher(
+        {
+            NEWS: index,
+            f"{HOME}/rss/a.xml": rss(("a1", 1), ("a2", 2)),
+            f"{HOME}/rss/b.xml": rss(("b1", 3)),
+        }
+    )
+
+    report = evaluate(fetcher)
+
+    assert report.kind is StrategyKind.FEED and report.verdict is Verdict.FRESH
+    assert report.measure is not None and report.measure.items == 3
+
+
+def test_indice_sem_datas_le_um_arquivo_por_familia_ate_o_teto():
+    """Regiões e temas (ANSA): nada diz qual é o mais novo, então lê-se mais que os 3 de sempre."""
+    names = ["abruzzo", "lazio", "sicilia", "politica", "esteri"]
+    index = sitemap_index(*((f"{HOME}/sitemaps/{n}.xml", None) for n in names))
+    kids = {f"{HOME}/sitemaps/{n}.xml": plain_sitemap((f"{n}-1", 1), (f"{n}-2", 2)) for n in names}
+    fetcher = FakeFetcher({NEWS: index, **kids})
+
+    report = evaluate(fetcher, max_children=2, thematic_children=4)
+
+    assert report.measure is not None and report.measure.items == 8
+    assert report.requests == 5  # o índice e 4 filhos
+    assert "4 de 5" in report.detail
+
+
+def test_no_indice_sem_datas_so_o_ultimo_de_cada_familia_numerada_e_lido():
+    """WordPress: posts-post-1..3 são páginas da mesma lista; a última é a mais nova."""
+    index = sitemap_index(
+        (f"{HOME}/wp-sitemap-posts-post-1.xml", None),
+        (f"{HOME}/wp-sitemap-posts-post-2.xml", None),
+        (f"{HOME}/wp-sitemap-posts-post-3.xml", None),
+        (f"{HOME}/wp-sitemap-posts-noticia-1.xml", None),
+    )
+    fetcher = FakeFetcher(
+        {
+            NEWS: index,
+            f"{HOME}/wp-sitemap-posts-post-3.xml": plain_sitemap(("novo", 1)),
+            f"{HOME}/wp-sitemap-posts-noticia-1.xml": plain_sitemap(("noticia", 1)),
+        }
+    )
+
+    evaluate(fetcher)
+
+    assert f"{HOME}/wp-sitemap-posts-post-3.xml" in fetcher.calls
+    assert f"{HOME}/wp-sitemap-posts-post-1.xml" not in fetcher.calls
+    assert f"{HOME}/wp-sitemap-posts-post-2.xml" not in fetcher.calls
+
+
+def test_indice_com_lastmod_todo_igual_tambem_nao_se_ordena_por_data():
+    index = sitemap_index(*((f"{HOME}/s/{n}.xml", 5.0) for n in "abcd"))
+    kids = {f"{HOME}/s/{n}.xml": plain_sitemap((n, 1)) for n in "abcd"}
+    fetcher = FakeFetcher({NEWS: index, **kids})
+
+    report = evaluate(fetcher, max_children=2, thematic_children=4)
+
+    assert report.measure is not None and report.measure.items == 4
+
+
+def test_indice_de_uma_familia_so_com_datas_distintas_le_so_os_mais_recentes():
+    index = sitemap_index(*((f"{HOME}/s/dia-{n}.xml", float(n)) for n in range(1, 5)))
+    kids = {f"{HOME}/s/dia-{n}.xml": plain_sitemap((str(n), 1)) for n in range(1, 5)}
+    fetcher = FakeFetcher({NEWS: index, **kids})
+
+    report = evaluate(fetcher, max_children=2, thematic_children=4)
+
+    assert report.measure is not None and report.measure.items == 2
+
+
+def test_sitemap_de_tags_ou_produtos_no_topo_nao_e_avaliado():
+    for name in ("post_tag-sitemap.xml", "category-sitemap.xml", "sitemap_products_1.xml"):
+        url = f"{HOME}/{name}"
+        fetcher = FakeFetcher({url: plain_sitemap(("x", 1))})
+
+        report = evaluate(fetcher, url)
+
+        assert report.verdict is Verdict.INVALID and report.score == 0, name
+        assert fetcher.calls == [] and report.requests == 0, name
+
+
+def test_endereco_forcado_a_mao_de_listagem_e_respeitado():
+    url = f"{HOME}/post_tag-sitemap.xml"
+    fetcher = FakeFetcher({url: plain_sitemap(("x", 1))})
+
+    report = evaluate(fetcher, url, allow_listing=True)
+
+    assert report.verdict is Verdict.FRESH and fetcher.calls == [url]
+
+
+def test_indice_de_categorias_por_ano_le_o_ano_mais_novo_de_cada_categoria():
+    """olhardireto: /sitemap/<categoria>/<ano>.xml, do mais novo ao mais antigo."""
+    locs = [f"{HOME}/sitemap/{c}/{y}.xml" for c in ("conceito", "juridico") for y in (2026, 2025)]
+    index = sitemap_index((f"{HOME}/sitemap-news.xml", None), *((loc, None) for loc in locs))
+    fetcher = FakeFetcher(
+        {
+            NEWS: index,
+            f"{HOME}/sitemap-news.xml": news_sitemap(("n", 1)),
+            **{loc: plain_sitemap((loc[-20:], 1)) for loc in locs},
+        }
+    )
+
+    evaluate(fetcher)
+
+    assert f"{HOME}/sitemap/conceito/2026.xml" in fetcher.calls
+    assert f"{HOME}/sitemap/juridico/2026.xml" in fetcher.calls
+    assert f"{HOME}/sitemap/conceito/2025.xml" not in fetcher.calls
+    assert f"{HOME}/sitemap/juridico/2025.xml" not in fetcher.calls

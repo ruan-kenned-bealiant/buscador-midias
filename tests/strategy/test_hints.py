@@ -80,3 +80,71 @@ def test_aceita_subdominio_da_fonte(tmp_path: Path):
 def test_sem_arquivo_nao_ha_dicas(tmp_path: Path):
     assert load_hints(tmp_path / "nao-existe.csv").for_site(make_site()) == ()
     assert SourceHints({}).for_site(make_site()) == ()
+
+
+def test_junta_varios_arquivos_de_dicas_sem_repetir(tmp_path: Path):
+    first = write(tmp_path, "A,exemplo.com,https://exemplo.com/n.xml,,,x")
+    second = tmp_path / "manuais.csv"
+    second.write_text(
+        HEADER
+        + "A,exemplo.com,,https://exemplo.com/rss/geral,,x\n"
+        + "A,exemplo.com,https://exemplo.com/n.xml,https://exemplo.com/rss/economia,,x\n",
+        encoding="utf-8",
+    )
+
+    hints = load_hints([first, second])
+
+    assert hints.for_site(make_site()) == (
+        "https://exemplo.com/n.xml",
+        "https://exemplo.com/rss/geral",
+        "https://exemplo.com/rss/economia",
+    )
+
+
+def test_guarda_a_referencia_do_levantamento_por_fonte(tmp_path: Path):
+    path = tmp_path / "dicas.csv"
+    path.write_text(
+        "nome,dominio,news_sitemap_url,rss_url,sitemap_url,categoria,estrategia_recomendada,"
+        "itens_24h_estimado_feed,gdelt_artigos_24h_estimado\n"
+        "A,exemplo.com,,,,C - Sitemap genérico,sitemap,1000,2298\n",
+        encoding="utf-8",
+    )
+
+    ref = load_hints(path).reference(make_site())
+
+    assert ref == {
+        "categoria": "C - Sitemap genérico",
+        "estrategia": "sitemap",
+        "itens_24h_feed": "1000",
+        "gdelt_24h": "2298",
+    }
+    assert load_hints(path).reference(make_site("https://outro.com")) == {}
+
+
+def test_secao_aceita_dica_do_proprio_dominio_fora_do_prefixo(tmp_path: Path):
+    """O feed do g1 Acre mora em /rss/g1/ac/acre/, fora de /ac/acre, mas lista matérias de lá."""
+    hints = load_hints(
+        write(
+            tmp_path,
+            "A,exemplo.com/ac/acre,,https://exemplo.com/rss/ac/acre/,,x",
+            "A,exemplo.com/ac/acre,,https://outro.com/rss/,,x",
+        )
+    )
+
+    assert hints.for_site(make_site("https://exemplo.com/ac/acre")) == (
+        "https://exemplo.com/rss/ac/acre/",
+    )
+
+
+def test_csv_com_colunas_alinhadas_por_espacos_continua_valendo(tmp_path: Path):
+    """Editores que alinham o CSV enchem cabeçalho e células de espaços; não some a dica."""
+    path = tmp_path / "alinhado.csv"
+    path.write_text(
+        "nome   , dominio     , news_sitemap_url, rss_url                   , sitemap_url\r\n"
+        "g1     , g1.globo.com,                 , https://g1.globo.com/rss/ , \r\n",
+        encoding="utf-8",
+    )
+
+    hints = load_hints(path)
+
+    assert hints.for_site(make_site("https://g1.globo.com")) == ("https://g1.globo.com/rss/",)

@@ -13,6 +13,7 @@ CREATE TABLE midias_crawler_source_probe_state (
     streak         smallint NOT NULL DEFAULT 0,
     cooldown_until timestamptz NOT NULL,
     refresh_at     timestamptz NOT NULL,
+    detail         text NOT NULL DEFAULT '',
     reason         varchar(16) NOT NULL DEFAULT ''
                    CHECK (reason IN ('', 'never_probed', 'retry', 'refresh', 'failing', 'silent',
                                      'shrunk'))
@@ -22,4 +23,5 @@ COMMENT ON COLUMN midias_crawler_source_probe_state.found IS 'Se a última sonda
 COMMENT ON COLUMN midias_crawler_source_probe_state.streak IS 'Sondagens seguidas sem melhora (por saúde sem mudar a escolha, ou sem achar nada); dobra a espera.';
 COMMENT ON COLUMN midias_crawler_source_probe_state.cooldown_until IS 'Antes disso, falha, silêncio ou encolhimento não pedem reavaliação.';
 COMMENT ON COLUMN midias_crawler_source_probe_state.refresh_at IS 'Quando a estratégia é reavaliada por idade (sem estratégia: quando tentar de novo).';
+COMMENT ON COLUMN midias_crawler_source_probe_state.detail IS 'Por que a última sondagem não achou estratégia (ex.: blocked 13); vazio quando achou.';
 COMMENT ON COLUMN midias_crawler_source_probe_state.reason IS 'Por que a última sondagem aconteceu (vazio: manual).';

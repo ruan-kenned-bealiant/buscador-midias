@@ -108,12 +108,28 @@ class Site:
         Returns:
             ``True`` se a URL é http(s), do host da fonte ou de um subdomínio, e sob o prefixo.
         """
+        if not self.owns_host(candidate_url):
+            return False
+        if not self.path_prefix:
+            return True
+        path = urlsplit(candidate_url).path
+        return path == self.path_prefix or path.startswith(f"{self.path_prefix}/")
+
+    def owns_host(self, candidate_url: str) -> bool:
+        """Indica se uma URL é do host da fonte (ou subdomínio), qualquer que seja o caminho.
+
+        Serve às dicas de uma fonte de seção: o feed do g1 Acre mora em ``/rss/g1/ac/acre/``,
+        fora do prefixo ``/ac/acre``, mas só lista matérias de lá (que ``owns`` confere item a
+        item).
+
+        Args:
+            candidate_url: URL a verificar.
+
+        Returns:
+            ``True`` se a URL é http(s) e o host é o da fonte ou um subdomínio dele.
+        """
         parsed = urlsplit(candidate_url)
         if parsed.scheme not in _HTTP_SCHEMES or not parsed.hostname:
             return False
         host = _strip_www(parsed.hostname.lower())
-        if host != self.host and not host.endswith(f".{self.host}"):
-            return False
-        if not self.path_prefix:
-            return True
-        return parsed.path == self.path_prefix or parsed.path.startswith(f"{self.path_prefix}/")
+        return host == self.host or host.endswith(f".{self.host}")
