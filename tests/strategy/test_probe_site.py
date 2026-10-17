@@ -35,6 +35,7 @@ def probe(
     exclude=(),
     forced=(),
     listing_pages=0,
+    section_requests=0,
 ):
     return probe_site(
         site or make_site(),
@@ -45,6 +46,7 @@ def probe(
         exclude=exclude,
         forced=forced,
         listing_pages=listing_pages,
+        section_requests=section_requests,
         scoring=scoring,
         max_requests=max_requests,
     )
@@ -502,3 +504,126 @@ def test_endereco_da_home_excluido_a_mao_dispensa_a_varredura():
     result = probe(fetcher, exclude=[HOME], listing_pages=10)
 
     assert result.primary is None
+
+
+# --- fontes por seção ---
+
+
+def section_home(*extra: str) -> bytes:
+    sections = '<a href="/economia">E</a><a href="/politica">P</a><a href="/mundo">M</a>'
+    return f"<html><body>{sections}{''.join(extra)}</body></html>".encode()
+
+
+def section_feed(section: str, n: int = 6) -> bytes:
+    return rss(*((f"{section}/materia-{i}", i) for i in range(n)))
+
+
+def probe_sections(fetcher, **kw):
+    return probe(fetcher, listing_pages=10, section_requests=80, **kw)
+
+
+def test_feed_declarado_na_pagina_de_secao_vira_candidato():
+    fetcher = FakeFetcher(
+        {
+            ROBOTS: robots(),
+            HOME: section_home(),
+            f"{HOME}/economia": (
+                b'<html><head><link rel="alternate" type="application/rss+xml" '
+                b'href="/feeds/economia.xml"></head></html>'
+            ),
+            f"{HOME}/feeds/economia.xml": section_feed("economia"),
+        }
+    )
+
+    result = probe_sections(fetcher)
+
+    feed = by_url(result)[f"{HOME}/feeds/economia.xml"]
+    assert feed.verdict is Verdict.FRESH and feed.role is not None
+    assert feed.origin is CandidateOrigin.HOME_LINK
+
+
+def test_pagina_indice_de_feeds_e_lida_e_os_feeds_dela_sao_medidos():
+    fetcher = FakeFetcher(
+        {
+            ROBOTS: robots(),
+            HOME: section_home('<a href="/lista-de-feeds.shtml">feeds</a>'),
+            f"{HOME}/lista-de-feeds.shtml": (
+                b'<html><a href="/rss/politica.xml">p</a><a href="/rss/mundo.xml">m</a></html>'
+            ),
+            f"{HOME}/rss/politica.xml": section_feed("politica"),
+            f"{HOME}/rss/mundo.xml": section_feed("mundo"),
+        }
+    )
+
+    result = probe_sections(fetcher)
+
+    reports = by_url(result)
+    assert reports[f"{HOME}/rss/politica.xml"].verdict is Verdict.FRESH
+    assert reports[f"{HOME}/rss/mundo.xml"].verdict is Verdict.FRESH
+    roles = {r.url: r.role for r in result.reports if r.role}
+    assert Role.COMPLEMENT in roles.values() or Role.BACKUP in roles.values()
+
+
+def test_modelo_de_url_de_uma_secao_e_testado_nas_outras():
+    """/rss/economia/ serve; economia é seção do site; então /rss/politica/ e /rss/mundo/ também."""
+    fetcher = FakeFetcher(
+        {
+            ROBOTS: robots(),
+            HOME: section_home('<a href="/rss/economia/">rss</a>'),
+            f"{HOME}/rss/economia/": section_feed("economia"),
+            f"{HOME}/rss/politica/": section_feed("politica"),
+            f"{HOME}/rss/mundo/": section_feed("mundo"),
+        }
+    )
+
+    result = probe_sections(fetcher)
+
+    assert f"{HOME}/rss/politica/" in fetcher.calls and f"{HOME}/rss/mundo/" in fetcher.calls
+    covered = {r.url for r in result.reports if r.role}
+    assert {f"{HOME}/rss/economia/", f"{HOME}/rss/politica/", f"{HOME}/rss/mundo/"} <= covered
+
+
+def test_url_gerada_pelo_modelo_que_nao_existe_nao_fica_nos_candidatos():
+    fetcher = FakeFetcher(
+        {
+            ROBOTS: robots(),
+            HOME: section_home('<a href="/rss/economia/">rss</a>'),
+            f"{HOME}/rss/economia/": section_feed("economia"),
+        }
+    )
+
+    result = probe_sections(fetcher)
+
+    assert f"{HOME}/rss/politica/" in fetcher.calls  # foi testada...
+    assert f"{HOME}/rss/politica/" not in by_url(result)  # ...e o 404 não polui a lista
+
+
+def test_o_orcamento_das_fontes_por_secao_e_proprio_e_limita_as_requisicoes():
+    fetcher = FakeFetcher(
+        {
+            ROBOTS: robots(),
+            HOME: section_home('<a href="/rss/economia/">rss</a>'),
+            f"{HOME}/rss/economia/": section_feed("economia"),
+            f"{HOME}/rss/politica/": section_feed("politica"),
+            f"{HOME}/rss/mundo/": section_feed("mundo"),
+        }
+    )
+
+    probe(fetcher, listing_pages=10, section_requests=1)
+
+    assert f"{HOME}/rss/economia/" in fetcher.calls
+    assert f"{HOME}/rss/politica/" not in fetcher.calls
+
+
+def test_sem_orcamento_nao_ha_busca_de_fontes_por_secao():
+    fetcher = FakeFetcher(
+        {
+            ROBOTS: robots(),
+            HOME: section_home('<a href="/rss/economia/">rss</a>'),
+            f"{HOME}/rss/economia/": section_feed("economia"),
+        }
+    )
+
+    probe(fetcher, listing_pages=10, section_requests=0)
+
+    assert f"{HOME}/rss/economia/" not in fetcher.calls

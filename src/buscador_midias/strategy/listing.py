@@ -32,6 +32,7 @@ from buscador_midias.domain.strategy import (
 from buscador_midias.net.fetcher import Fetcher
 from buscador_midias.strategy.measure import measure_items, section_of
 from buscador_midias.strategy.scoring import ScoringPolicy, judge, score
+from buscador_midias.strategy.section_sources import PageSources, find_feed_sources
 
 # Teto por fonte: quanto maior, mais seções (temas) do site entram no mapa.
 DEFAULT_MAX_PAGES = 50
@@ -111,6 +112,7 @@ class ListingScan:
         requests: Páginas pedidas (inclui as que falharam).
         size_bytes: Bytes baixados.
         failure: Preenchido só quando a home não pôde ser lida.
+        feeds: O que as páginas varridas apontam como feed ou página-índice de feeds, somado.
     """
 
     articles: tuple[str, ...]
@@ -119,6 +121,7 @@ class ListingScan:
     requests: int
     size_bytes: int = 0
     failure: ListingFailure | None = None
+    feeds: PageSources = PageSources((), (), ())
 
 
 def extract_links(html: bytes, base_url: str, site: Site) -> list[str]:
@@ -189,6 +192,9 @@ def scan_listing(
     articles: dict[str, None] = {}
     sections: dict[str, None] = {}
     pages = requests = size = 0
+    declared: dict[str, None] = {}
+    direct: dict[str, None] = {}
+    indexes: dict[str, None] = {}
     while queue and requests < max_pages:
         url = queue.popleft()
         first = requests == 0
@@ -210,6 +216,10 @@ def scan_listing(
             continue
         pages += 1
         size += len(result.content)
+        found = find_feed_sources(result.content, result.final_url or url, site)
+        declared.update(dict.fromkeys(found.declared))
+        direct.update(dict.fromkeys(found.direct))
+        indexes.update(dict.fromkeys(found.indexes))
         for link in extract_links(result.content, result.final_url or url, site):
             if is_article_url(link):
                 articles.setdefault(link, None)
@@ -218,7 +228,8 @@ def scan_listing(
                 if link not in queued:
                     queued.add(link)
                     queue.append(link)
-    return ListingScan(tuple(articles), tuple(sections), pages, requests, size)
+    feeds = PageSources(tuple(declared), tuple(direct), tuple(indexes))
+    return ListingScan(tuple(articles), tuple(sections), pages, requests, size, None, feeds)
 
 
 def evaluate_listing(
@@ -231,12 +242,19 @@ def evaluate_listing(
     scoring: ScoringPolicy | None = None,
     max_pages: int = DEFAULT_MAX_PAGES,
 ) -> CandidateReport:
+    """Varre e devolve a varredura como candidata (veja ``listing_report``)."""
+    scan = scan_listing(site, fetcher, robots=robots, user_agent=user_agent, max_pages=max_pages)
+    return listing_report(site, scan, now=now, scoring=scoring)
+
+
+def listing_report(
+    site: Site, scan: ListingScan, *, now: datetime, scoring: ScoringPolicy | None = None
+) -> CandidateReport:
     """A varredura como candidata: sem datas (``UNDATED``) e com a nota mais baixa de todas.
 
     Menos de ``MIN_ARTICLES`` links de matéria não é estratégia (``EMPTY``).
     """
     scoring = scoring or ScoringPolicy()
-    scan = scan_listing(site, fetcher, robots=robots, user_agent=user_agent, max_pages=max_pages)
     url, origin = site.url, CandidateOrigin.HOME_LINK
     if scan.failure is not None:
         return CandidateReport(

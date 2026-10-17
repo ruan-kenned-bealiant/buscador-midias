@@ -30,11 +30,27 @@ from buscador_midias.domain.strategy import (
 )
 from buscador_midias.net.fetcher import Fetcher
 from buscador_midias.strategy.evaluate import DEFAULT_MAX_CHILDREN, evaluate_candidate
-from buscador_midias.strategy.listing import DEFAULT_MAX_PAGES, evaluate_listing
+from buscador_midias.strategy.listing import (
+    DEFAULT_MAX_PAGES,
+    ListingScan,
+    listing_report,
+    scan_listing,
+)
 from buscador_midias.strategy.manual import is_excluded
 from buscador_midias.strategy.scoring import ScoringPolicy, choose, plan_coverage
+from buscador_midias.strategy.section_sources import (
+    apply_templates,
+    derive_templates,
+    find_feed_sources,
+)
 
 DEFAULT_MAX_REQUESTS = 40
+# Orçamento próprio da busca de fontes por seção (feeds das páginas, páginas-índice e modelos).
+DEFAULT_SECTION_REQUESTS = 80
+MAX_FEED_INDEX_PAGES = 3
+MAX_SECTION_CANDIDATES = 40
+MAX_TEMPLATE_URLS = 40
+MAX_SECTIONS_FOR_TEMPLATES = 60
 MAX_ROBOTS_SITEMAPS = 6
 FALLBACK_SITEMAP_PATHS = ("/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml")
 NEWS_SITEMAP_PATHS = (
@@ -103,8 +119,11 @@ class _Run:
         self.now = now
         self.scoring = scoring
         self.max_requests = max_requests
+        self._base_budget = max_requests
         self.requests = spent
         self.listing_requests = 0
+        self.section_requests = 0
+        self.scan: ListingScan | None = None
         self.reports: list[CandidateReport] = []
         self._tried: set[str] = set()
         self._exclude = tuple(exclude)
@@ -156,17 +175,66 @@ class _Run:
         if self._is_excluded(self.site.url):
             self.reports.append(_excluded(self.site.url, CandidateOrigin.HOME_LINK))
             return
-        report = evaluate_listing(
+        self.scan = scan_listing(
             self.site,
             self.fetcher,
             robots=self.robots,
             user_agent=self.user_agent,
-            now=self.now,
-            scoring=self.scoring,
             max_pages=max_pages,
         )
+        report = listing_report(self.site, self.scan, now=self.now, scoring=self.scoring)
         self.listing_requests += report.requests
         self.reports.append(report)
+
+    def evaluate_section_sources(self, budget: int) -> None:
+        """Acha o feed ou sitemap de cada seção, com orçamento próprio.
+
+        Em ordem: o que as páginas varridas apontam (feeds declarados, links diretos e as
+        páginas-índice de feeds, das quais se lê até ``MAX_FEED_INDEX_PAGES``) e, com o que já se
+        sabe que serve, os modelos de URL aplicados às outras seções. O que o modelo gera e não
+        existe (404) não entra na lista de candidatos: é palpite que não deu.
+        """
+        scan = self.scan
+        if scan is None or scan.failure is not None or budget < 1:
+            return
+        spent_before = self.requests
+        self.max_requests = self.requests + budget
+        try:
+            found = list(dict.fromkeys(scan.feeds.declared + scan.feeds.direct))
+            for page in scan.feeds.indexes[:MAX_FEED_INDEX_PAGES]:
+                if self.requests >= self.max_requests or not self.robots.allows(
+                    page, self.user_agent
+                ):
+                    continue
+                self.requests += 1
+                result = self.fetcher.get(page)
+                if result.ok:
+                    listed = find_feed_sources(result.content, result.final_url or page, self.site)
+                    found += [u for u in listed.declared + listed.direct if u not in found]
+            self.evaluate(found[:MAX_SECTION_CANDIDATES], CandidateOrigin.HOME_LINK)
+            sections = list(scan.sections[:MAX_SECTIONS_FOR_TEMPLATES])
+            verified = [
+                r.url
+                for r in self.reports
+                if r.score > 0 and r.kind is not StrategyKind.LISTING and "{" not in r.url
+            ]
+            generated = apply_templates(
+                derive_templates(verified, sections),
+                sections,
+                self._tried,
+                limit=MAX_TEMPLATE_URLS,
+            )
+            before = len(self.reports)
+            self.evaluate(generated, CandidateOrigin.HOME_LINK)
+            self.reports[before:] = [
+                r
+                for r in self.reports[before:]
+                if r.score > 0 or r.verdict not in (Verdict.UNAVAILABLE, Verdict.INVALID)
+            ]
+        finally:
+            self.section_requests = self.requests - spent_before
+            self.requests = spent_before
+            self.max_requests = self._base_budget
 
     def _evaluate_once(self, url: str, origin: CandidateOrigin, forced: bool) -> CandidateReport:
         """Avalia o endereço (de hoje, se for modelo) uma vez."""
@@ -208,6 +276,7 @@ def probe_site(
     exclude: Sequence[str] = (),
     forced: Sequence[str] = (),
     listing_pages: int = DEFAULT_MAX_PAGES,
+    section_requests: int = DEFAULT_SECTION_REQUESTS,
 ) -> SiteStrategy:
     """Descobre como obter as matérias novas da fonte e escolhe a melhor estratégia.
 
@@ -237,6 +306,8 @@ def probe_site(
         forced: Endereços que uma regra manual manda usar como principal (se servirem).
         listing_pages: Teto de páginas da varredura de listagens, que tem orçamento próprio (não
             gasta o de ``max_requests``); 0 a desliga.
+        section_requests: Orçamento próprio da busca de feeds e sitemaps de cada seção (os que as
+            páginas apontam e os que um modelo de URL sugere); 0 a desliga.
 
     Returns:
         A estratégia escolhida e todos os candidatos com o que se concluiu de cada um.
@@ -270,11 +341,18 @@ def probe_site(
         run.evaluate([f"{origin}{p}" for p in NEWS_SITEMAP_PATHS], CandidateOrigin.COMMON_PATH)
     if not run.has_usable(StrategyKind.FEED):
         _probe_feeds(run, origin)
+    run.evaluate_section_sources(section_requests)
 
     reports = plan_coverage(choose(run.reports), run.scoring)
     chosen = any(r.role is Role.PRIMARY for r in reports)
     status, detail = (ProbeStatus.OK, "") if chosen else _failure(reports)
-    return SiteStrategy(site.key, status, detail, reports, run.requests + run.listing_requests)
+    return SiteStrategy(
+        site.key,
+        status,
+        detail,
+        reports,
+        run.requests + run.listing_requests + run.section_requests,
+    )
 
 
 def _probe_feeds(run: _Run, origin: str) -> None:

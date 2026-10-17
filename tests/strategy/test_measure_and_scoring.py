@@ -405,6 +405,62 @@ def test_fonte_que_nao_acrescenta_quase_nada_nao_vira_complemento():
     assert planned["principal"].cover_share == 100 / 101
 
 
+def sec(section: str, *names: str) -> set[str]:
+    return {f"https://x.com/{section}/{n}" for n in names}
+
+
+def test_fonte_que_traz_uma_secao_nova_vira_complemento_mesmo_com_poucas_materias():
+    """Cada seção precisa de quem a leia: 3 matérias de uma seção nova valem outra leitura."""
+    from buscador_midias.strategy.scoring import plan_coverage
+
+    reports = [
+        covered("principal", sec("politica", *map(str, range(100))), value=100),
+        covered("so-mundo", sec("mundo", "a", "b", "c"), value=4),
+    ]
+
+    planned = {r.url: r for r in plan_coverage(choose(reports))}
+
+    assert planned["so-mundo"].role is Role.COMPLEMENT  # 3 de 103 (< 5%), mas é seção nova
+
+
+def test_fonte_com_materias_so_de_secao_ja_coberta_nao_vira_complemento_por_poucas():
+    from buscador_midias.strategy.scoring import plan_coverage
+
+    reports = [
+        covered("principal", sec("politica", *map(str, range(100))), value=100),
+        covered("mais-politica", sec("politica", "x", "y", "z"), value=4),
+    ]
+
+    planned = {r.url: r for r in plan_coverage(choose(reports))}
+
+    assert planned["mais-politica"].role is None
+
+
+def test_uma_unica_materia_de_secao_nova_nao_basta():
+    from buscador_midias.strategy.scoring import plan_coverage
+
+    reports = [
+        covered("principal", sec("politica", *map(str, range(100))), value=100),
+        covered("uma", sec("mundo", "a"), value=1),
+    ]
+
+    assert {r.url: r for r in plan_coverage(choose(reports))}["uma"].role is None
+
+
+def test_ha_um_teto_de_complementos_mas_alto_para_site_de_muitas_secoes():
+    from buscador_midias.strategy.scoring import plan_coverage
+
+    reports = [covered("principal", sec("s0", *map(str, range(50))), value=100)] + [
+        covered(f"f{n}", sec(f"s{n}", "a", "b", "c"), value=3) for n in range(1, 26)
+    ]
+
+    planned = plan_coverage(choose(reports))
+
+    assert sum(1 for r in planned if r.role is Role.COMPLEMENT) == 25
+    capped = plan_coverage(choose(reports), ScoringPolicy(max_complements=5))
+    assert sum(1 for r in capped if r.role is Role.COMPLEMENT) == 5
+
+
 def test_so_candidatos_frescos_entram_na_uniao_e_o_papel_ja_dado_e_mantido():
     from buscador_midias.strategy.scoring import plan_coverage
 

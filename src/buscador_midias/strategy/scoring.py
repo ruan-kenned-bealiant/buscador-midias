@@ -13,7 +13,7 @@ from buscador_midias.domain.strategy import (
     StrategyKind,
     Verdict,
 )
-from buscador_midias.strategy.measure import FUTURE_TOLERANCE
+from buscador_midias.strategy.measure import FUTURE_TOLERANCE, OTHER_SECTION, section_of
 
 _SCORED = frozenset({Verdict.FRESH, Verdict.UNDATED, Verdict.SLOW})
 
@@ -37,11 +37,14 @@ class ScoringPolicy:
             tem ao menos uma matéria recente) e acima de uma lista sem datas, que nem a vida prova.
         untitled_factor: Multiplicador de uma lista em que menos da metade dos itens tem título.
         max_complements: Quantas fontes a mais, além do principal e da reserva, entram para cobrir o
-            que eles não listam.
+            que eles não listam (alto: um site de muitas seções precisa de uma fonte por seção).
         min_gain_urls: Matérias novas mínimas que uma fonte precisa acrescentar para virar
             complemento...
         min_gain_share: ...e a fração mínima da união (vale o maior dos dois): uma fonte que traz
             uma ou duas matérias a mais não paga outra leitura por rodada.
+        min_section_gain_urls: Exceção: uma fonte que traz uma **seção nova** (que nada do que já
+            foi escolhido lista) vira complemento com este mínimo de matérias novas, por poucas
+            que sejam em relação ao site todo.
         kind_factor: Peso de cada tipo; o sitemap de notícias é o mais confiável e o genérico o
             menos (não traz título, e ``lastmod`` muda quando a matéria é só editada); a varredura
             de listagens é o último recurso (não traz data nem título).
@@ -55,7 +58,8 @@ class ScoringPolicy:
     slow_window_days: int = 90
     slow_coverage: float = 0.75
     untitled_factor: float = 0.9
-    max_complements: int = 3
+    max_complements: int = 30
+    min_section_gain_urls: int = 2
     min_gain_urls: int = 5
     min_gain_share: float = 0.05
     kind_factor: dict[StrategyKind, float] = field(
@@ -187,15 +191,27 @@ def plan_coverage(
     roles = {r.url: r.role for r in reports}
     remaining = [r for r in fresh if r.role is None]
     threshold = max(policy.min_gain_urls, policy.min_gain_share * len(union))
-    for _ in range(policy.max_complements):
-        if not remaining:
+    seen_sections = {section_of(url) for url in covered} - {OTHER_SECTION}
+
+    def worth(report: CandidateReport) -> bool:
+        gain = len(report.recent_urls - covered)
+        if gain >= threshold:
+            return True
+        fresh_sections = {section_of(u) for u in report.recent_urls - covered}
+        new_section = bool(fresh_sections - seen_sections - {OTHER_SECTION})
+        return new_section and gain >= policy.min_section_gain_urls
+
+    complements = 0
+    while remaining and complements < policy.max_complements:
+        candidates = [r for r in remaining if worth(r)]
+        if not candidates:
             break
-        best = min(remaining, key=lambda r: (-len(r.recent_urls - covered), -r.score, r.url))
-        if len(best.recent_urls - covered) < threshold:
-            break
+        best = min(candidates, key=lambda r: (-len(r.recent_urls - covered), -r.score, r.url))
         roles[best.url] = Role.COMPLEMENT
         covered |= best.recent_urls
+        seen_sections |= {section_of(u) for u in best.recent_urls} - {OTHER_SECTION}
         remaining.remove(best)
+        complements += 1
     share = len(covered & union) / len(union)
     fresh_urls = {r.url for r in fresh}
     return tuple(

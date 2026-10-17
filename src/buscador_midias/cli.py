@@ -84,7 +84,12 @@ from buscador_midias.strategy.health import (
 from buscador_midias.strategy.hints import load_hints
 from buscador_midias.strategy.listing import DEFAULT_MAX_PAGES as DEFAULT_LISTING_PAGES
 from buscador_midias.strategy.manual import load_manual_rules
-from buscador_midias.strategy.probe import DEFAULT_MAX_REQUESTS, SiteStrategy, probe_site
+from buscador_midias.strategy.probe import (
+    DEFAULT_MAX_REQUESTS,
+    DEFAULT_SECTION_REQUESTS,
+    SiteStrategy,
+    probe_site,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SITES = _REPO_ROOT / "data" / "sites.csv"
@@ -420,6 +425,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Teto de páginas da varredura de listagens (home e seções), por fonte, que roda para "
             "toda fonte e tem orçamento próprio; 0 a desliga. Mais páginas, mais seções no mapa."
+        ),
+    )
+    probe_sources.add_argument(
+        "--section-requests",
+        type=int,
+        default=DEFAULT_SECTION_REQUESTS,
+        help=(
+            "Orçamento, por fonte, da busca do feed ou sitemap de cada seção (os que as páginas "
+            "apontam e os que um modelo de URL sugere); 0 a desliga."
         ),
     )
     probe_sources.add_argument(
@@ -1245,6 +1259,7 @@ def _probe_sources(
                     exclude=manual.for_site(site).exclude,
                     forced=manual.for_site(site).force,
                     listing_pages=args.listing_pages,
+                    section_requests=args.section_requests,
                     max_requests=args.max_requests,
                 )
             except Exception as error:  # noqa: BLE001 - uma fonte não derruba as outras
