@@ -5,7 +5,9 @@ listas das matérias mais recentes. Não há padrão único de URL entre os site
 reconhecíveis: o título da matéria é um *slug* longo, ou o caminho traz data ou um número de
 identificação; uma seção é um caminho curto de palavras (``/politica``, ``/ac/acre``). A varredura
 parte da home, segue as páginas de seção e, de cada uma, colhe matérias e novas seções (a URL de
-uma seção ajuda a achar as outras), até um teto de páginas por fonte.
+uma seção ajuda a achar as outras), até um teto de páginas por fonte. Roda para toda fonte, no
+começo da sondagem: é a estrutura do site, contra a qual se mede o que o sitemap ou o feed escolhido
+cobre.
 """
 
 from __future__ import annotations
@@ -31,7 +33,8 @@ from buscador_midias.net.fetcher import Fetcher
 from buscador_midias.strategy.measure import measure_items, section_of
 from buscador_midias.strategy.scoring import ScoringPolicy, judge, score
 
-DEFAULT_MAX_PAGES = 10
+# Teto por fonte: quanto maior, mais seções (temas) do site entram no mapa.
+DEFAULT_MAX_PAGES = 50
 # Menos que isto não é uma estratégia: pode ser só o destaque da home.
 MIN_ARTICLES = 8
 

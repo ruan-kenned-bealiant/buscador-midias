@@ -25,7 +25,17 @@ FEED = f"{HOME}/feed/"
 ROBOTS = f"{HOME}/robots.txt"
 
 
-def probe(fetcher, *, hints=(), scoring=None, max_requests=40, site=None, exclude=(), forced=()):
+def probe(
+    fetcher,
+    *,
+    hints=(),
+    scoring=None,
+    max_requests=40,
+    site=None,
+    exclude=(),
+    forced=(),
+    listing_pages=0,
+):
     return probe_site(
         site or make_site(),
         fetcher,
@@ -34,6 +44,7 @@ def probe(fetcher, *, hints=(), scoring=None, max_requests=40, site=None, exclud
         hints=hints,
         exclude=exclude,
         forced=forced,
+        listing_pages=listing_pages,
         scoring=scoring,
         max_requests=max_requests,
     )
@@ -429,35 +440,58 @@ def listing_home() -> bytes:
 def test_sem_sitemap_nem_feed_a_varredura_da_home_vira_a_estrategia():
     fetcher = FakeFetcher({ROBOTS: robots(), HOME: listing_home()})
 
-    result = probe(fetcher)
+    result = probe(fetcher, listing_pages=10)
 
     assert result.status is ProbeStatus.OK
     assert result.primary is not None
     assert result.primary.kind is StrategyKind.LISTING and result.primary.url == HOME
 
 
-def test_com_feed_que_serve_a_varredura_nem_e_tentada():
+def test_a_varredura_roda_primeiro_mesmo_com_feed_e_vira_a_reserva_de_outro_tipo():
+    """A varredura mapeia a estrutura do site; o feed continua sendo o que se lê."""
     fetcher = FakeFetcher({ROBOTS: robots(), HOME: listing_home(), FEED: rss(("a", 1), ("b", 2))})
 
-    result = probe(fetcher)
+    result = probe(fetcher, listing_pages=10)
 
     assert result.primary is not None and result.primary.kind is StrategyKind.FEED
-    assert f"{HOME}/economia" not in fetcher.calls  # nenhuma página de seção foi lida
+    assert result.backup is not None and result.backup.kind is StrategyKind.LISTING
+    assert fetcher.calls.index(f"{HOME}/economia") < fetcher.calls.index(FEED)  # primeiro
 
 
-def test_fonte_lenta_tambem_dispensa_a_varredura():
+def test_fonte_lenta_continua_principal_e_a_varredura_fica_de_reserva():
     fetcher = FakeFetcher({ROBOTS: robots(), HOME: listing_home(), FEED: rss(("a", 240))})
 
-    result = probe(fetcher)
+    result = probe(fetcher, listing_pages=10)
 
     assert result.primary is not None and result.primary.verdict is Verdict.SLOW
-    assert f"{HOME}/economia" not in fetcher.calls
+    assert result.backup is not None and result.backup.kind is StrategyKind.LISTING
+
+
+def test_o_teto_de_paginas_da_varredura_e_proprio_e_nao_gasta_o_orcamento_dos_candidatos():
+    fetcher = FakeFetcher(
+        {ROBOTS: robots(NEWS), NEWS: news_sitemap(("n1", 1)), HOME: listing_home()}
+    )
+
+    result = probe(fetcher, max_requests=2, listing_pages=10)
+
+    assert NEWS in fetcher.calls  # o sitemap foi lido apesar da varredura
+    listing = next(r for r in result.reports if r.kind is StrategyKind.LISTING)
+    assert listing.requests >= 2
+
+
+def test_varredura_desligada_com_zero_paginas():
+    fetcher = FakeFetcher({ROBOTS: robots(), HOME: listing_home()})
+
+    result = probe(fetcher, listing_pages=0)
+
+    assert result.primary is None
+    assert all(r.kind is not StrategyKind.LISTING for r in result.reports)
 
 
 def test_home_sem_materias_leva_o_motivo_da_falha_com_a_varredura_contada():
     fetcher = FakeFetcher({ROBOTS: robots(), HOME: b"<html><body>nada</body></html>"})
 
-    result = probe(fetcher)
+    result = probe(fetcher, listing_pages=10)
 
     assert result.status is ProbeStatus.NO_SITEMAP and "empty" in result.detail
 
@@ -465,6 +499,6 @@ def test_home_sem_materias_leva_o_motivo_da_falha_com_a_varredura_contada():
 def test_endereco_da_home_excluido_a_mao_dispensa_a_varredura():
     fetcher = FakeFetcher({ROBOTS: robots(), HOME: listing_home()})
 
-    result = probe(fetcher, exclude=[HOME])
+    result = probe(fetcher, exclude=[HOME], listing_pages=10)
 
     assert result.primary is None

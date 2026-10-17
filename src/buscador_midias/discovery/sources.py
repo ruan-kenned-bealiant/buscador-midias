@@ -314,6 +314,8 @@ def cascade_for(
                         feed_urls=render_window(chosen.url, moment),
                     )
                 )
+        elif chosen.kind is StrategyKind.LISTING:
+            continue  # a descoberta ainda não lê a varredura de listagens
         elif chosen.kind is not None and not skip_free_sitemap:
             sources.append(
                 SitemapSource(

@@ -370,3 +370,9 @@ def test_estrategia_com_modelo_de_data_le_hoje_e_ontem():
     found = first.find(make_site())
 
     assert {u.url for u in found.urls} == {f"{HOME}/hoje", f"{HOME}/ontem"}
+
+
+def test_estrategia_de_varredura_ainda_nao_e_lida_pela_descoberta_e_nao_vira_sitemap():
+    listing = strategy(HOME, StrategyKind.LISTING, Role.PRIMARY)
+
+    assert kinds(build(strategies=[listing])) == [SourceKind.SITEMAP, SourceKind.FEED]

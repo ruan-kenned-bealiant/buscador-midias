@@ -55,6 +55,7 @@ def test_parser_tem_padroes_conservadores():
     args = build_parser().parse_args(["probe-sources"])
 
     assert args.max_requests == 40
+    assert args.listing_pages == 50
     assert args.dry_run is False
     assert [h.name for h in args.hints] == ["discovery_hints.csv", "hints_manuais.csv"]
     assert args.workers == 8

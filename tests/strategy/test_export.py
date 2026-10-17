@@ -313,3 +313,54 @@ def test_arquivos_csv_ganham_o_mapa_de_secoes(tmp_path: Path):
     write_csv(tables, tmp_path / "e.csv")
 
     assert (tmp_path / "e-mapa-secoes.csv").is_file()
+
+
+def test_varredura_mostra_secao_que_o_sitemap_escolhido_nao_lista_e_nao_conta_como_cobertura():
+    """O ponto da varredura: o que o site tem e o sitemap ou feed lido deixa de fora."""
+    rows = [
+        ("g1.globo.com", candidate("https://g1.globo.com/a.xml", Role.PRIMARY), T0),
+        (
+            "g1.globo.com",
+            candidate(
+                "https://g1.globo.com",
+                Role.BACKUP,
+                kind=StrategyKind.LISTING,
+                verdict=Verdict.UNDATED,
+                sections=(("sp", 3), ("rj", 9)),
+                recent=0,
+                coverage=None,
+            ),
+            T0,
+        ),
+    ]
+
+    _, mapped = _map(rows)
+    by_section = {r["Seção"]: r for r in mapped}
+
+    assert by_section["sp"]["Coberta pelo conjunto"] == "sim"  # o sitemap lista
+    assert by_section["rj"]["Coberta pelo conjunto"] == "não"  # só a varredura viu
+    assert by_section["rj"]["Listada em"] == "varredura"
+    assert by_section["sp"]["Listada em"] == "principal, varredura"
+
+
+def test_varredura_como_unica_estrategia_conta_como_cobertura():
+    rows = [
+        (
+            "g1.globo.com",
+            candidate(
+                "https://g1.globo.com",
+                Role.PRIMARY,
+                kind=StrategyKind.LISTING,
+                verdict=Verdict.UNDATED,
+                sections=(("sp", 3),),
+                recent=0,
+                coverage=None,
+            ),
+            T0,
+        )
+    ]
+
+    _, mapped = _map(rows)
+
+    assert mapped[0]["Coberta pelo conjunto"] == "sim"
+    assert mapped[0]["Listada em"] == "varredura (principal)"

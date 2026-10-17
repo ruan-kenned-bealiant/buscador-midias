@@ -34,7 +34,9 @@ gravar no corpus (`midias_ia_*`, Postgres `pgsql_midias`) e no bucket.
   a descoberta ainda não lê o conjunto principal + complementos. Correções à mão por fonte
   (`estrategias_manuais.csv`: excluir ou forçar um endereço) e regras vindas da conferência de sites
   reais (listagens de tags fora, nova tentativa para o que o site declara, índices de várias
-  famílias, índices de feeds) feitas.
+  famílias, índices de feeds) feitas. Para a fonte sem sitemap nem feed a estratégia é a varredura
+  de listagens (home e páginas de seção, com novas seções achadas nas seções; sem datas, nota mais
+  baixa); a descoberta ainda não a lê.
 - **Um critério, em um lugar** (`criteria.py`): a matéria entra se a análise **leu o texto** e achou
   **entidade identificável**. Evidência e corpus olham só para ela (a regra existe em Python e em
   SQL, com teste de concordância).

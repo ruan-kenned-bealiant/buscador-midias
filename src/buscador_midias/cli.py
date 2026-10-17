@@ -82,6 +82,7 @@ from buscador_midias.strategy.health import (
     next_state,
 )
 from buscador_midias.strategy.hints import load_hints
+from buscador_midias.strategy.listing import DEFAULT_MAX_PAGES as DEFAULT_LISTING_PAGES
 from buscador_midias.strategy.manual import load_manual_rules
 from buscador_midias.strategy.probe import DEFAULT_MAX_REQUESTS, SiteStrategy, probe_site
 
@@ -410,6 +411,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Sonda só as fontes na vez: nunca sondadas, estratégia velha (7 dias), ou com falha, "
             "silêncio ou encolhimento nas rodadas (com espera crescente para não insistir)."
+        ),
+    )
+    probe_sources.add_argument(
+        "--listing-pages",
+        type=int,
+        default=DEFAULT_LISTING_PAGES,
+        help=(
+            "Teto de páginas da varredura de listagens (home e seções), por fonte, que roda para "
+            "toda fonte e tem orçamento próprio; 0 a desliga. Mais páginas, mais seções no mapa."
         ),
     )
     probe_sources.add_argument(
@@ -1234,6 +1244,7 @@ def _probe_sources(
                     hints=hints.for_site(site),
                     exclude=manual.for_site(site).exclude,
                     forced=manual.for_site(site).force,
+                    listing_pages=args.listing_pages,
                     max_requests=args.max_requests,
                 )
             except Exception as error:  # noqa: BLE001 - uma fonte não derruba as outras
@@ -1433,7 +1444,8 @@ def _describe(report: CandidateReport) -> str:
         what = f"lenta, última matéria em {newest:%Y-%m-%d}"
     else:
         what = report.verdict.value
-    return f"{kind} ({what}, nota {report.score:.0f}) {report.url}"
+    points = f"{report.score:.1f}" if 0 < report.score < 10 else f"{report.score:.0f}"
+    return f"{kind} ({what}, nota {points}) {report.url}"
 
 
 def _report() -> int:

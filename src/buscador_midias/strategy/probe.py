@@ -104,6 +104,7 @@ class _Run:
         self.scoring = scoring
         self.max_requests = max_requests
         self.requests = spent
+        self.listing_requests = 0
         self.reports: list[CandidateReport] = []
         self._tried: set[str] = set()
         self._exclude = tuple(exclude)
@@ -148,13 +149,12 @@ class _Run:
             if until_usable and report.score > 0 and report.verdict is not Verdict.SLOW:
                 break
 
-    def evaluate_listing(self) -> None:
-        """Último recurso: varre a home e as páginas de seção (sem sitemap nem feed que sirva)."""
+    def evaluate_listing(self, max_pages: int) -> None:
+        """Varre a home e as páginas de seção: a estrutura do site, com teto de páginas próprio."""
+        if max_pages < 1:
+            return
         if self._is_excluded(self.site.url):
             self.reports.append(_excluded(self.site.url, CandidateOrigin.HOME_LINK))
-            return
-        remaining = self.max_requests - self.requests
-        if remaining < 1:
             return
         report = evaluate_listing(
             self.site,
@@ -163,9 +163,9 @@ class _Run:
             user_agent=self.user_agent,
             now=self.now,
             scoring=self.scoring,
-            max_pages=min(DEFAULT_MAX_PAGES, remaining),
+            max_pages=max_pages,
         )
-        self.requests += report.requests
+        self.listing_requests += report.requests
         self.reports.append(report)
 
     def _evaluate_once(self, url: str, origin: CandidateOrigin, forced: bool) -> CandidateReport:
@@ -207,17 +207,19 @@ def probe_site(
     max_requests: int = DEFAULT_MAX_REQUESTS,
     exclude: Sequence[str] = (),
     forced: Sequence[str] = (),
+    listing_pages: int = DEFAULT_MAX_PAGES,
 ) -> SiteStrategy:
     """Descobre como obter as matérias novas da fonte e escolhe a melhor estratégia.
 
     Em etapas, da mais barata para a mais cara, e só avançando quando falta algo:
 
+    0. a varredura da home e das páginas de seção, para toda fonte: a estrutura do site, contra a
+       qual se mede o que o sitemap ou o feed escolhido cobre (e, sem nada melhor, a estratégia);
     1. os endereços forçados à mão, as dicas (endereços já conhecidos, ex.: de um levantamento), o
        que o ``robots.txt`` declara (sem sitemaps de tags e produtos) ou, sem declaração,
        ``/sitemap.xml``;
     2. se nenhum sitemap de notícias serviu, os nomes usuais de sitemap de notícias;
-    3. se nenhum feed serviu, os feeds que a home declara ou, sem declaração, os caminhos usuais;
-    4. se nada serviu (nem uma fonte lenta), a varredura da home e das páginas de seção.
+    3. se nenhum feed serviu, os feeds que a home declara ou, sem declaração, os caminhos usuais.
 
     Cada candidato é baixado, medido (quantas matérias recentes, com título, com data) e julgado; a
     nota escolhe o principal e, de outro tipo de documento, a reserva. A sondagem respeita o
@@ -233,6 +235,8 @@ def probe_site(
         max_requests: Orçamento de requisições (inclui o ``robots.txt`` e a home).
         exclude: Endereços que uma regra manual manda não sondar (``*`` no fim vale o prefixo).
         forced: Endereços que uma regra manual manda usar como principal (se servirem).
+        listing_pages: Teto de páginas da varredura de listagens, que tem orçamento próprio (não
+            gasta o de ``max_requests``); 0 a desliga.
 
     Returns:
         A estratégia escolhida e todos os candidatos com o que se concluiu de cada um.
@@ -253,6 +257,7 @@ def probe_site(
         exclude=exclude,
     )
     origin = origin_of(site.url)
+    run.evaluate_listing(listing_pages)
     run.evaluate(forced, CandidateOrigin.HINT, forced=True)
     run.evaluate(hints, CandidateOrigin.HINT)
     # Sitemaps de tags e produtos não ocupam vaga: se só há deles, vale o caminho usual.
@@ -265,13 +270,11 @@ def probe_site(
         run.evaluate([f"{origin}{p}" for p in NEWS_SITEMAP_PATHS], CandidateOrigin.COMMON_PATH)
     if not run.has_usable(StrategyKind.FEED):
         _probe_feeds(run, origin)
-    if not any(r.score > 0 for r in run.reports):
-        run.evaluate_listing()
 
     reports = plan_coverage(choose(run.reports), run.scoring)
     chosen = any(r.role is Role.PRIMARY for r in reports)
     status, detail = (ProbeStatus.OK, "") if chosen else _failure(reports)
-    return SiteStrategy(site.key, status, detail, reports, run.requests)
+    return SiteStrategy(site.key, status, detail, reports, run.requests + run.listing_requests)
 
 
 def _probe_feeds(run: _Run, origin: str) -> None:

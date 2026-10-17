@@ -6,6 +6,7 @@ from tests.strategy.helpers import HOME, NOW, UA, FakeFetcher, make_site, robots
 from buscador_midias.discovery.robots import RobotsPolicy
 from buscador_midias.domain.strategy import CandidateOrigin, StrategyKind, Verdict
 from buscador_midias.strategy.listing import (
+    DEFAULT_MAX_PAGES,
     extract_links,
     is_article_url,
     is_section_url,
@@ -268,3 +269,7 @@ def test_home_bloqueada_leva_o_motivo():
     report = evaluate(FakeFetcher({HOME: status(HOME, 403)}))
 
     assert report.verdict is Verdict.BLOCKED and report.score == 0
+
+
+def test_o_teto_padrao_e_de_50_paginas_para_pegar_o_maximo_de_temas():
+    assert DEFAULT_MAX_PAGES == 50

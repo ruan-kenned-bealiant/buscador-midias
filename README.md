@@ -211,6 +211,16 @@ rodada. Uma ação desconhecida aborta o `probe-sources` com a linha do erro, pa
 erro de digitação não ficar sem efeito em silêncio. A planilha `var/revisar-nao-noticia.xlsx` lista
 as fontes cujo principal parece listagem (tags, categorias, produtos), com 5 URLs de amostra.
 
+**Varredura de listagens (`listing`), o último recurso:** para a fonte sem sitemap nem feed que sirva
+(nem uma lenta), a sondagem varre a home e as páginas de seção. Não há padrão único de URL entre os
+sites, mas há padrões reconhecíveis (`strategy/listing.py`): matéria é um *slug* longo, ou o caminho
+traz data, ou um número de identificação; seção é um caminho curto de palavras (`/politica`,
+`/ac/acre`). A varredura parte da home, entra nas páginas de seção e, de cada uma, colhe matérias e
+**novas seções** (a URL de uma seção ajuda a achar as outras), até 10 páginas por fonte, respeitando o
+`robots.txt`. Menos de 8 links de matéria não é estratégia. Não há data nem título: o veredito é
+`undated` e a nota é a mais baixa de todas, então qualquer sitemap, feed ou fonte lenta vence.
+O que se grava é a home; as seções vistas aparecem no mapa de seções.
+
 **Zip como categoria de leitura:** um sitemap pode vir em ``.xml``, ``.xml.gz`` ou ``.zip`` (de um único
 XML); o zip é lido com o mesmo limite de tamanho do gzip (a bomba de descompressão vale para o que
 se lê, não para o tamanho declarado) e um zip com vários arquivos é recusado, em vez de ler só um.

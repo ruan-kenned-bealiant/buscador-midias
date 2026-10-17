@@ -14,7 +14,14 @@ from pathlib import Path
 from typing import Any
 
 from buscador_midias.domain.site import Site
-from buscador_midias.domain.strategy import CandidateReport, Measure, ProbeState, Role, Verdict
+from buscador_midias.domain.strategy import (
+    CandidateReport,
+    Measure,
+    ProbeState,
+    Role,
+    StrategyKind,
+    Verdict,
+)
 from buscador_midias.strategy.hints import SourceHints
 
 SUMMARY_SHEET = "Estratégia"
@@ -360,11 +367,17 @@ def _section_map(site: Site, reports: Sequence[CandidateReport]) -> _SectionMap:
     found: dict[str, tuple[int, set[str], bool]] = {}
     for report in measured:
         assert report.measure is not None
-        label = _ROLE_NAMES[report.role] if report.role else ""
+        listing = report.kind is StrategyKind.LISTING
+        label = _ROLE_NAMES[report.role] if report.role and not listing else ""
+        if listing:
+            label = "varredura (principal)" if report.role is Role.PRIMARY else "varredura"
+        # A varredura só cobre quando é a própria estratégia: como reserva ela mostra o que o site
+        # tem, não o que o sitemap ou o feed escolhido lista.
+        reads = report.role is Role.PRIMARY or (report.role is not None and not listing)
         for name, count in report.measure.top_sections:
             best, labels, covered = found.get(name, (0, set(), False))
             labels.add(label)
-            found[name] = (max(best, count), labels, covered or report.role is not None)
+            found[name] = (max(best, count), labels, covered or reads)
     ordered = sorted(found.items(), key=lambda item: (-item[1][0], item[0]))
     rows: list[tuple[Any, ...]] = []
     total = primary.measure.sections
