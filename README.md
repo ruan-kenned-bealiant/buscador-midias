@@ -454,11 +454,34 @@ Arquivos deste piloto:
 - `var/piloto-mecanismos-validados.csv`: dicas compatíveis com `--hints`, sem alterar os CSVs
   manuais; a validade de um endpoint continua sujeita a nova conferência.
 - `var/piloto-proximas-fontes.txt`: próxima seleção de até 20 fontes ainda na prioridade 1,
-  excluindo as já tentadas; preparada para pesquisa dirigida, sem execução automática.
+  excluindo as já tentadas no primeiro piloto; esta seleção foi executada no lote 02 abaixo.
 
 `var/mapa-sites.xlsx`, `var/mapa-resumo.json` e `var/mapa-prioridades.xlsx` continuam sendo a
 fotografia histórica do encerramento anterior. As auditorias novas estão no banco e nos
 arquivos específicos deste piloto; a planilha detalhada de 556 MB não foi regenerada.
+
+**Segundo lote dirigido (2026-10-17):** as 20 fontes de `var/piloto-proximas-fontes.txt`
+foram conferidas em 125,7 segundos, com 314 chamadas à pilha HTTP, sob os mesmos tetos de
+60 chamadas/90 segundos por fonte e 600 segundos globais. Foram 231 leituras/reavaliações,
+213 mecanismos novos e 31 mecanismos novos classificados como recentes. Sete fontes passaram
+a ter mecanismo recente confirmado; foram exportados 42 endereços reutilizáveis dessas fontes.
+Oito fontes tiveram ganho nas mesmas amostras congeladas: 2.288 URLs únicas por fonte ganharam
+correspondência (4.463 ocorrências entre páginas), sem perda das correspondências anteriores.
+ColombiaCheck teve ganho amostral, mas continuou sem mecanismo recente confirmado: ganho de
+correspondência e recência são medidas diferentes. Treze fontes seguem para revisão. As prioridades globais ficaram em 145/825/280/44
+(níveis 1 a 4), preservando as limitações das amostras.
+
+Resultados em `var/lote-02/resultados.xlsx`, com resumo das 20 fontes, leituras dos mecanismos,
+pendências, mecanismos reutilizáveis e prioridades globais. `var/lote-02/validacao-final.json`
+registra verificações e limitações; `RESUMO.md` explica a rodada e `pendencias.csv` traz os
+motivos observados. Os CSVs e snapshots do primeiro piloto foram preservados. A lista
+`var/lote-02/proximas-fontes.txt` prepara outro lote, que não foi executado.
+
+Este lote atualizou apenas auditorias do inventário. Não explorou novas seções nem alterou
+estratégias automáticas, estado incremental, corpus ou cron. Não usou LLM ou serviços pagos.
+Os mecanismos exportados são dicas para posterior validação incremental; não foram promovidos
+ao plano de descoberta. A correspondência amostral não comprova cobertura total, e `lastmod`
+não comprova publicação.
 
 Exemplo de reavaliação limitada dos mecanismos encontrados, depois da janela de cache ou
 com novas amostras (não inicia pesquisa automática de endpoints ausentes):

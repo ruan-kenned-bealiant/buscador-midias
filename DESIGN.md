@@ -110,6 +110,18 @@ relevância das notícias. Relatórios: `var/integracao-complementos-piloto.xlsx
 `var/integracao-complementos-piloto.json`. A migração 007 foi aplicada no Postgres local,
 preservando os 180 registros de rodadas existentes; o corpus e o cron não foram alterados.
 
+
+O lote dirigido seguinte conferiu outras 20 fontes em 125,7 segundos/314 chamadas,
+com 231 leituras/reavaliações e 31 mecanismos novos recentes. Sete fontes passaram a ter
+mecanismo recente confirmado (42 endereços exportados). Oito fontes tiveram ganho nas
+mesmas amostras congeladas: 2.288 URLs únicas por fonte, sem perda das correspondências
+anteriores. As prioridades globais ficaram em 145/825/280/44. Treze fontes permanecem para revisão; ColombiaCheck ganhou correspondência,
+mas continuou sem confirmação de mecanismo recente. O lote não explorou novas seções nem
+alterou estratégias de coleta, estado incremental, corpus ou cron. Os mecanismos exportados
+seguem como dicas para validação incremental, sem promoção automática ao plano. Resultados:
+`var/lote-02/resultados.xlsx` e `var/lote-02/validacao-final.json`. Outro lote foi apenas
+selecionado em `var/lote-02/proximas-fontes.txt`, sem execução.
+
 1. Inventário persistente, completo e retomável das páginas candidatas a seção: primeira
    implementação em `map-sites`, com checkpoint por página, origem, fila e falhas explícitas
    (`004_create_midias_crawler_section_pages.sql`). Exporta catálogo, páginas, mecanismos
