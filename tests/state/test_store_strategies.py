@@ -199,6 +199,9 @@ def test_o_que_a_descoberta_usa_e_so_o_principal_e_a_reserva():
     )
 
     assert [r.url for _, r in store.chosen_strategies()] == ["https://a.com/n", "https://a.com/b"]
+    assert [r.url for _, r in store.discovery_strategies()] == [
+        "https://a.com/n", "https://a.com/b", "https://a.com/c",
+    ]
 
 
 def test_strategy_rows_traz_todos_os_candidatos_com_a_fonte_e_o_instante():

@@ -1,7 +1,8 @@
 """Fontes de descoberta de um site e a cascata que as tenta em ordem.
 
 A ordem é a do custo: sitemap gratuito, depois feed gratuito e, só para quem bloqueia o acesso
-gratuito, o sitemap pelo Bright Data (pago). A primeira fonte que traz URLs encerra a tentativa.
+gratuito, o sitemap pelo Bright Data (pago). O conjunto validado precede essa cascata e une
+principal/reserva com complementos. A primeira etapa que traz URLs encerra a tentativa.
 """
 
 from __future__ import annotations
@@ -23,8 +24,12 @@ from buscador_midias.domain.dated_url import render_window
 from buscador_midias.domain.discovered import DiscoveredUrl
 from buscador_midias.domain.site import Site
 from buscador_midias.domain.sitemap import SitemapRef
-from buscador_midias.domain.strategy import CandidateReport, StrategyKind
+from buscador_midias.domain.strategy import CandidateReport, Role, StrategyKind
+from buscador_midias.domain.url import canonicalize_url
+from buscador_midias.net.budget import BudgetFetcher, FilteredFetcher
 from buscador_midias.net.fetcher import Fetcher
+from buscador_midias.strategy.manual import is_excluded
+from buscador_midias.strategy.mapping_net import MappingFetcher
 
 SkipChild = Callable[[SitemapRef], bool]
 
@@ -43,6 +48,7 @@ class SourceKind(StrEnum):
     SITEMAP = "sitemap"
     FEED = "feed"
     SITEMAP_PAID = "sitemap_bd"
+    COMBINED = "combined"
 
 
 @dataclass(frozen=True, slots=True)
@@ -276,12 +282,16 @@ def cascade_for(
     use_feed: bool = True,
     strategies: Sequence[CandidateReport] = (),
     now: datetime | None = None,
+    max_complements: int = 3,
+    max_source_requests: int = 40,
+    source_timeout: float = 120,
+    exclude: Sequence[str] = (),
 ) -> list[DiscoverySource]:
     """Monta a cascata de um site.
 
-    As estratégias escolhidas para a fonte (``probe-sources``: principal e reserva) vêm primeiro,
-    cada uma lendo o endereço que a sondagem mostrou servir. A cascata de sempre fica depois, de
-    plano B: se o endereço escolhido mudou ou quebrou, a fonte não fica sem descoberta.
+    As estratégias escolhidas vêm primeiro: principal, reserva se necessário e complementos.
+    Havendo complementos, o conjunto une resultados sob um orçamento gratuito compartilhado.
+    A cascata de sempre fica depois, de plano B se o conjunto não render URLs.
 
     Um host que já bloqueou o acesso gratuito não tem o sitemap gratuito tentado de novo (se há
     Bright Data para o resgatar): vai direto ao feed gratuito e, se ele não servir, ao sitemap pago.
@@ -294,20 +304,59 @@ def cascade_for(
         known_blocked: Se o host já bloqueou o acesso gratuito em rodadas anteriores.
         max_sitemap_fetches: Orçamento de sitemaps por site.
         use_feed: Se o feed entra na cascata (também o da estratégia).
-        strategies: Estratégias escolhidas da fonte, a principal antes da reserva. Um endereço com
-            modelo de data (``{YYYY}-{MM}-{DD}``) é lido para hoje e para ontem.
+        strategies: Estratégias da fonte com papéis principal, reserva e complemento.
+            Um modelo de data (``{YYYY}-{MM}-{DD}``) é lido para hoje e para ontem.
         now: Instante de referência para os modelos de data (padrão: agora).
+        max_complements: Número máximo de complementos; zero desliga a união.
+        max_source_requests: Teto de chamadas gratuitas compartilhado pelo conjunto e fallback.
+        source_timeout: Tempo para iniciar chamadas gratuitas do conjunto, em segundos.
+        exclude: Endereços/prefixos excluídos pelas regras manuais.
 
     Returns:
         As fontes, na ordem em que serão tentadas.
     """
+    if max_complements < 0:
+        raise ValueError("max_complements não pode ser negativo")
     skip_free_sitemap = known_blocked and paid is not None
     sources: list[DiscoverySource] = []
     moment = now or datetime.now(UTC)
-    for chosen in strategies:
+    unique: dict[str, CandidateReport] = {}
+    for chosen in sorted(strategies, key=lambda r: (
+        0 if r.role is Role.PRIMARY else 1 if r.role is Role.BACKUP else 2,
+    )):
+        if not site.owns_host(chosen.url) or is_excluded(chosen.url, exclude):
+            continue
+        if chosen.kind in (None, StrategyKind.LISTING):
+            continue
+        if chosen.kind is StrategyKind.FEED and not use_feed:
+            continue
+        if chosen.kind is not StrategyKind.FEED and skip_free_sitemap:
+            continue
+        unique.setdefault(canonicalize_url(chosen.url), chosen)
+    reports = list(unique.values())
+    complements = [r for r in reports if r.role is Role.COMPLEMENT]
+    bundled = bool(complements) and max_complements > 0
+    budget: BudgetFetcher | None = None
+    if bundled or exclude:
+        budget = BudgetFetcher(
+            free, max_requests=max_source_requests, seconds=source_timeout,
+            allowed=lambda url: site.owns_host(url) and not is_excluded(url, exclude),
+        )
+        free = MappingFetcher(budget, site, user_agent, max_source_requests * 2 + 1)
+        if paid is not None:
+            paid = FilteredFetcher(
+                paid, lambda url: site.owns_host(url) and not is_excluded(url, exclude),
+            )
+    selected_complements = complements[:max_complements] if bundled else []
+    main: list[DiscoverySource] = []
+    additional: list[DiscoverySource] = []
+    for chosen in reports:
+        if chosen.role is Role.COMPLEMENT and chosen not in selected_complements:
+            continue
+        target = additional if chosen.role is Role.COMPLEMENT else main
         if chosen.kind is StrategyKind.FEED:
             if use_feed:
-                sources.append(
+                target.append(
                     FeedSource(
                         free,
                         user_agent=user_agent,
@@ -317,7 +366,7 @@ def cascade_for(
         elif chosen.kind is StrategyKind.LISTING:
             continue  # a descoberta ainda não lê a varredura de listagens
         elif chosen.kind is not None and not skip_free_sitemap:
-            sources.append(
+            target.append(
                 SitemapSource(
                     SourceKind.SITEMAP,
                     free,
@@ -326,6 +375,14 @@ def cascade_for(
                     entry_points=render_window(chosen.url, moment),
                 )
             )
+    if bundled and budget is not None:
+        from buscador_midias.discovery.strategy_set import StrategySetSource
+
+        sources.append(StrategySetSource(
+            main, additional, budget, omitted=len(complements) - len(selected_complements),
+        ))
+    else:
+        sources.extend(main)
     if not skip_free_sitemap:
         sources.append(
             SitemapSource(

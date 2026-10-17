@@ -103,6 +103,11 @@ def review_entry(page: MapPage) -> EntryReview | None:
             False,
             "Conferir a resposta HTTP antes de nova tentativa.",
         )
+    if "do mapeamento atingido; fila preservada" in detail:
+        return EntryReview(
+            "orçamento de exploração atingido", False,
+            "Priorizar lacunas e retomar somente em uma execução com orçamento definido.",
+        )
     return EntryReview(
         "conteúdo inválido" if page.status is PageStatus.INVALID else "leitura não concluída",
         False,

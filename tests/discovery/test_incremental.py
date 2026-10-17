@@ -101,6 +101,61 @@ def sitemap_only(site: Site, fetcher: FakeFetcher, **kwargs):
     )
 
 
+def test_publicacao_do_complemento_prevalece_sobre_lastmod_antigo():
+    from tests.discovery.test_sources import strategy
+
+    from buscador_midias.domain.strategy import Role, StrategyKind
+
+    store = StateStore()
+    run(store, simple(("https://exemplo.com/noticia-inicial", None)))
+    site = make_site()
+    target = "https://exemplo.com/noticia-inedita"
+    free = FakeFetcher({
+        "https://exemplo.com/robots.txt": b"",
+        "https://exemplo.com/main.xml": urlset((target, "2020-01-01")),
+        "https://exemplo.com/feed": rss((target, "Título", "Thu, 15 Oct 2026 12:00:00 +0000")),
+    })
+    sources = cascade_for(site, free=free, paid=None, user_agent=UA, known_blocked=False,
+                          strategies=[
+                              strategy("https://exemplo.com/main.xml", StrategyKind.SITEMAP,
+                                       Role.PRIMARY),
+                              strategy("https://exemplo.com/feed", StrategyKind.FEED,
+                                       Role.COMPLEMENT),
+                          ])
+    result = discover_site(site, sources, store, run_id=store.start_run(NOW), now=NOW)
+    assert result.record.new_urls == 1
+    assert result.record.backlog_urls == 0
+    assert result.new[0].publication_date == NOW
+    store.close()
+
+
+def test_checkpoint_dos_filhos_do_complemento_e_preservado_entre_rodadas():
+    from tests.discovery.test_sources import strategy
+
+    from buscador_midias.domain.strategy import Role, StrategyKind
+
+    store = StateStore()
+    site = make_site()
+    child = "https://exemplo.com/child.xml"
+    free = FakeFetcher({
+        "https://exemplo.com/robots.txt": b"",
+        "https://exemplo.com/main.xml": urlset(("https://exemplo.com/noticia-um", None)),
+        "https://exemplo.com/index.xml": index((child, "2026-10-14")),
+        child: urlset(("https://exemplo.com/noticia-dois", None)),
+    })
+    reports = [strategy("https://exemplo.com/main.xml", StrategyKind.SITEMAP, Role.PRIMARY),
+               strategy("https://exemplo.com/index.xml", StrategyKind.SITEMAP, Role.COMPLEMENT)]
+    for _ in range(2):
+        sources = cascade_for(site, free=free, paid=None, user_agent=UA,
+                              known_blocked=False, strategies=reports)
+        result = discover_site(site, sources, store, run_id=store.start_run(NOW), now=NOW)
+    assert free.calls.count(child) == 1
+    assert store.sitemap_lastmod(child) == datetime(2026, 10, 14, tzinfo=UTC)
+    assert result.record.sitemaps_skipped == 1
+    assert result.new == ()
+    store.close()
+
+
 def run(store: StateStore, fetcher: FakeFetcher, *, site: Site | None = None, **kwargs):
     site = site or make_site()
     budget = (

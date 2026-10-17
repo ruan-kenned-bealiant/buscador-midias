@@ -485,7 +485,8 @@ class SiteRunRecord:
         sitemaps_failed: Sitemaps que falharam em um site ``ok`` (leitura parcial); o motivo da
             primeira falha fica em ``detail``.
         filtered_urls: URLs inéditas e frescas descartadas pela forma da URL (L0).
-        source: De onde vieram as URLs (``sitemap``, ``feed`` ou ``sitemap_bd``); vazio em falha.
+        source: Origem (``sitemap``, ``feed``, ``sitemap_bd`` ou ``combined``);
+            vazio em falha.
     """
 
     site_key: str
@@ -1742,8 +1743,8 @@ class StateStore:
     def chosen_strategies(self) -> list[tuple[str, CandidateReport]]:
         """O principal e a reserva de todas as fontes, por fonte (o principal antes).
 
-        São as estratégias que a descoberta usa; os complementos só aparecem em
-        ``site_strategies``.
+        Mantém a visão principal/reserva dos relatórios existentes. A execução usa
+        ``discovery_strategies``, que também inclui os complementos escolhidos.
         """
         rows = self._all(
             _STRATEGY_SELECT + " WHERE role IN ('primary', 'backup')"
@@ -1755,6 +1756,27 @@ class StateStore:
         """Todos os candidatos gravados, com a fonte e o instante da sondagem."""
         rows = self._all(_STRATEGY_SELECT + " ORDER BY site_key, score DESC, url")
         return [(row[0], _strategy_from_row(row[1:]), row[-1]) for row in rows]
+
+    def discovery_strategies(self) -> list[tuple[str, CandidateReport]]:
+        """Principal, reserva e complementos escolhidos, ordenados para a descoberta."""
+        rows = self._all(
+            _STRATEGY_SELECT + " WHERE role IN ('primary', 'backup', 'complement')"
+            " ORDER BY site_key, CASE role WHEN 'primary' THEN 0 WHEN 'backup' THEN 1 ELSE 2 END,"
+            " score DESC, url"
+        )
+        return [(row[0], _strategy_from_row(row[1:])) for row in rows]
+
+    def require_combined_discovery(self) -> None:
+        """Confere a migração da origem combinada antes de iniciar uma rodada com complementos."""
+        row = self._one(
+            "SELECT pg_get_constraintdef(oid) FROM pg_constraint"
+            " WHERE conrelid = 'midias_crawler_site_runs'::regclass"
+            " AND conname = 'midias_crawler_site_runs_source_check'"
+        )
+        if not row or "'combined'" not in str(row[0]):
+            raise StateSchemaError(
+                "aplique sql/postgres/007_allow_combined_discovery.sql antes de usar complementos"
+            )
 
     def strategy_probed_at(self, site_key: str) -> datetime | None:
         """Quando a fonte foi sondada pela última vez, ou ``None`` se nunca foi."""

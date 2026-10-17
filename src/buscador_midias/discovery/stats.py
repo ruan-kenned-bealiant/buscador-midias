@@ -43,6 +43,7 @@ class RunSummary:
         via_sitemap: Sites cujas URLs vieram do sitemap gratuito.
         via_feed: Sites cujas URLs vieram do feed.
         via_paid: Sites cujas URLs vieram do sitemap pelo Bright Data.
+        via_combined: Sites lidos pela união de principal/reserva e complementos gratuitos.
     """
 
     run_id: int
@@ -65,6 +66,7 @@ class RunSummary:
     via_sitemap: int = 0
     via_feed: int = 0
     via_paid: int = 0
+    via_combined: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,8 +160,8 @@ def format_report(report: Report) -> str:
             + (f" | bright data {run.bright_data_requests} req" if run.bright_data_requests else "")
             + (
                 f" | fontes: sitemap {run.via_sitemap}, feed {run.via_feed}, "
-                f"sitemap pago {run.via_paid}"
-                if run.via_feed or run.via_paid
+                f"sitemap pago {run.via_paid}, conjunto {run.via_combined}"
+                if run.via_feed or run.via_paid or run.via_combined
                 else ""
             )
         )
@@ -278,6 +280,7 @@ def _summarize(run: RunRecord, records: list[SiteRunRecord]) -> RunSummary:
         via_sitemap=sum(1 for r in records if r.source == "sitemap"),
         via_feed=sum(1 for r in records if r.source == "feed"),
         via_paid=sum(1 for r in records if r.source == "sitemap_bd"),
+        via_combined=sum(1 for r in records if r.source == "combined"),
     )
 
 

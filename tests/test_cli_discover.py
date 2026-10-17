@@ -393,6 +393,96 @@ def feed_xml(*links: str) -> bytes:
     return f'<rss version="2.0"><channel>{items}</channel></rss>'.encode()
 
 
+def test_cli_une_complementos_persistidos_e_registra_novidade_uma_vez(workspace, capsys):
+    from tests.discovery.test_sources import strategy
+    from tests.strategy.helpers import FakeFetcher
+
+    from buscador_midias.domain.strategy import Role, StrategyKind
+    from buscador_midias.state.store import UrlKind
+
+    store = StateStore()
+    store.replace_site_strategies('a.com', [
+        strategy('https://a.com/main.xml', StrategyKind.SITEMAP, Role.PRIMARY),
+        strategy('https://a.com/feed', StrategyKind.FEED, Role.COMPLEMENT),
+    ], NOW)
+    f = FakeFetcher({'https://a.com/robots.txt': b'',
+                     'https://a.com/main.xml': sitemap('https://a.com/noticia-um'),
+                     'https://a.com/feed': feed_xml('https://a.com/noticia-um/',
+                                                   'https://a.com/noticia-dois')})
+    assert discover(workspace, '--only', 'a.com', fetcher=f) == 0
+    assert store.site_runs(1)[0].baseline_urls == 2
+    assert store.site_runs(1)[0].source == 'combined'
+    f.responses['https://a.com/feed'] = feed_xml('https://a.com/noticia-dois',
+                                               'https://a.com/noticia-tres')
+    assert discover(workspace, '--only', 'a.com', fetcher=f) == 0
+    assert store.site_runs(2)[0].new_urls == 1
+    assert discover(workspace, '--only', 'a.com', fetcher=f) == 0
+    assert store.site_runs(3)[0].new_urls == 0
+    assert store.count_urls(kind=UrlKind.NEW) == 1
+    assert "sitemap 0, feed 0, sitemap pago 0, conjunto 1" in capsys.readouterr().out
+    store.close()
+
+
+def test_plano_padrao_e_aplicado_ao_catalogo_e_no_strategy_o_desliga(workspace, monkeypatch):
+    from tests.strategy.helpers import FakeFetcher
+
+    import buscador_midias.cli as cli
+
+    path = workspace['dir'] / 'plano.json'
+    path.write_text(json.dumps([{'chave': 'a.com', 'mecanismos': [
+        {'url': 'https://a.com/planejado.xml', 'kind': 'news_sitemap'},
+        {'url': 'https://a.com/planejado-feed', 'kind': 'feed'},
+    ]}]))
+    monkeypatch.setattr(cli, 'DEFAULT_SITES', workspace['sites'])
+    monkeypatch.setattr(cli, 'DEFAULT_DISCOVERY_PLAN', path)
+    f = FakeFetcher({'https://a.com/robots.txt': b'',
+                     'https://a.com/planejado.xml': sitemap('https://a.com/noticia-um'),
+                     'https://a.com/planejado-feed': feed_xml('https://a.com/noticia-dois')})
+    assert discover(workspace, '--only', 'a.com', fetcher=f) == 0
+    assert 'https://a.com/planejado-feed' in f.calls
+    f.calls.clear()
+    assert discover(workspace, '--only', 'a.com', '--no-strategy', fetcher=f) == 0
+    assert 'https://a.com/planejado.xml' not in f.calls
+    assert 'https://a.com/planejado-feed' not in f.calls
+
+
+def test_plano_explicito_invalido_nao_inicia_rodada(workspace):
+    path = workspace['dir'] / 'plano.json'
+    path.write_text(json.dumps([{'chave': 'a.com', 'mecanismos': [
+        {'url': 'https://fora.com/feed', 'kind': 'feed'},
+    ]}]))
+    f = World()
+    assert discover(workspace, '--discovery-plan', str(path), fetcher=f) == 2
+    assert f.calls == []
+    store = StateStore()
+    assert store.list_runs() == []
+    store.close()
+
+
+def test_migracao_ausente_impede_http_e_criacao_de_rodada(workspace):
+    from tests.discovery.test_sources import strategy
+    from tests.strategy.helpers import FakeFetcher
+
+    from buscador_midias.domain.strategy import Role, StrategyKind
+
+    store = StateStore()
+    store.replace_site_strategies('a.com', [
+        strategy('https://a.com/main.xml', StrategyKind.SITEMAP, Role.PRIMARY),
+        strategy('https://a.com/feed', StrategyKind.FEED, Role.COMPLEMENT),
+    ], NOW)
+    store._conn.execute(
+        "ALTER TABLE midias_crawler_site_runs DROP CONSTRAINT midias_crawler_site_runs_source_check"
+    )
+    store._conn.execute(
+        "ALTER TABLE midias_crawler_site_runs ADD CONSTRAINT midias_crawler_site_runs_source_check"
+        " CHECK (source IN ('', 'sitemap', 'feed', 'sitemap_bd'))"
+    )
+    f = FakeFetcher()
+    assert discover(workspace, '--only', 'a.com', fetcher=f) == 2
+    assert f.calls == [] and store.list_runs() == []
+    store.close()
+
+
 def test_site_sem_sitemap_e_lido_pelo_feed_e_o_resumo_mostra_as_fontes(
     workspace: dict[str, Path], capsys: pytest.CaptureFixture[str]
 ):

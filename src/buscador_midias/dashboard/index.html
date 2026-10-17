@@ -217,7 +217,7 @@ function renderCards(d, now) {
         ? [h("div", { class: "sub" }, `Rodada ${disc.run_id}: ${num(disc.sites_done)}${disc.sites_expected ? ` de ~${num(disc.sites_expected)}` : ""} fontes · ${duration(disc.elapsed_seconds)}`),
            pct !== null ? h("div", { class: "progress", role: "progressbar", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, h("span", { style: `width:${pct}%` })) : null]
         : h("div", { class: "sub" }, `Última concluída ${ago(d.status.last_discovery_finished_at, now)}`),
-      lastRun ? h("div", { class: "sub" }, `última rodada: sitemap ${num(lastRun.via_sitemap)} · feed ${num(lastRun.via_feed)} · sitemap BD ${num(lastRun.via_paid)}`) : null),
+      lastRun ? h("div", { class: "sub" }, `última rodada: sitemap ${num(lastRun.via_sitemap)} · feed ${num(lastRun.via_feed)} · conjunto ${num(lastRun.via_combined)} · sitemap BD ${num(lastRun.via_paid)}`) : null),
     h("div", { class: "panel" }, h("h2", {}, "Novas nas últimas 24 h"),
       h("div", { class: "big" }, num(last24)),
       h("div", { class: "sub" }, `${num(d.totals.by_kind.new || 0)} no total · ${num(d.totals.urls)} URLs vistas`)),
@@ -307,14 +307,14 @@ function renderCharts(d) {
 function renderRuns(d) {
   const root = document.getElementById("runs");
   if (!d.runs.length) return root.replaceChildren(empty("Nenhuma rodada registrada."));
-  const head = ["Rodada", "Início", "Duração", "Fontes (ok/falha)", "Novas", "Filtradas", "Backlog", "No corpus", "Linha de base", "Fontes (sitemap/feed/BD)", "Sitemaps lidos/pulados", "Leitura parcial", "Bright Data"];
+  const head = ["Rodada", "Início", "Duração", "Fontes (ok/falha)", "Novas", "Filtradas", "Backlog", "No corpus", "Linha de base", "Fontes (sitemap/feed/conjunto/BD)", "Sitemaps lidos/pulados", "Leitura parcial", "Bright Data"];
   const rows = d.runs.slice().reverse().map((r) => h("tr", {},
     h("td", {}, `#${r.id}`), h("td", {}, when(r.started_at)),
     h("td", {}, r.finished_at ? duration(r.duration_seconds) : h("span", { class: "badge b-run" }, "em curso")),
     h("td", {}, `${num(r.sites_done)} (${num(r.ok)}/${num(r.failed)})`),
     h("td", { class: "n" }, num(r.new)), h("td", { class: "n" }, num(r.filtered)), h("td", { class: "n" }, num(r.backlog)),
     h("td", { class: "n" }, num(r.known)), h("td", { class: "n" }, num(r.baseline)),
-    h("td", { class: "n" }, `${num(r.via_sitemap)} / ${num(r.via_feed)} / ${num(r.via_paid)}`),
+    h("td", { class: "n" }, `${num(r.via_sitemap)} / ${num(r.via_feed)} / ${num(r.via_combined)} / ${num(r.via_paid)}`),
     h("td", { class: "n" }, `${num(r.sitemaps_fetched)} / ${num(r.sitemaps_skipped)}`),
     h("td", { class: "n" }, r.partial_sites ? h("span", { class: "badge b-warn" }, `${r.partial_sites} fonte(s)`) : "–"),
     h("td", { class: "n" }, r.bright_data_requests ? `${num(r.bright_data_requests)} req` : "–")));

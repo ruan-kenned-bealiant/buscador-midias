@@ -31,7 +31,8 @@ gravar no corpus (`midias_ia_*`, Postgres `pgsql_midias`) e no bucket.
   automática por saúde, idade e espera crescente; modelos para URLs com data) feitas. O `run`
   reavalia só as fontes na vez antes de cada descoberta (`probe-sources --due`). Cobertura do site
   (seções, união das fontes, complementos) e planilha de conferência (`export-strategies`) feitas;
-  a descoberta ainda não lê o conjunto principal + complementos. Correções à mão por fonte
+  a descoberta lê principal/reserva + complementos, com deduplicação, checkpoints e orçamento
+  compartilhado para as chamadas gratuitas. Correções à mão por fonte
   (`estrategias_manuais.csv`: excluir ou forçar um endereço) e regras vindas da conferência de sites
   reais (listagens de tags fora, nova tentativa para o que o site declara, índices de várias
   famílias, índices de feeds) feitas. Para a fonte sem sitemap nem feed a estratégia é a varredura
@@ -62,6 +63,52 @@ gravar no corpus (`midias_ia_*`, Postgres `pgsql_midias`) e no bucket.
 Os levantamentos em `var/estrategias.xlsx` e nas planilhas auxiliares são a base existente.
 Percentual sobre a união de candidatos recentes não comprova cobertura das seções do site.
 O trabalho segue esta ordem:
+
+A varredura aberta foi encerrada em 2026-10-17 por decisão do usuário. A prioridade passou
+a ser consolidar os checkpoints e complementar lacunas de cobertura, mantendo caminhos não
+explorados e restrições explícitos. O encerramento não significa que todas as seções foram
+descobertas. As próximas execuções têm orçamento total por fonte e prazo global, além dos
+limites por lote: 200 chamadas à pilha HTTP e 180 segundos por fonte, 1800 segundos para a
+exploração do conjunto, configuráveis. Páginas, robots e mecanismos compartilham o saldo.
+O prazo é conferido antes da próxima chamada; requisições em andamento usam os timeouts
+existentes, e exportação fica à parte. O inventário permanece retomável ao atingir o teto.
+`--report-only --priorities-only` classifica as fontes para complementação: ausência de
+mecanismo recente confirmado, lacunas nas amostras, acesso/estrutura a revisar e amostras
+correspondentes. Isso não altera a estratégia de coleta nem inicia novas buscas.
+
+O piloto dirigido posterior conferiu 20 fontes em 257 segundos/523 chamadas: 15 tiveram
+ganho e 16.508 URLs distintas das mesmas amostras ganharam correspondência, sem perda nas
+anteriores. Foram encontrados 42 mecanismos recentes novos; 68 endereços recentes, incluindo
+reavaliações, ficaram como dicas reutilizáveis. As prioridades globais passaram a 152/818/280/44.
+A descoberta isolada em cinco fontes validou união e deduplicação. A seleção orientada a
+sitemaps de notícias/feeds datados acrescentou 345 candidatas com publicação declarada nas
+últimas 48 horas, além dos principais escolhidos para o piloto. Índices amplos também
+acrescentaram URLs, mas trouxeram muito arquivo e atingiram o orçamento em uma segunda leitura.
+O ganho deve ser medido com recência e tipo de data, mantendo as limitações de amostra e
+orçamento: `lastmod` não comprova publicação e URLs aceitas por L0 não são artigos confirmados.
+Resultados: `var/piloto-resultados.xlsx` e `var/piloto-validacao-final.json`.
+Os pilotos isolados não alteraram estratégias, estado incremental, corpus ou cron e não
+utilizaram serviços pagos. A integração automática foi implementada depois: lê complementos
+gravados e o plano validado das cinco fontes em `data/plano_descoberta.json`, sem reabrir
+o inventário. O principal usa a reserva somente se falhar; complementos acrescentam URLs
+mesmo se ele servir. A união canônica preserva publicação declarada e checkpoints dos filhos;
+falhas parciais não descartam os demais resultados. O padrão limita o conjunto a três
+complementos, 40 chamadas gratuitas e 120 segundos para iniciar chamadas por fonte, incluindo
+robots e fallback gratuito (redirecionamentos/retentativas internos ficam à parte). Os
+limites existentes por mecanismo continuam valendo. A origem `combined` exige SQL 007;
+sem essa migração, o comando para antes do HTTP. Regras manuais, escopo e robots se aplicam
+também aos complementos. Catálogos personalizados exigem plano explícito; `--no-strategy`
+desliga as escolhas e o plano, e `--max-complements 0` desliga a união.
+
+A validação da integração pelo CLI real usou apenas HTTP gratuito e estado incremental em
+um schema descartável do banco de testes: cinco fontes, duas leituras, todas sem falhas ou
+leituras parciais. A primeira reuniu 6.053 URLs candidatas, 2.425 adicionais dos complementos;
+352 dessas adicionais tinham publicação declarada nas últimas 48 horas. A segunda registrou
+zero URLs novas e pulou dois filhos com checkpoint inalterado. Foram 68 chamadas HTTP de
+transporte. Isso valida a integração e a deduplicação, sem comprovar cobertura total ou
+relevância das notícias. Relatórios: `var/integracao-complementos-piloto.xlsx` e
+`var/integracao-complementos-piloto.json`. A migração 007 foi aplicada no Postgres local,
+preservando os 180 registros de rodadas existentes; o corpus e o cron não foram alterados.
 
 1. Inventário persistente, completo e retomável das páginas candidatas a seção: primeira
    implementação em `map-sites`, com checkpoint por página, origem, fila e falhas explícitas
@@ -108,7 +155,9 @@ O trabalho segue esta ordem:
    no relatório. A seleção é heurística e não muda a estratégia de coleta automaticamente.
    Manter seções sem publicação recente no inventário.
 4. Conferir um piloto de estruturas diferentes e depois ampliar aos 1.294 registros, em lotes.
-5. Fazer a descoberta consumir o conjunto validado, deduplicando as matérias.
+5. **Implementado:** a descoberta consome o conjunto validado, deduplica as candidatas e
+   conserva as regras incrementais, os checkpoints e os limites por fonte. A ampliação para
+   novas fontes permanece dirigida pelas prioridades; não há varredura aberta automática.
 
 O inventário e a coleta são comandos independentes. `ok` numa página significa leitura, não
 cobertura validada. Esgotar o orçamento deixa fila pendente; esgotar a fila reconhecida também

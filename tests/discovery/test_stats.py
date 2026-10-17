@@ -174,11 +174,16 @@ def test_rodada_conta_de_que_fonte_veio_cada_site():
         run, SiteRunRecord("d.com", "ok", 0, 0, 0, 1, 1, 0, "", source="sitemap_bd")
     )
     store.record_site_run(run, SiteRunRecord("e.com", "ok", 0, 0, 0, 1, 1, 0, "", source="sitemap"))
+    store.record_site_run(
+        run, SiteRunRecord("f.com", "ok", 0, 0, 0, 1, 1, 0, "", source="combined")
+    )
 
     summary = build_report(store).runs[0]
 
     assert (summary.via_sitemap, summary.via_feed, summary.via_paid) == (1, 2, 1)
+    assert summary.via_combined == 1
     assert "fontes: sitemap 1, feed 2, sitemap pago 1" in format_report(build_report(store))
+    assert "conjunto 1" in format_report(build_report(store))
 
 
 def test_relatorio_so_fala_das_fontes_quando_feed_ou_pago_foram_usados():

@@ -107,14 +107,18 @@ scripts/bm.sh map-sites --only folha.uol.com.br g1.globo.com m28investigates.com
     --pages-per-site 10 --out var/mapa-sites-piloto.xlsx
 # Repetir o comando continua pela fila, sem reler as páginas concluídas.
 scripts/bm.sh map-sites --report-only --out var/mapa-sites.xlsx  # catálogo inteiro, sem rede
+# Relatório curto para priorizar lacunas (somente leitura, sem HTTP):
+scripts/bm.sh map-sites --report-only --priorities-only --out var/mapa-prioridades.xlsx
 scripts/bm.sh map-sites --retry-failed --only folha.uol.com.br  # nova tentativa das falhas
 # Atualiza a amostra da página e confere mecanismos (DDL 005 aplicado):
 scripts/bm.sh map-sites --only g1.globo.com --refresh-pages --pages-per-site 12 \
     --validate-sources --source-requests 20 --out var/mapa-sites-piloto.xlsx
 scripts/bm.sh map-sites --only g1.globo.com --sources-only --source-requests 20
-# Consome as filas sem exigir uma confirmação para cada rodada:
-scripts/bm.sh map-sites --drain --retry-failed --validate-sources \
-    --pages-per-site 100 --source-requests 20 --workers 24 --out var/mapa-sites-completo.xlsx
+# Complementação dos mecanismos nas seções já mapeadas, com seleção limitada:
+scripts/bm.sh map-sites --drain --sources-only \
+    --only-file var/mapa-complementacao-piloto.txt \
+    --source-requests 20 --max-site-requests 200 --max-site-seconds 180 \
+    --max-run-seconds 1800 --workers 4 --out var/mapa-complementacao.xlsx
 ```
 
 Cada página processada grava um checkpoint atômico com as novas pendências no Postgres. Home e
@@ -150,9 +154,17 @@ O limite de páginas vale **por lote** (inclui páginas proibidas; robots é uma
 A execução usa somente HTTP gratuito, respeita robots e intervalo por host; não chama LLM,
 Bright Data, enriquecimento ou escrita no corpus.
 
-Com **`--drain`**, `--pages-per-site` é o tamanho de cada lote interno: a fonte continua até
-esgotar as pendências reconhecidas ou não conseguir avançar, mantendo as pendências bloqueadas
-no inventário. Falhas e releituras só entram no primeiro lote interno. As fontes são independentes:
+Com **`--drain`**, `--pages-per-site` é o tamanho de cada lote interno. Há também limites totais
+por execução: `--max-site-requests` (padrão 200 chamadas à pilha HTTP por fonte),
+`--max-site-seconds` (180 segundos por fonte) e `--max-run-seconds` (1800 segundos de exploração
+para o conjunto, incluindo a espera das fontes na fila de workers). O saldo da fonte é
+compartilhado entre páginas, robots, mecanismos e todos os lotes; redirecionamentos e
+retentativas internos da pilha não são contados separadamente. Os prazos são conferidos antes
+de cada nova chamada: uma chamada em andamento termina sob os timeouts HTTP existentes.
+A exportação fica fora desse prazo. Atingir o limite mantém as pendências e registra o motivo
+na entrada, sem marcar páginas como falhas de rede ou declarar a fonte concluída.
+A fonte também para ao esgotar as pendências reconhecidas ou deixar de avançar.
+Falhas e releituras só entram no primeiro lote interno. As fontes são independentes:
 uma falha não interrompe as demais. O modo contínuo não mantém em memória o cache HTTP dos hosts
 compartilhados e atualiza o relógio entre lotes. Na auditoria, continua pelos mecanismos ainda não
 tentados nesta execução e pelos novos feeds revelados por índices HTML; `--source-requests` vale
@@ -234,6 +246,18 @@ Cobertura, mas não recebem indicação de complemento. A sugestão inclui datas
 links correspondentes, ganho incremental e aviso de leitura parcial; não garante o menor conjunto
 possível, cobertura futura ou cobertura de links não observados. As lacunas continuam explícitas.
 Essa indicação é só um relatório: ainda não configura a coleta ou o cron.
+
+**Prioridades de cobertura:** `--report-only --priorities-only` exporta uma linha por fonte,
+sem HTTP nem alterações no banco. Prioridade 1: há leitura válida, mas nenhum mecanismo
+recente confirmado; prioridade 2: existem mecanismos recentes, mas faltam correspondências
+ou associação por seção; prioridade 3: entrada sem leitura válida ou bloqueada, para revisão;
+prioridade 4: as amostras disponíveis têm correspondência completa. Seções sem amostra e
+pendências continuam explícitas mesmo na prioridade 4. Um mecanismo recente precisa ser
+RSS/Atom ou sitemap lido nas últimas 24 horas, com veredito `fresh`/`slow` e URLs no escopo
+original da fonte. Feeds sem datas são contados separadamente, para conferência.
+As quantidades de links somam ocorrências nas amostras das páginas; não são notícias únicas.
+O relatório orienta complementações com orçamento definido, sem alterar estratégias ou
+disparar varreduras. A coleta deve ser validada depois em um piloto.
 
 A aba **Revisão** mostra as entradas com falha ou observação, mantendo estado, motivo e quantidade
 de páginas lidas na fonte. Distingue proibição explícita de robots de falha ao baixar o arquivo:
@@ -350,10 +374,102 @@ consolidado, das quais 1.004 têm ao menos uma página lida com sucesso.
 Os 595 mecanismos conferidos encontram completamente 164 amostras e parcialmente 458; 237
 amostras não têm correspondência nos documentos lidos. A aba Complementos registra 374
 indicações que acrescentam links além do primeiro mecanismo sugerido por seção.
-`var/mapa-sites.xlsx` e `var/mapa-resumo.json` guardam essa fotografia; a fila de continuidade
-em `var/mapa-secoes-proximo.txt` contém 791 fontes com leitura válida e pendências.
-`var/mapa-revisao-entradas.csv` mantém 299 entradas para revisão e
-`var/mapa-retentativas-proximo.txt` separa as falhas transitórias fora da fila principal.
+Naquela fotografia, a fila de continuidade tinha 791 fontes com leitura válida e pendências
+e havia 299 entradas para revisão. Os arquivos principais são atualizados pela consolidação
+mais recente; as planilhas com sufixo de lote preservam os resultados anteriores.
+
+**Encerramento da varredura aberta (2026-10-17):** os quatro processos foram interrompidos
+por decisão do usuário para consolidar checkpoints e priorizar lacunas de cobertura.
+Nenhuma nova varredura geral ou complementação foi iniciada. A normalização final preservou
+amostras, títulos e datas ao atualizar 21 classificações antigas de taxonomias/serviços.
+O inventário detalhado fica em `var/mapa-sites.xlsx`; a visão curta para orientar o próximo
+trabalho fica em `var/mapa-prioridades.xlsx` e `var/mapa-prioridades.csv`.
+`var/mapa-encerramento.json` registra o motivo e os hashes das filas estruturais preservadas;
+`var/mapa-diagnostico-final.json` distingue essas filas das origens suspensas por conexão/robots.
+`var/mapa-resumo.json` guarda os totais da consolidação. As listas de seções, mecanismos e
+retentativas representam pendências disponíveis para revisão, sem execução automática.
+`var/mapa-complementacao-piloto.txt` propõe até 20 fontes de prioridade 1 com amostra existente,
+ordenadas pelo número de ocorrências sem correspondência. A execução posterior desse piloto
+está descrita abaixo; essa lista preserva a seleção inicial.
+A planilha parcial `var/mapa-sites-parcial-atual.xlsx` permanece como fotografia anterior.
+
+Fotografia consolidada desse encerramento: 1.294 fontes, 1.014 com leitura válida,
+272.161 páginas lidas, 27.711 páginas identificadas como seção por metadados e
+64.286 mecanismos conferidos. Permanecem 25.256 páginas pendentes em 142 fontes;
+isso inclui filas preservadas para consolidação e origens suspensas por acesso/conexão.
+Das amostras, 23.211 têm correspondência completa, 58.647 parcial e 85.895 não têm
+correspondência nos mecanismos medidos. Há 30.559 sugestões incrementais além do primeiro
+mecanismo por seção. Os totais de páginas e amostras são registros por fonte/URL, não notícias
+únicas nem comprovação de cobertura total. O XLSX detalhado usa 17 abas com continuações
+numeradas para respeitar o limite de linhas do Excel.
+
+O relatório curto separa 167 fontes na prioridade 1, 803 na prioridade 2, 280 na prioridade 3
+(223 com acesso bloqueado e 57 sem leitura estrutural válida) e 44 na prioridade 4.
+
+**Piloto de complementação e descoberta (2026-10-17):** as 20 fontes selecionadas foram
+conferidas com teto de 60 chamadas à pilha HTTP/90 segundos por fonte e 600 segundos globais.
+Como 17 não tinham fila automática de mecanismos, a conferência também usou mecanismos
+observados, sitemaps declarados no robots e caminhos usuais de RSS/sitemap, respeitando as
+exclusões manuais. Foram 523 chamadas em 257 segundos, com 302 leituras/reavaliações e sem
+erros de processamento. Houve ganho em 15 fontes: 16.508 URLs distintas das amostras passaram
+a ter correspondência, sem perda de correspondências anteriores. As 658.121 ocorrências
+adicionais repetem URLs entre páginas; não representam essa quantidade de notícias únicas.
+Foram encontrados 42 mecanismos novos com conteúdo recente e exportados 68 endereços recentes
+reutilizáveis, incluindo mecanismos reavaliados.
+
+A comparação usou as mesmas páginas/amostras congeladas, com verificação de integridade
+antes/depois. As 25.256 pendências estruturais ficaram preservadas. As prioridades globais
+passaram a 152 fontes na prioridade 1, 818 na prioridade 2, 280 na prioridade 3 e 44 na 4.
+As cinco fontes do piloto ainda sem mecanismo recente confirmado são `elpais.com`,
+`chinadaily.com.cn`, `chinafile.com`, `rtc.cv` e `caixin.com`; os motivos estão em
+`var/piloto-revisao-pendencias.csv`.
+
+A descoberta foi validada separadamente em Times of India, Respekt, La Stampa, Jeune Afrique
+e Mediapart, com os parsers de produção, união por hash canônico e duas leituras.
+O controle com índices amplos encontrou 62.728 candidatas na primeira leitura, 21.660 além
+do mecanismo principal do piloto; 79 dessas adicionais tinham publicação declarada nas
+últimas 48 horas. Sua segunda leitura em Times of India ficou parcial ao atingir o orçamento.
+A checagem priorizando sitemaps de notícias e feeds datados teve duas leituras concluídas
+nas cinco fontes, 60 chamadas e 6.046 candidatas na primeira leitura: 2.418 adicionais,
+das quais 345 com publicação declarada nas últimas 48 horas. Os limites dessa checagem foram
+20 chamadas/60 segundos por fonte e 180 segundos globais. Os dois testes têm seleções e
+orçamentos distintos e não estimam a cobertura total dos sites.
+
+O resultado reforça a seleção por recência, publicação declarada e ganho incremental, além
+da correspondência das amostras. `lastmod` de sitemap não comprova publicação; as URLs ainda
+são candidatas pelo filtro L0, sem leitura dos artigos ou análise de entidades.
+O piloto não alterou estratégias, estado incremental, corpus ou cron e não usou LLM nem
+serviços pagos. A união validada agora faz parte do fluxo automático de descoberta, conforme
+as regras e os limites abaixo.
+
+Arquivos deste piloto:
+
+- `var/piloto-resultados.xlsx`: visão curta com complementação, descoberta, prioridades das
+  1.294 fontes e mecanismos reutilizáveis.
+- `var/piloto-validacao-final.json`: métricas, verificações e limitações dos testes.
+- `var/mapa-prioridades-pos-piloto.xlsx` e `.csv`: prioridades globais atualizadas.
+- `var/piloto-complementacao-resultado.xlsx`: ganho por seção e comparação antes/depois.
+- `var/piloto-descoberta-resultado.xlsx` e `var/piloto-descoberta-recente-resultado.xlsx`:
+  resultados e URLs das duas seleções de descoberta.
+- `var/piloto-mecanismos-validados.csv`: dicas compatíveis com `--hints`, sem alterar os CSVs
+  manuais; a validade de um endpoint continua sujeita a nova conferência.
+- `var/piloto-proximas-fontes.txt`: próxima seleção de até 20 fontes ainda na prioridade 1,
+  excluindo as já tentadas; preparada para pesquisa dirigida, sem execução automática.
+
+`var/mapa-sites.xlsx`, `var/mapa-resumo.json` e `var/mapa-prioridades.xlsx` continuam sendo a
+fotografia histórica do encerramento anterior. As auditorias novas estão no banco e nos
+arquivos específicos deste piloto; a planilha detalhada de 556 MB não foi regenerada.
+
+Exemplo de reavaliação limitada dos mecanismos encontrados, depois da janela de cache ou
+com novas amostras (não inicia pesquisa automática de endpoints ausentes):
+
+```bash
+scripts/bm.sh map-sites --sources-only --drain \
+    --only-file var/mapa-complementacao-piloto.txt \
+    --hints data/discovery_hints.csv data/hints_manuais.csv var/piloto-mecanismos-validados.csv \
+    --source-requests 20 --max-site-requests 60 --max-site-seconds 90 \
+    --max-run-seconds 600 --workers 4 --out var/mapa-reavaliacao-piloto.xlsx
+```
 
 Cada rodada devolve só o que ainda não vimos. O estado vive no **Postgres** (tabelas `midias_crawler_*`, veja "Estado" abaixo).
 
@@ -365,7 +481,11 @@ Cada rodada devolve só o que ainda não vimos. O estado vive no **Postgres** (t
 
 ### Cascata de fontes: sitemap, feed e Bright Data
 
-Para cada site, a primeira fonte que traz URLs encerra a tentativa (`site_runs.source` guarda qual):
+Para cada site com complementos escolhidos, a descoberta tenta o principal (ou a reserva se
+o principal falhar) e lê os complementos selecionados. Une as URLs pelo hash canônico e guarda
+`site_runs.source=combined` quando mais de um mecanismo contribui. Se nenhum mecanismo do
+conjunto servir, segue a cascata abaixo; nessa cascata, a primeira fonte que traz URLs encerra
+a tentativa. Sem complementos, preserva a tentativa sequencial do principal e da reserva:
 
 1. **Sitemap gratuito** (`sitemap`).
 2. **Feed RSS/Atom gratuito** (`feed`): os feeds que a home declara (até 3) ou, sem declaração,
@@ -396,11 +516,12 @@ A cascata acima, sozinha, roda do zero a cada rodada e não lembra o que funcion
 descobre, **uma vez por fonte**, qual endereço entrega as matérias novas e grava a escolha (tabela
 `midias_crawler_source_strategies`, `sql/postgres/002_...`).
 
-**O `discover` (e, portanto, o `run` e o cron) já usa a escolha:** para cada fonte tenta primeiro o
-principal, depois a reserva, e só então a cascata de sempre (sitemap do `robots.txt`, feed, Bright
-Data) como plano B. Se o endereço escolhido mudou ou quebrou, a fonte não fica sem descoberta.
-`--no-strategy` (no `discover` e no `run`) ignora a escolha. Fonte sem estratégia gravada segue só a
-cascata. Um host que já precisou do Bright Data não tem a estratégia de sitemap tentada de graça.
+**O `discover` (e, portanto, o `run`) usa principal, reserva e complementos gravados.**
+A reserva entra se o principal falhar; os complementos são lidos mesmo quando ele funciona.
+A cascata de sempre (sitemap do `robots.txt`, feed, Bright Data) fica como plano B se o conjunto
+não render URLs. `--no-strategy` ignora as escolhas e o plano de descoberta. Fonte sem estratégia
+segue a cascata. Um host que já precisou do Bright Data não tem a estratégia de sitemap tentada
+de graça quando o acesso pago está habilitado. Esta integração não altera o agendamento.
 Medição de 2026-10-16 (20 fontes, uma rodada logo após a outra): a estratégia leu 41 sitemaps contra
 176 da cascata e achou o que ela deixou passar (g1: +1.258 URLs novas, que a cascata não alcançava
 no orçamento de sitemaps; El País: +46, que a cascata via bloqueado); nas outras 17 achou o mesmo.
@@ -440,9 +561,52 @@ sondagem mede, em cada candidato, **quantas seções do site** aparecem entre as
 das matérias recentes: o "site todo" que dá para ver. Cada candidato recebe a fração da união que
 lista (`coverage`). Depois do principal e da reserva, escolhem-se **complementos** (papel
 `complement`): a fonte que mais acrescenta matérias ainda não cobertas, até 3, e só se acrescentar
-pelo menos 5 matérias e 5% da união. `cover_share` diz quanto da união o conjunto cobre. **A
-descoberta ainda lê só o principal e a reserva**; ler o conjunto (principal + complementos) é o
-próximo passo.
+pelo menos 5 matérias e 5% da união. `cover_share` diz quanto da união o conjunto cobre.
+A descoberta consome os papéis `primary`, `backup` e `complement` gravados no banco, com
+deduplicação das URLs, preservação dos checkpoints dos filhos de todos os sitemaps lidos e
+preferência pela data de publicação quando uma mesma URL também aparece apenas com `lastmod`.
+Falha em um complemento preserva os resultados dos demais e registra leitura parcial.
+
+O catálogo padrão também usa `data/plano_descoberta.json`, com os mecanismos validados para
+Times of India, Respekt, La Stampa, Jeune Afrique e Mediapart. O primeiro mecanismo de cada
+fonte é o principal; os demais são complementos. O plano substitui essas escolhas em memória,
+preserva reservas já gravadas e não altera a tabela de estratégias. Catálogos personalizados
+só usam um plano com `--discovery-plan ARQUIVO`. O formato é uma lista de objetos
+`{"chave": "site", "mecanismos": [{"url": "https://site/sitemap.xml", "kind": "sitemap"}]}`;
+os tipos aceitos são `sitemap`, `news_sitemap` e `feed`. URLs externas, assinadas ou duplicadas
+são recusadas antes do HTTP. Regras manuais de exclusão continuam valendo para mecanismos e
+filhos; um principal forçado à mão prevalece sobre o plano padrão. Um plano explícito que
+conflite com essa regra é recusado. `--no-feed` também exclui complementos de feed.
+
+Limites de `discover` e `run` para o conjunto gratuito:
+
+- `--max-complements 3`: até três complementos por fonte; `0` desliga a união.
+- `--max-source-requests 40`: chamadas à pilha HTTP por fonte, compartilhadas com robots,
+  filhos dos sitemaps e fallback gratuito. Redirecionamentos e retentativas internos ficam
+  fora dessa contagem.
+- `--source-timeout 120`: segundos para iniciar novas chamadas do conjunto; uma chamada em
+  andamento termina pelos timeouts existentes. O limite não interrompe a resposta em curso.
+
+Esses dois últimos limites se aplicam às fontes com conjunto de complementos ou exclusões
+manuais. Os limites existentes de cada sitemap/feed continuam valendo nas demais fontes.
+Esgotar o orçamento ou omitir complementos pelo teto deixa leitura parcial explícita; não
+inicia outra exploração de seções. O fallback pago mantém seu teto separado de custo.
+Antes de iniciar uma rodada com complementos, o comando exige a migração SQL 007.
+
+```bash
+scripts/bm.sh discover --only lastampa.it mediapart.fr --max-complements 2 \
+    --max-source-requests 20 --source-timeout 60
+```
+
+A validação da integração pelo CLI real usou apenas HTTP gratuito e estado incremental em
+um schema descartável do banco de testes: cinco fontes, duas leituras, todas sem falhas ou
+leituras parciais. A primeira reuniu 6.053 URLs candidatas, 2.425 adicionais dos complementos;
+352 dessas adicionais tinham publicação declarada nas últimas 48 horas. A segunda registrou
+zero URLs novas e pulou dois filhos com checkpoint inalterado. Foram 68 chamadas HTTP de
+transporte. Isso valida a integração e a deduplicação, sem comprovar cobertura total ou
+relevância das notícias. Relatórios: `var/integracao-complementos-piloto.xlsx` e
+`var/integracao-complementos-piloto.json`. A migração 007 foi aplicada no Postgres local,
+preservando os 180 registros de rodadas existentes; o corpus e o cron não foram alterados.
 
 `export-strategies` gera a planilha para conferir (`var/estrategias.xlsx` por padrão; `.csv` grava
 um arquivo por aba):
@@ -807,7 +971,9 @@ Todo o estado (URLs vistas, rodadas, análises, evidências, gravações) vive n
   desfaz tudo. O inventário de seções usa `004_create_midias_crawler_section_pages.sql` e a
   conferência de mecanismos usa `005_create_midias_crawler_section_sources.sql`.
   Os campos de evidência do tipo e origem da candidata estão em
-  `006_add_midias_crawler_page_classification.sql`.
+  `006_add_midias_crawler_page_classification.sql`. A origem combinada da descoberta exige
+  `007_allow_combined_discovery.sql`, que amplia somente o CHECK de `site_runs.source`,
+  sem alterar registros ou tabelas do corpus.
   O buscador nunca cria nem altera tabelas: se faltarem, ele diz qual arquivo rodar. O mesmo DDL deve
   virar a migration do powerdd-backend. Tipos: datas em `timestamptz`, `themes` e `rejected_reasons`
   em `text[]`, `entities` em `jsonb`, `finding` e `created` em `boolean`.
