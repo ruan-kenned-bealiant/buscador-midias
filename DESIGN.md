@@ -71,9 +71,10 @@ O trabalho segue esta ordem:
    política, limites, DNS, TLS, rede, conteúdo e redirecionamento fora do escopo. Preserva o estado
    e o motivo e não dispara tentativas ou mudanças no catálogo automaticamente.
    Três falhas consecutivas de conexão na mesma origem, dentro do mesmo lote de páginas
-   ou passagem de auditoria, suspendem a passagem, mantendo
-   páginas/mecanismos não tentados pendentes e o motivo explícito. A retomada depende de
-   outra execução; `--drain` não reinicia automaticamente a passagem suspensa.
+   ou passagem de auditoria, suspendem somente aquela origem, mantendo suas páginas/mecanismos
+   não tentados pendentes e o motivo explícito. Demais hosts continuam sendo mapeados e
+   auditados, inclusive prefixos novos apontados pelos mecanismos. A suspensão é mantida entre
+   lotes e passagens da mesma execução; outra execução pode retomar a origem.
 2. Ampliar o reconhecimento de seções pela navegação e cruzar a estrutura com sitemaps; distinguir
    editorias, taxonomias e serviços. A heurística de URL atual ainda é limitada. Primeira
    classificação por evidência implementada (DDL 006): schemas da própria página, com proteção
