@@ -6,6 +6,7 @@ primeira tentativa da sondagem; quem decide é o que o endereço publica agora.
 
 from __future__ import annotations
 
+import codecs
 import csv
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
@@ -87,7 +88,7 @@ def load_hints(paths: Path | Sequence[Path]) -> SourceHints:
     for path in files:
         if not path.is_file():
             continue
-        with path.open(encoding="utf-8-sig", newline="") as handle:
+        with open_csv(path) as handle:
             for row in read_rows(handle):
                 key = normalize_domain(row.get(_DOMAIN_COLUMN) or "")
                 urls = by_key.setdefault(key, [])
@@ -103,6 +104,25 @@ def load_hints(paths: Path | Sequence[Path]) -> SourceHints:
                 if reference:
                     references.setdefault(key, reference)
     return SourceHints(by_key, references)
+
+
+def _invalid_byte_as_space(error: UnicodeError) -> tuple[str, int]:
+    """Troca o byte inválido por um espaço (``codecs`` error handler)."""
+    if isinstance(error, UnicodeDecodeError):
+        return " ", error.end
+    raise error
+
+
+codecs.register_error("bm_space", _invalid_byte_as_space)
+
+
+def open_csv(path: Path) -> TextIO:
+    """Abre um CSV de apoio em UTF-8; um byte inválido (espaço Latin-1 solto) vira espaço.
+
+    O levantamento passa por editores que alinham colunas e deixam bytes estranhos no
+    preenchimento; um deles não pode derrubar a leitura de todas as dicas.
+    """
+    return path.open(encoding="utf-8-sig", errors="bm_space", newline="")
 
 
 def read_rows(handle: TextIO) -> Iterator[dict[str, str]]:

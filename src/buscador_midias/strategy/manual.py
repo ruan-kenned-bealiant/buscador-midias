@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from buscador_midias.domain.site import Site
-from buscador_midias.strategy.hints import normalize_domain, read_rows
+from buscador_midias.strategy.hints import normalize_domain, open_csv, read_rows
 
 _ACTIONS = {"excluir": "exclude", "forcar": "force", "forçar": "force"}
 
@@ -64,7 +64,7 @@ def load_manual_rules(path: Path) -> ManualRulesBook:
     exclude: dict[str, list[str]] = {}
     force: dict[str, list[str]] = {}
     if path.is_file():
-        with path.open(encoding="utf-8-sig", newline="") as handle:
+        with open_csv(path) as handle:
             for line, row in enumerate(read_rows(handle), start=2):
                 action = _ACTIONS.get((row.get("acao") or "").lower())
                 url = row.get("endereco") or ""

@@ -148,3 +148,18 @@ def test_csv_com_colunas_alinhadas_por_espacos_continua_valendo(tmp_path: Path):
     hints = load_hints(path)
 
     assert hints.for_site(make_site("https://g1.globo.com")) == ("https://g1.globo.com/rss/",)
+
+
+def test_byte_invalido_no_preenchimento_do_editor_nao_derruba_a_leitura(tmp_path: Path):
+    """O levantamento tinha 0xA0 (NBSP em Latin-1) solto entre o domínio e a vírgula."""
+    path = tmp_path / "estranho.csv"
+    path.write_bytes(
+        b"nome, dominio, news_sitemap_url, rss_url, sitemap_url\n"
+        b"ftm, ftm.nl   \xa0   , , https://www.ftm.nl/rss, \n"
+        b"outra, outra.com, , https://outra.com/feed, \n"
+    )
+
+    hints = load_hints(path)
+
+    assert hints.for_site(make_site("https://ftm.nl")) == ("https://www.ftm.nl/rss",)
+    assert hints.for_site(make_site("https://outra.com")) == ("https://outra.com/feed",)

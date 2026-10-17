@@ -82,3 +82,14 @@ def test_is_excluded_vale_para_o_endereco_exato_e_para_o_prefixo_com_asterisco()
     assert is_excluded("https://a.com/tag/qualquer/coisa", rules)
     assert not is_excluded("https://a.com/x.xml?p=2", rules)
     assert not is_excluded("https://a.com/outro", rules)
+
+
+def test_byte_invalido_no_csv_manual_tambem_e_tolerado(tmp_path: Path):
+    path = tmp_path / "manuais.csv"
+    path.write_bytes(
+        b"dominio,endereco,acao,motivo\nexemplo.com,https://exemplo.com/a,excluir,sem\xa0motivo\n"
+    )
+
+    assert load_manual_rules(path).for_site(make_site("https://exemplo.com")).exclude == (
+        "https://exemplo.com/a",
+    )
