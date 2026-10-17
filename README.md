@@ -91,6 +91,230 @@ O relatório vai para `var/probe-report.csv` (ignorado pelo git). Respeita o `ro
 
 ## Descoberta incremental
 
+### Antes da coleta: inventário estrutural retomável
+
+O objetivo atual é mapear as fontes e suas seções antes de ampliar a coleta. As planilhas
+existentes em `var/` são os resultados anteriores; não precisam ser substituídas ou descartadas.
+`map-sites` inicia um inventário separado, mantendo a estratégia anterior como referência no
+relatório. Os nomes de seção truncados das planilhas antigas não viram URLs por adivinhação.
+
+```bash
+# Aplicar antes o DDL sql/postgres/004_create_midias_crawler_section_pages.sql.
+scripts/bm.sh map-sites --only folha.uol.com.br g1.globo.com m28investigates.com bbs.bt/news \
+    --pages-per-site 10 --out var/mapa-sites-piloto.xlsx
+# Repetir o comando continua pela fila, sem reler as páginas concluídas.
+scripts/bm.sh map-sites --report-only --out var/mapa-sites.xlsx  # catálogo inteiro, sem rede
+scripts/bm.sh map-sites --retry-failed --only folha.uol.com.br  # nova tentativa das falhas
+# Atualiza a amostra da página e confere mecanismos (DDL 005 aplicado):
+scripts/bm.sh map-sites --only g1.globo.com --refresh-pages --pages-per-site 12 \
+    --validate-sources --source-requests 20 --out var/mapa-sites-piloto.xlsx
+scripts/bm.sh map-sites --only g1.globo.com --sources-only --source-requests 20
+# Consome as filas sem exigir uma confirmação para cada rodada:
+scripts/bm.sh map-sites --drain --retry-failed --validate-sources \
+    --pages-per-site 100 --source-requests 20 --workers 24 --out var/mapa-sites-completo.xlsx
+```
+
+Cada página processada grava um checkpoint atômico com as novas pendências no Postgres. Home e
+candidatas a seção são exploradas seguindo novas seções. A entrada vem primeiro, depois as
+candidatas apontadas explicitamente na navegação e, por último, os palpites pelo formato da URL;
+dentro de cada grupo, páginas mais rasas primeiro. Guarda endereço, primeira
+página ou mecanismo que o apontou, título, links com aparência de matéria, feeds/sitemaps apontados, índices
+de feeds, tentativas e falhas. Tags, autores e diretórios de tópicos (`topic`, `topics`,
+`topics-list`, `themen`, `tagg`, `amnen`) ficam como taxonomias excluídas para revisão.
+Essa classificação também é
+aplicada às filas antigas ao retomá-las, preservando os registros e as amostras já salvas.
+Uma URL de entrada cadastrada nesses caminhos continua sendo lida.
+Rotas com três `category` consecutivos são preservadas como possível ciclo de navegação,
+sem continuar expandindo os links relativos. Seções profundas sem esse padrão continuam elegíveis.
+O limite de páginas vale **por lote** (inclui páginas proibidas; robots é uma requisição extra).
+A execução usa somente HTTP gratuito, respeita robots e intervalo por host; não chama LLM,
+Bright Data, enriquecimento ou escrita no corpus.
+
+Com **`--drain`**, `--pages-per-site` é o tamanho de cada lote interno: a fonte continua até
+esgotar as pendências reconhecidas ou não conseguir avançar, mantendo as pendências bloqueadas
+no inventário. Falhas e releituras só entram no primeiro lote interno. As fontes são independentes:
+uma falha não interrompe as demais. O modo contínuo não mantém em memória o cache HTTP dos hosts
+compartilhados e atualiza o relógio entre lotes. Na auditoria, continua pelos mecanismos ainda não
+tentados nesta execução e pelos novos feeds revelados por índices HTML; `--source-requests` vale
+por passagem. Uma leitura interrompida por orçamento permanece parcial e não é repetida
+indefinidamente. Esgotar a fila reconhecida não comprova cobertura de seções só em JavaScript.
+Depois da auditoria, o modo contínuo deriva candidatas dos prefixos de URLs listadas em
+feeds/sitemaps lidos (`mechanism_path`) e volta à exploração se houver caminhos novos. Mantém o
+escopo da fonte, não reabre páginas conhecidas e exclui datas, taxonomias e rotas de serviço.
+Um prefixo derivado continua `unknown` até ser lido: não é uma seção confirmada. A aba Fontes
+mostra essa origem separadamente; navegação explícita pode promovê-la na prioridade da fila.
+O inventário confere robots por caminho: uma entrada proibida não impede a leitura de uma
+subseção explicitamente permitida. Falha ao baixar a política mantém a fila suspensa.
+
+O relatório contém **Fontes**, **Páginas**, **Mecanismos**, **Amostras**, **Cobertura**, **Lacunas**,
+**Complementos** e **Revisão**,
+sem corte nas 40 maiores
+seções. Mecanismos inclui também todos os candidatos já sondados no banco (a base das planilhas
+anteriores), com o veredito anterior e sem inventar uma associação a uma seção.
+CSV gera um arquivo por aba. `--report-only` abre sessão somente leitura e inclui todas
+as fontes selecionadas, mesmo as ainda não iniciadas.
+Se uma aba exceder o limite de linhas do Excel, o XLSX continua em abas numeradas (`Amostras 2`,
+por exemplo), repetindo o cabeçalho sem descartar registros.
+
+**A exploração identifica candidatas, não comprova cobertura.** A classificação de seção
+ainda é heurística pela URL; não reconhece toda navegação (por exemplo seções só em JavaScript,
+URLs com query ou caminhos fora dos padrões atuais). Fila explorada significa apenas que os
+links reconhecidos acabaram. Nada disso liga `map-sites` ao cron.
+
+**Conferência de amostras:** `--validate-sources` mede os feeds/sitemaps apontados nas páginas,
+os candidatos úteis já sondados e as dicas existentes; `--sources-only` faz só essa etapa. O teto
+`--source-requests` conta leituras pela pilha HTTP, por fonte, incluindo robots de cada origem e
+filhos de índices; retentativas e redirecionamentos internos da pilha ficam à parte. As exclusões
+de `estrategias_manuais.csv` continuam valendo. Leituras ficam em
+`midias_crawler_section_sources` (DDL `005_create_midias_crawler_section_sources.sql`), com todas
+as URLs listadas, veredito, data, custo em leituras e indicação de leitura parcial. Há
+checkpoint por mecanismo. Endereços não tentados ficam para o lote seguinte; os já conferidos
+só entram novamente se a amostra da página for mais nova ou após 24 h. Leituras interrompidas
+por orçamento têm prioridade de retomada; `--retry-failed` também vale para falhas dos mecanismos.
+Páginas HTML que apontam feeds recebem `feed_index`: seus links alimentam a fila persistida,
+mas só a leitura dos feeds/sitemaps de destino pode comprovar correspondência com matérias.
+Paginação HTML em `/index/feed/pagina-N` recebe `html_pagination`: o nome do caminho não
+a transforma em feed, nem dispara uma varredura do arquivo histórico. Índices desse formato
+registrados antes da correção deixam de expandir a fila. XML válido continua sendo medido.
+Feeds cujos links apontam exclusivamente a comentários (`#comment-N` ou `replytocom`) recebem
+`comments_feed`, preservando as observações e sem comprovar cobertura de notícias. Em feeds
+mistos esses links também não entram na comparação canônica. A palavra `feed` no meio de um
+título de matéria não basta para descobrir um mecanismo.
+
+O relatório compara URLs canônicas e mostra, por página, quantos links da amostra aparecem nos
+mecanismos medidos e quais ficaram de fora. `sample_full` é **amostra coberta**, `partial` é
+correspondência parcial, `no_match` é nenhuma correspondência; `pending`, `not_read`, `no_sample`
+e `source_failed` distinguem falta de leitura, de amostra ou falhas dos mecanismos. Uma leitura
+anterior à página não comprova a amostra atual. Esses estados não afirmam cobertura total do site.
+
+A aba **Complementos** sugere mecanismos por seção pelo ganho observado: primeiro aquele que
+encontra mais links da amostra, depois os que acrescentam links ainda não encontrados. Em empate,
+prefere leitura não parcial e depois ordena pela URL. Mecanismos redundantes continuam na aba
+Cobertura, mas não recebem indicação de complemento. A sugestão inclui datas, quantidade de
+links correspondentes, ganho incremental e aviso de leitura parcial; não garante o menor conjunto
+possível, cobertura futura ou cobertura de links não observados. As lacunas continuam explícitas.
+Essa indicação é só um relatório: ainda não configura a coleta ou o cron.
+
+A aba **Revisão** mostra as entradas com falha ou observação, mantendo estado, motivo e quantidade
+de páginas lidas na fonte. Distingue proibição explícita de robots de falha ao baixar o arquivo:
+HTTP 403 em `robots.txt` não comprova uma regra de proibição, mas mantém as páginas suspensas.
+Também distingue limite de requisições, DNS transitório ou domínio a revisar, TLS, rede/HTTP
+transitório, acesso bloqueado, mudança de escopo e conteúdo inválido. **Falha transitória** indica
+apenas uma sugestão de tentativa limitada; não dispara retentativas nem altera catálogo, política
+robots, validação TLS ou intervalos. As falhas de subseções continuam na aba Páginas.
+
+Links de matérias em `<nav>`, `<footer>`, `<aside>` e elementos com `role="navigation"` não entram
+na amostra; quando há `<main>`, a amostra
+fica nesse conteúdo. `--refresh-pages` relê páginas concluídas para atualizar a amostra. As seções
+encontradas na navegação continuam entrando no inventário. Ainda falta ampliar o reconhecimento
+de navegação, resolver mecanismos para as lacunas e conferir seções com conteúdo só em JavaScript.
+
+**Primeiro lote do catálogo (2026-10-17):** as 1.294 fontes tiveram a entrada avaliada; 1.001
+tinham ao menos uma página lida com sucesso e 293 ficaram sem leitura válida. O inventário
+registrou 36.003 candidatas a seção/subseção e 36.049 páginas pendentes (incluindo entradas cuja
+leitura falhou antes de abrir a página). Isso não significa que as seções foram confirmadas ou
+que o mapeamento terminou. Resultado consolidado: `var/mapa-sites.xlsx`.
+No piloto (`var/mapa-sites-piloto.xlsx`), 35 mecanismos conferidos e 113 páginas lidas: 10 amostras
+com correspondência completa, 53 parcial, 39 sem correspondência nos documentos medidos e 11
+páginas sem amostra reconhecida. Os resultados são uma fotografia desse lote, não metas de cobertura.
+
+**Evidência do tipo de página (DDL 006):** a aba Páginas distingue `Tipo` (como o endereço entrou
+no inventário) de `Tipo identificado`, `Evidência do tipo` e `Como foi encontrada`. A classificação
+reconhece `CollectionPage` da própria URL como seção; um schema de artigo da própria URL com
+manchete e data como matéria; rotas inequívocas e schemas de serviço como serviço. Um artigo
+destacado com outra URL não muda o tipo da seção que o contém. `og:type=article` sozinho não
+basta; schema sem identidade só é aceito com manchete, data, og:type e H1 concordantes.
+Conflitos mantêm `unknown`, para revisão. Isso identifica o tipo, não a cobertura das notícias.
+
+Matérias e serviços ficam registrados, com motivo, mas não expandem a fila de seções nem entram
+nas métricas de cobertura por seção. As regras não apagam o histórico. Endereços como
+`/politica/index.html` passam a ser candidatos quando a navegação explícita os aponta.
+O reconhecimento continua heurístico; páginas antigas sem evidência permanecem `unknown` até
+nova leitura com `--refresh-pages`. Aplicar `sql/postgres/006_add_midias_crawler_page_classification.sql`
+antes de usar esta versão do mapeamento. As demais etapas não exigem esse DDL.
+
+**Segundo lote (2026-10-17):** até 3 páginas pendentes por fonte em 935 fontes com leitura válida,
+seguido de conferência em 20 fontes conhecidas. Acumulado: 3.793 páginas lidas, 44.520 candidatas
+a seção e 41.759 páginas pendentes. A fila cresceu porque as páginas abertas revelaram novas
+candidatas. A conferência das 20 fontes registrou 1.005 candidatas apontadas na navegação,
+18 páginas declaradas como seções nos metadados e 24 páginas de serviço. Relatório:
+`var/mapa-sites-validacao20.xlsx`; consolidado: `var/mapa-sites.xlsx`. A lista das 904 fontes
+selecionadas para a rodada seguinte foi preservada em `var/mapa-secoes-lote3-fontes.txt`.
+
+**Terceiro lote (2026-10-17):** até 5 páginas pendentes por fonte nas 904 fontes selecionadas,
+com resultado registrado para todas. Acumulado: 7.837 páginas lidas, 65.298 candidatas a seção e
+58.321 páginas pendentes. A classificação identificou 764 seções por metadados, 182 matérias e
+1.201 páginas de serviço; 20.013 candidatas foram apontadas na navegação. Esses números não
+comprovam cobertura total e a fila continua crescendo com as novas subseções encontradas.
+
+O consolidado tem 153 mecanismos conferidos: 45 amostras com correspondência completa, 119
+parciais e 72 sem correspondência nos documentos medidos. A aba Complementos registra 48
+indicações que acrescentam links além do primeiro mecanismo sugerido para cada seção.
+Os relatórios estão em `var/mapa-sites.xlsx`, `var/mapa-sites-lote3.xlsx` e
+`var/mapa-sites-validacao20.xlsx`. `var/mapa-resumo.json` guarda os totais dessa fotografia.
+`var/mapa-secoes-proximo.txt` foi atualizado com 860 fontes com leitura válida e fila aberta.
+`var/mapa-revisao-entradas.csv` separa 300 entradas que precisam de revisão: 137 casos ligados
+a robots, 94 bloqueios, 22 redirecionamentos, 13 falhas de DNS e 34 outras falhas de leitura.
+Algumas dessas fontes têm outras páginas lidas; o CSV informa essa contagem e preserva o motivo.
+
+**Quarto lote (2026-10-17):** até 3 páginas pendentes nas 860 fontes selecionadas, com resultado
+registrado para todas. Uma retentativa independente em 24 fontes com falhas transitórias obteve
+leitura inicial em `the-star.co.ke`, `rtnc.cd` e `syriadirect.org`; essas três fontes receberam
+uma etapa adicional de exploração e conferência de mecanismos. RTNC voltou a apresentar falha
+de DNS durante a expansão, mantida no relatório. Seleções preservadas em
+`var/mapa-secoes-lote4-fontes.txt`, `var/mapa-retentativas-lote4.txt` e
+`var/mapa-recuperadas-lote4.txt`.
+
+Também foram conferidos 137 mecanismos em 20 fontes adicionais de diferentes países, após
+concluírem a exploração desta rodada: 38 amostras com correspondência completa, 103 parciais e
+26 sem correspondência nos documentos lidos. Seleção:
+`var/mapa-conferencia-novas-lote4.txt`; relatório:
+`var/mapa-sites-conferencia-novas-lote4.xlsx`. A fotografia anterior do consolidado foi preservada
+em `var/mapa-sites-antes-lote4.xlsx` para comparação.
+
+Acumulado após o quarto lote: 10.164 páginas lidas, 73.360 candidatas a seção e 63.958 páginas
+pendentes. São 1.274 seções confirmadas por metadados e 21.607 candidatas apontadas na navegação.
+Os 301 mecanismos conferidos encontram completamente 87 amostras e parcialmente 228; 100 amostras
+não têm correspondência nos documentos lidos. A aba Complementos registra 198 indicações que
+acrescentam links além do primeiro mecanismo sugerido por seção.
+`var/mapa-sites.xlsx` e `var/mapa-resumo.json` são o consolidado desta fotografia.
+`var/mapa-secoes-proximo.txt` contém 832 fontes com leitura válida e fila aberta.
+`var/mapa-revisao-entradas.csv` agora é uma cópia da aba Revisão, com 299 entradas: 22 proibições
+explícitas de robots, 112 leituras bloqueadas do robots e os demais motivos separados, preservando
+o texto original. Há 25 entradas com indicação de falha transitória; as que estão fora da fila
+principal ficam em `var/mapa-retentativas-proximo.txt`, sem repetir a seleção principal.
+
+**Quinto lote (2026-10-17):** exploração de até 4 páginas por fonte nas 832 selecionadas e uma
+retentativa independente nas 18 fontes com falhas transitórias. Essas retentativas iniciais não
+obtiveram nova leitura de entrada. Após um diagnóstico de DNS, uma tentativa direcionada em
+`jornalnoticias.co.mz` obteve 3 páginas lidas, 20 candidatas a seção e 5 mecanismos conferidos.
+Relatório da fonte recuperada: `var/mapa-sites-jornalnoticias-lote5.xlsx`.
+
+O diagnóstico da fotografia anterior da fila encontrou 118 variações potenciais de esquema ou
+`www` entre 63.958 pendências. Não encontrou caminhos fortemente repetitivos pela heurística
+registrada em `var/mapa-fila-diagnostico-lote5.json`. As variações não foram tratadas como
+equivalências confirmadas nem descartadas do inventário.
+
+Foram conferidos 289 mecanismos em 40 fontes adicionais, sendo 20 brasileiras e 20 internacionais
+que tiveram novas páginas lidas nesta rodada: 75 amostras com correspondência completa, 229
+parciais e 137 sem correspondência nos documentos lidos. Seleção e relatório conjunto:
+`var/mapa-conferencia-novas-lote5.txt` e `var/mapa-sites-conferencia-novas-lote5.xlsx`.
+As listas da exploração e das retentativas estão em `var/mapa-secoes-lote5-fontes.txt` e
+`var/mapa-retentativas-lote5.txt`. A fotografia anterior foi preservada em
+`var/mapa-sites-antes-lote5.xlsx`.
+
+Todas as 832 fontes do lote tiveram resultado registrado. Acumulado após a rodada: 13.130 páginas
+lidas, 79.734 candidatas a seção e 67.236 páginas pendentes; 1.944 seções foram confirmadas por
+metadados e 23.132 candidatas foram apontadas na navegação. As 1.294 fontes continuam no
+consolidado, das quais 1.004 têm ao menos uma página lida com sucesso.
+Os 595 mecanismos conferidos encontram completamente 164 amostras e parcialmente 458; 237
+amostras não têm correspondência nos documentos lidos. A aba Complementos registra 374
+indicações que acrescentam links além do primeiro mecanismo sugerido por seção.
+`var/mapa-sites.xlsx` e `var/mapa-resumo.json` guardam essa fotografia; a fila de continuidade
+em `var/mapa-secoes-proximo.txt` contém 791 fontes com leitura válida e pendências.
+`var/mapa-revisao-entradas.csv` mantém 299 entradas para revisão e
+`var/mapa-retentativas-proximo.txt` separa as falhas transitórias fora da fila principal.
+
 Cada rodada devolve só o que ainda não vimos. O estado vive no **Postgres** (tabelas `midias_crawler_*`, veja "Estado" abaixo).
 
 ```bash
@@ -540,7 +764,10 @@ Todo o estado (URLs vistas, rodadas, análises, evidências, gravações) vive n
 - **Esquema:** `sql/postgres/001_create_midias_crawler_tables.sql` (13 tabelas) e
   `002_create_midias_crawler_source_strategies.sql` (a estratégia por fonte) e
   `003_create_midias_crawler_source_probe_state.sql` (quando reavaliar e por que falhou); `999_...`
-  desfaz tudo.
+  desfaz tudo. O inventário de seções usa `004_create_midias_crawler_section_pages.sql` e a
+  conferência de mecanismos usa `005_create_midias_crawler_section_sources.sql`.
+  Os campos de evidência do tipo e origem da candidata estão em
+  `006_add_midias_crawler_page_classification.sql`.
   O buscador nunca cria nem altera tabelas: se faltarem, ele diz qual arquivo rodar. O mesmo DDL deve
   virar a migration do powerdd-backend. Tipos: datas em `timestamptz`, `themes` e `rejected_reasons`
   em `text[]`, `entities` em `jsonb`, `finding` e `created` em `boolean`.

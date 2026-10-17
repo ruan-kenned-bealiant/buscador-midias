@@ -17,6 +17,7 @@ from psycopg.types.json import Jsonb
 
 from buscador_midias.criteria import MEETS_CRITERIA_SQL
 from buscador_midias.domain.discovered import DiscoveredUrl
+from buscador_midias.domain.mapping import MapPage, MapSource, PageStatus
 from buscador_midias.domain.roles import is_adverse_role
 from buscador_midias.domain.strategy import (
     CandidateOrigin,
@@ -608,6 +609,7 @@ class StateStore:
 
             connect = psycopg.connect
         self._lock = threading.RLock()
+        self._mapping_classification_ready = False
         self._conn = connect(
             host=values["DB_MIDIAS_IA_HOST"],
             port=values["DB_MIDIAS_IA_PORT"],
@@ -1588,6 +1590,94 @@ class StateStore:
             "pending_enrichment": self.count_pending_enrichment(),
             "pending_evidence": self.count_pending_evidence(),
         }
+
+    # --- inventário estrutural de seções ---
+
+    def mapping_pages(self, site_key: str) -> list[MapPage]:
+        """Páginas da fonte em ordem de descoberta, sem truncar o inventário.
+
+        O DDL novo só é exigido por quem usa o mapeamento: os demais comandos
+        continuam compatíveis com bancos que ainda não receberam os arquivos 004 e 006.
+        """
+        row = self._one("SELECT to_regclass('midias_crawler_section_pages')")
+        if row is None or row[0] is None:
+            raise StateSchemaError(
+                "rode sql/postgres/004_create_midias_crawler_section_pages.sql"
+            )
+        if not self._mapping_classification_ready:
+            exists = self._one(
+                "SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()"
+                " AND table_name = 'midias_crawler_section_pages' AND column_name = 'page_type'"
+            )
+            if exists is None:
+                raise StateSchemaError(
+                    'rode sql/postgres/006_add_midias_crawler_page_classification.sql'
+                )
+            self._mapping_classification_ready = True
+        rows = self._all(
+            "SELECT url, found_on, kind, status, title, article_urls, feeds, feed_indexes,"
+            " detail, attempts, checked_at, page_type, type_basis, discovery_basis"
+            " FROM midias_crawler_section_pages"
+            " WHERE site_key = %s ORDER BY id", (site_key,),
+        )
+        return [MapPage(
+            url=r[0], found_on=r[1], kind=r[2], status=PageStatus(r[3]), title=r[4],
+            article_urls=tuple(r[5]), feeds=tuple(r[6]), feed_indexes=tuple(r[7]),
+            detail=r[8], attempts=r[9], checked_at=r[10], page_type=r[11], type_basis=r[12],
+            discovery_basis=r[13],
+        ) for r in rows]
+
+    def save_mapping_pages(self, site_key: str, pages: Sequence[MapPage]) -> None:
+        """Grava o checkpoint e as páginas descobertas atomicamente, sem apagar outras."""
+        with self.transaction():
+            for p in pages:
+                self._run(
+                    "INSERT INTO midias_crawler_section_pages"
+                    " (site_key, url, found_on, kind, status, title, article_urls, feeds,"
+                    " feed_indexes, detail, attempts, checked_at, page_type, type_basis,"
+                    " discovery_basis)"
+                    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                    " ON CONFLICT (site_key, url) DO UPDATE SET status = EXCLUDED.status,"
+                    " title = EXCLUDED.title, article_urls = EXCLUDED.article_urls,"
+                    " feeds = EXCLUDED.feeds, feed_indexes = EXCLUDED.feed_indexes,"
+                    " detail = EXCLUDED.detail, attempts = EXCLUDED.attempts,"
+                    " checked_at = EXCLUDED.checked_at, page_type = EXCLUDED.page_type,"
+                    " type_basis = EXCLUDED.type_basis, discovery_basis = EXCLUDED.discovery_basis",
+                    (site_key, p.url, p.found_on, p.kind, p.status.value,
+                     _text(p.title) or "", Jsonb(_clean_json(list(p.article_urls))),
+                     Jsonb(_clean_json(list(p.feeds))), Jsonb(_clean_json(list(p.feed_indexes))),
+                     _text(p.detail) or "", p.attempts, p.checked_at, p.page_type, p.type_basis,
+                     p.discovery_basis),
+                )
+
+    def mapping_sources(self, site_key: str) -> list[MapSource]:
+        """Leituras dos mecanismos usadas para conferir as amostras das seções."""
+        row = self._one("SELECT to_regclass('midias_crawler_section_sources')")
+        if row is None or row[0] is None:
+            raise StateSchemaError(
+                "rode sql/postgres/005_create_midias_crawler_section_sources.sql"
+            )
+        rows = self._all(
+            "SELECT url, verdict, kind, listed_urls, checked_at, requests, partial, detail"
+            " FROM midias_crawler_section_sources WHERE site_key = %s ORDER BY url", (site_key,),
+        )
+        return [MapSource(r[0], r[1], r[2], tuple(r[3]), r[4], r[5], r[6], r[7]) for r in rows]
+
+    def save_mapping_sources(self, site_key: str, sources: Sequence[MapSource]) -> None:
+        """Persiste as leituras sem alterar as estratégias de descoberta existentes."""
+        with self.transaction():
+            for s in sources:
+                self._run(
+                    "INSERT INTO midias_crawler_section_sources"
+                    " (site_key, url, verdict, kind, listed_urls, checked_at, requests, partial,"
+                    " detail) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                    " ON CONFLICT (site_key, url) DO UPDATE SET verdict = EXCLUDED.verdict,"
+                    " kind = EXCLUDED.kind, listed_urls = EXCLUDED.listed_urls,"
+                    " checked_at = EXCLUDED.checked_at, requests = EXCLUDED.requests,"
+                    " partial = EXCLUDED.partial, detail = EXCLUDED.detail",
+                    (site_key, s.url, s.verdict, s.kind, Jsonb(list(s.listed_urls)), s.checked_at,
+                     s.requests, s.partial, _text(s.detail) or ''),
+                )
 
     # --- estratégia de descoberta por fonte ---
 

@@ -1,4 +1,6 @@
--- Desfaz os arquivos 001, 002 e 003 (ordem inversa das chaves estrangeiras).
+-- Desfaz os arquivos 001 a 006 (ordem inversa das chaves estrangeiras; 006 altera a tabela 004).
+DROP TABLE IF EXISTS midias_crawler_section_sources;
+DROP TABLE IF EXISTS midias_crawler_section_pages;
 DROP TABLE IF EXISTS midias_crawler_source_probe_state;
 DROP TABLE IF EXISTS midias_crawler_source_strategies;
 DROP TABLE IF EXISTS midias_crawler_corpus_writes;

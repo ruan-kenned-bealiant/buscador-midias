@@ -32,6 +32,34 @@ def test_envia_user_agent_configurado():
     assert seen == ["TesteBot/1.0"]
 
 
+def test_cookie_nao_ascii_nao_interrompe_site_e_preserva_cookies_validos():
+    seen = []
+
+    def handler(request):
+        seen.append(request.headers.get("cookie", ""))
+        return httpx.Response(200, content=b"ok")
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        client.cookies.set("valido", "sessao-publica", domain="exemplo.com", path="/")
+        client.cookies.set("invalido", "público", domain="exemplo.com", path="/")
+        result = HttpxFetcher(client).get("https://exemplo.com/noticias")
+        assert result.ok
+        assert len(seen) == 1 and "valido=sessao-publica" in seen[0]
+        assert "invalido" not in seen[0]
+
+
+def test_unicode_sem_cookie_invalido_vira_falha_sem_loop_de_retentativas():
+    calls = []
+
+    def handler(request):
+        calls.append(request.url)
+        raise UnicodeEncodeError("ascii", "ú", 0, 1, "fora de ASCII")
+
+    result = make_fetcher(handler).get("https://exemplo.com/noticias")
+    assert not result.ok and result.error.startswith("UnicodeEncodeError:")
+    assert len(calls) == 1
+
+
 def test_status_de_erro_nao_e_ok_e_nao_tem_excecao():
     result = make_fetcher(lambda r: httpx.Response(404)).get("https://exemplo.com/x")
 

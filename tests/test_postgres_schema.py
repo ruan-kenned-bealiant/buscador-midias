@@ -10,6 +10,8 @@ UP = "\n".join(path.read_text(encoding="utf-8") for path in sorted(SQL.glob("00*
 DOWN = (SQL / "999_drop_midias_crawler_tables.sql").read_text(encoding="utf-8")
 
 TABLES = {
+    "midias_crawler_section_sources",
+    "midias_crawler_section_pages",
     "midias_crawler_runs",
     "midias_crawler_urls",
     "midias_crawler_site_kind_counts",

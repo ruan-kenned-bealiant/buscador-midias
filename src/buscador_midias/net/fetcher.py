@@ -80,6 +80,30 @@ class HttpxFetcher:
             O resultado; falhas de transporte voltam em ``error`` com ``status=None``.
         """
         try:
+            return self._get_once(url)
+        except UnicodeEncodeError as error:
+            failure = str(error)
+            removed = False
+            for cookie in list(self._client.cookies.jar):
+                if any(
+                    value is not None and not value.isascii()
+                    for value in (cookie.name, cookie.value, cookie.domain, cookie.path)
+                ):
+                    try:
+                        self._client.cookies.jar.clear(cookie.domain, cookie.path, cookie.name)
+                        removed = True
+                    except KeyError:
+                        pass  # Outra thread já removeu esse cookie inválido.
+            if removed:
+                try:
+                    return self._get_once(url)
+                except UnicodeEncodeError as retry_error:
+                    failure = str(retry_error)
+            return FetchResult(url, None, b"", "UnicodeEncodeError: " + failure)
+
+    def _get_once(self, url: str) -> FetchResult:
+        """Executa a leitura; o chamador trata cookies não representáveis no cabeçalho."""
+        try:
             with self._client.stream("GET", url, headers=self._headers) as response:
                 chunks: list[bytes] = []
                 size = 0

@@ -57,6 +57,57 @@ gravar no corpus (`midias_ia_*`, Postgres `pgsql_midias`) e no bucket.
 
 ## Fases
 
+### Prioridade atual: mapa de cobertura antes da coleta ampla
+
+Os levantamentos em `var/estrategias.xlsx` e nas planilhas auxiliares são a base existente.
+Percentual sobre a união de candidatos recentes não comprova cobertura das seções do site.
+O trabalho segue esta ordem:
+
+1. Inventário persistente, completo e retomável das páginas candidatas a seção: primeira
+   implementação em `map-sites`, com checkpoint por página, origem, fila e falhas explícitas
+   (`004_create_midias_crawler_section_pages.sql`). Exporta catálogo, páginas, mecanismos
+   encontrados e amostras sem truncar o inventário. A estratégia anterior aparece como referência.
+   A aba Revisão distingue falhas das entradas: proibição explícita de robots, falha ao ler a
+   política, limites, DNS, TLS, rede, conteúdo e redirecionamento fora do escopo. Preserva o estado
+   e o motivo e não dispara tentativas ou mudanças no catálogo automaticamente.
+2. Ampliar o reconhecimento de seções pela navegação e cruzar a estrutura com sitemaps; distinguir
+   editorias, taxonomias e serviços. A heurística de URL atual ainda é limitada. Primeira
+   classificação por evidência implementada (DDL 006): schemas da própria página, com proteção
+   contra artigos destacados de outras URLs e metadados conflitantes; tipo desconhecido fica
+   para revisão. Registra navegação explícita, que passa à frente dos palpites de URL na fila.
+   Matérias e serviços reconhecidos não expandem a fila. A navegação também permite reconhecer
+   rotas de seção com extensão HTML/PHP, antes ignoradas.
+   Diretórios de tópicos (`topic`, `topics`, `topics-list`, `themen`, `tagg`, `amnen`) são taxonomias e ficam
+   preservados para revisão, inclusive quando já estavam pendentes antes dessa classificação.
+   A entrada cadastrada mantém prioridade e não é excluída por esse caminho.
+   A expansão relativa observada em `exit.al/category/category/category/...` é suspensa como
+   possível ciclo, mantendo os registros para revisão. Não impõe teto geral à profundidade.
+   O modo contínuo também cruza caminhos de matérias em mecanismos lidos com o inventário:
+   prefixos ainda desconhecidos entram como candidatas `mechanism_path`, respeitando escopo,
+   taxonomias, serviços e datas; seguem sem confirmação até leitura. A exploração e a auditoria
+   se repetem quando esses caminhos revelam páginas ou mecanismos novos.
+3. Validar e associar sitemap/feed/listagem a cada seção; comparar as matérias da seção com os
+   mecanismos encontrados. Primeira conferência de amostras implementada em `--validate-sources`:
+   lê mecanismos com orçamento incluindo robots/filhos, guarda as URLs em tabela separada (005)
+   e exporta correspondências e lacunas. Não declara cobertura total a partir da amostra.
+   Paginação HTML em `/index/feed/pagina-N` não é índice de feeds: não expande o histórico,
+   mesmo que tenha sido classificada como índice em uma execução anterior. A correção preserva
+   URLs observadas, custos e datas; XML válido nesse mesmo padrão continua sendo avaliado.
+   Links a comentários são identificados antes de remover fragmentos para comparar URLs:
+   feeds só de comentários ficam inválidos para cobertura, e feeds mistos não contabilizam
+   esses links. As observações originais permanecem disponíveis para revisão.
+   A aba Complementos sugere mecanismos pelo ganho incremental nos links observados por seção,
+   preservando datas, leituras parciais e lacunas. Reutiliza um índice de URLs canônicas por fonte
+   no relatório. A seleção é heurística e não muda a estratégia de coleta automaticamente.
+   Manter seções sem publicação recente no inventário.
+4. Conferir um piloto de estruturas diferentes e depois ampliar aos 1.294 registros, em lotes.
+5. Fazer a descoberta consumir o conjunto validado, deduplicando as matérias.
+
+O inventário e a coleta são comandos independentes. `ok` numa página significa leitura, não
+cobertura validada. Esgotar o orçamento deixa fila pendente; esgotar a fila reconhecida também
+não autoriza afirmar que todas as seções do site foram descobertas. A implementação inicial
+não muda o cron nem inicia coleta/enriquecimento/corpus.
+
 | Fase | Entrega | Critério de aceite |
 |---|---|---|
 | 0. Esqueleto | Projeto, catálogo de fontes | pytest/ruff/mypy verdes; 1294 únicas |

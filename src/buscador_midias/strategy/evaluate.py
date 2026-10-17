@@ -71,6 +71,7 @@ def evaluate_candidate(
     thematic_children: int = DEFAULT_THEMATIC_CHILDREN,
     allow_listing: bool = False,
     exclude: Sequence[str] = (),
+    include_listed_urls: bool = False,
 ) -> CandidateReport:
     """Sonda um candidato e devolve o relatório (nunca levanta por causa do site).
 
@@ -96,6 +97,8 @@ def evaluate_candidate(
         thematic_children: Quantos filhos se leem de um índice com várias famílias de arquivos.
         allow_listing: Se vale baixar um sitemap de listagem (só um endereço forçado à mão).
         exclude: Endereços que uma regra manual manda não baixar (também filhos de índice).
+        include_listed_urls: Retém todas as URLs para auditoria de cobertura. Desligado na
+            sondagem normal para não manter arquivos enormes em memória.
 
     Returns:
         O relatório, com veredito, medida e nota.
@@ -163,6 +166,8 @@ def evaluate_candidate(
     if verdict is Verdict.EMPTY and not detail:
         detail = "nenhuma URL da fonte"
     final = report(verdict, detail, kind, measure, score(measure, verdict, scoring))
+    if include_listed_urls:
+        final = replace(final, listed_urls=frozenset(i.url for i in items))
     if verdict is Verdict.FRESH:
         final = replace(final, recent_urls=frozenset(i.url for i in recent_of(items, now)))
     return final

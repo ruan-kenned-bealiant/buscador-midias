@@ -26,6 +26,7 @@ _HREF = re.compile(r"""<a\s[^>]*?href=["']([^"']+)["']""", re.IGNORECASE)
 # "feed", "feeds", "rss" ou "atom" como palavra do caminho: "feedback" não conta.
 _FEED_WORD = re.compile(r"(?:^|[/_.\-])(?:feeds?|rss|atom)(?:$|[/_.\-])", re.IGNORECASE)
 _FEED_EXTENSION = re.compile(r"\.(?:xml|rss|atom)$", re.IGNORECASE)
+_FEED_SEGMENT = re.compile(r"(?:^|/)(?:feeds?|rss|atom)(?:/|$)", re.IGNORECASE)
 _HTML_EXTENSION = re.compile(r"\.(?:html?|shtml|ghtml|php|aspx?)$", re.IGNORECASE)
 MODEL_MARK = "{section}"
 
@@ -64,6 +65,11 @@ def find_feed_sources(html: bytes, base_url: str, site: Site) -> PageSources:
         if "comment" in url.lower() or url in declared:
             continue
         if not (_FEED_EXTENSION.search(parts.path) or _FEED_WORD.search(parts.path)):
+            continue
+        if not (
+            _FEED_EXTENSION.search(parts.path) or _FEED_SEGMENT.search(parts.path)
+            or _HTML_EXTENSION.search(parts.path)
+        ) and any(len(s) >= 20 and s.count("-") >= 3 for s in parts.path.split("/")):
             continue
         if _HTML_EXTENSION.search(parts.path):
             indexes.setdefault(url, None)

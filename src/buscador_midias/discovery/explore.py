@@ -160,14 +160,21 @@ def _failed(status: ProbeStatus, detail: str, *, fetched: int = 0, skipped: int 
     return Exploration(status=status, detail=detail, sitemaps=(), fetched=fetched, skipped=skipped)
 
 
-def read_robots(site: Site, fetcher: Fetcher, user_agent: str) -> RobotsPolicy | Exploration:
+def read_robots(
+    site: Site, fetcher: Fetcher, user_agent: str, *, require_root: bool = True
+) -> RobotsPolicy | Exploration:
     """Baixa e interpreta o ``robots.txt`` do site (compartilhado por sitemap e feed).
+
+    ``require_root=False`` devolve a política mesmo quando ela proíbe a entrada,
+    para o inventário conferir cada caminho separadamente, inclusive exceções permitidas.
 
     Returns:
         A política a seguir, ou uma ``Exploration`` quando o desfecho já está decidido (bloqueio,
         erro ou acesso proibido pelo robots.txt).
     """
-    return _read_robots(site, fetcher.get(f"{_origin(site.url)}/robots.txt"), user_agent)
+    return _read_robots(
+        site, fetcher.get(f"{_origin(site.url)}/robots.txt"), user_agent, require_root=require_root
+    )
 
 
 def origin_of(url: str) -> str:
@@ -175,7 +182,9 @@ def origin_of(url: str) -> str:
     return _origin(url)
 
 
-def _read_robots(site: Site, result: FetchResult, user_agent: str) -> RobotsPolicy | Exploration:
+def _read_robots(
+    site: Site, result: FetchResult, user_agent: str, *, require_root: bool = True
+) -> RobotsPolicy | Exploration:
     """Interpreta a resposta do robots.txt.
 
     Returns:
@@ -195,7 +204,7 @@ def _read_robots(site: Site, result: FetchResult, user_agent: str) -> RobotsPoli
     else:
         return _failed(ProbeStatus.ERROR, f"robots.txt: HTTP {result.status}")
 
-    if not policy.allows(site.url, user_agent):
+    if require_root and not policy.allows(site.url, user_agent):
         return _failed(ProbeStatus.ROBOTS_DISALLOWED, "robots.txt proíbe o acesso à raiz")
     return policy
 

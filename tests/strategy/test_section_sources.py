@@ -64,6 +64,14 @@ def test_subdominio_do_site_vale_como_do_site():
     assert found.direct == ("https://feeds.exemplo.com/politica/rss.xml",)
 
 
+def test_palavra_feed_em_titulo_de_materia_nao_cria_indice_de_mecanismos():
+    found = find_feed_sources(
+        html("", a("/instagran-colocar-no-feed-e-prova-de-amor-infinito/"), a("/rss-noticias")),
+        HOME, make_site(),
+    )
+    assert found.direct == (HOME + "/rss-noticias",) and found.indexes == ()
+
+
 def test_sem_repeticao_e_na_ordem_em_que_aparecem():
     page = html(link("/feed"), link("/feed"), a("/rss.xml"), a("/rss.xml"))
 

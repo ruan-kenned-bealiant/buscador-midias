@@ -124,6 +124,8 @@ class CandidateReport:
             cobertura e não são gravadas.
         forced: Se um humano mandou usar este endereço (``estrategias_manuais.csv``); só na
             memória: o papel de principal é o que se grava.
+        listed_urls: Todas as URLs listadas, inclusive sem data; só em memória na sondagem.
+            A auditoria de cobertura as persiste separadamente para comparar amostras das seções.
     """
 
     url: str
@@ -140,6 +142,7 @@ class CandidateReport:
     cover_share: float | None = None
     recent_urls: frozenset[str] = field(default=frozenset(), compare=False, repr=False)
     forced: bool = field(default=False, compare=False)
+    listed_urls: frozenset[str] = field(default=frozenset(), compare=False, repr=False)
 
 
 @dataclass(frozen=True, slots=True)

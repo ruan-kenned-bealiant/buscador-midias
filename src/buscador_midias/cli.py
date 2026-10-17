@@ -84,6 +84,13 @@ from buscador_midias.strategy.health import (
 from buscador_midias.strategy.hints import load_hints
 from buscador_midias.strategy.listing import DEFAULT_MAX_PAGES as DEFAULT_LISTING_PAGES
 from buscador_midias.strategy.manual import load_manual_rules
+from buscador_midias.strategy.mapping import drain_site, map_site, sections_from_sources
+from buscador_midias.strategy.mapping_coverage import (
+    audit_sources,
+    normalize_source_audits,
+    plan_source_audit,
+)
+from buscador_midias.strategy.mapping_export import mapping_tables, write_mapping
 from buscador_midias.strategy.probe import (
     DEFAULT_MAX_REQUESTS,
     DEFAULT_SECTION_REQUESTS,
@@ -475,6 +482,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="Copia um estado antigo em SQLite (var/state.db) para o Postgres (destino vazio).",
     )
     migrate.add_argument("sqlite", type=Path, help="Arquivo SQLite do estado antigo.")
+    mapping = commands.add_parser(
+        "map-sites", help="Mapeia seções em lotes retomáveis, sem coletar notícias."
+    )
+    _add_site_args(mapping)
+    mapping.add_argument("--pages-per-site", type=int, default=50,
+                         help="Páginas processadas por fonte neste lote (padrão 50).")
+    mapping.add_argument("--drain", action="store_true",
+                         help="Repete lotes até esgotar a fila ou não conseguir avançar.")
+    mapping.add_argument("--workers", type=int, default=4, help="Fontes em paralelo.")
+    mapping.add_argument("--interval", type=float, default=1.0,
+                         help="Intervalo mínimo por host, em segundos.")
+    mapping.add_argument("--retry-failed", action="store_true",
+                         help="Tenta novamente as páginas com falha ou proibidas.")
+    mapping.add_argument("--report-only", action="store_true",
+                         help="Só exporta o inventário existente, sem rede ou gravação no banco.")
+    mapping.add_argument("--refresh-pages", action="store_true",
+                         help="Relê também páginas concluídas, atualizando suas amostras.")
+    mapping.add_argument("--validate-sources", action="store_true",
+                         help="Confere feeds/sitemaps contra as amostras das seções.")
+    mapping.add_argument("--sources-only", action="store_true",
+                         help="Só confere mecanismos das páginas já mapeadas.")
+    mapping.add_argument("--source-requests", type=int, default=20,
+                         help="Leituras por fonte; inclui robots e filhos (retentativas à parte).")
+    mapping.add_argument("--hints", type=Path, nargs='+',
+                         default=[DEFAULT_HINTS, DEFAULT_MANUAL_HINTS], help="CSVs de dicas.")
+    mapping.add_argument("--manual", type=Path, default=DEFAULT_MANUAL_RULES,
+                         help="Correções manuais; exclusões valem também na auditoria.")
+    mapping.add_argument("--out", type=Path, default=_REPO_ROOT / "var" / "mapa-sites.xlsx",
+                         help="Relatório .xlsx ou .csv (um CSV por aba).")
     return parser
 
 
@@ -594,6 +630,8 @@ def main(
     if sites is None:
         return 2
     reference = now or datetime.now(UTC)
+    if args.command == "map-sites":
+        return _map_sites(args, sites, fetcher, client, reference, live_clock=now is None)
     if args.command == "probe":
         return _probe(args, sites, fetcher, client, reference)
     if args.command == "probe-sources":
@@ -1189,6 +1227,144 @@ def _open_discovery_fetchers(
     limited = build_unlocker(http, os.environ, max_requests=args.bright_data_max_requests)
     paid = ThrottledFetcher(limited, min_interval=args.interval)
     return DiscoveryFetchers(free, paid, counter(limited))
+
+
+def _map_sites(
+    args: argparse.Namespace,
+    sites: Sequence[Site],
+    fetcher: Fetcher | None,
+    client: httpx.Client | None,
+    now: datetime,
+    *,
+    live_clock: bool = False,
+) -> int:
+    """Mapeia a estrutura com checkpoints e exporta o inventário inteiro."""
+    if (args.pages_per_site < 1 or args.workers < 1 or args.interval < 0
+            or args.source_requests < 1):
+        print("páginas/workers precisam ser positivos e intervalo não negativo", file=sys.stderr)
+        return 2
+    if args.out.suffix.lower() not in (".xlsx", ".csv"):
+        print("a saída precisa terminar em .xlsx ou .csv", file=sys.stderr)
+        return 2
+    failed = False
+    validating = args.validate_sources or args.sources_only
+    clock: Callable[[], datetime] = (lambda: datetime.now(UTC)) if live_clock else (lambda: now)
+    try:
+        manual = load_manual_rules(args.manual)
+        hints = load_hints(args.hints)
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 2
+    with ExitStack() as stack:
+        store = _open_state(read_only=args.report_only)
+        if store is None:
+            return 2
+        stack.callback(store.close)
+        try:
+            # Confere o DDL antes da primeira requisição.
+            pages = {site.key: store.mapping_pages(site.key) for site in sites}
+            candidates = store.strategy_rows()
+            checks = {site.key: store.mapping_sources(site.key) for site in sites}
+            for key, saved_checks in checks.items():
+                normalized = normalize_source_audits(saved_checks)
+                if not args.report_only:
+                    corrected = [a for a, b in zip(normalized, saved_checks, strict=True) if a != b]
+                    if corrected:
+                        store.save_mapping_sources(key, corrected)
+                checks[key] = normalized
+            previous = {key: r for key, r in store.chosen_strategies() if r.role is Role.PRIMARY}
+            if not args.report_only:
+                free = fetcher or build_fetcher(
+                    client=_open_http(client, stack), interval=args.interval,
+                    bright_data=False, env=os.environ, max_fallback_requests=0,
+                ).fetcher
+                if not args.drain:
+                    free = MemoizingFetcher(free, hosts=_shared_hosts(sites))
+
+                def visit_pass(site: Site, *, first: bool) -> None:
+                    if not args.sources_only:
+                        if args.drain:
+                            result = drain_site(
+                                site, free, store, user_agent=USER_AGENT,
+                                clock=clock, batch_pages=args.pages_per_site,
+                                retry_failed=args.retry_failed and first,
+                                refresh_pages=args.refresh_pages and first,
+                                on_batch=lambda batch: print(
+                                    f"{site.key}: lote lidas={batch.visited} "
+                                    f"pendentes={batch.pending}", flush=True,
+                                ),
+                            )
+                        else:
+                            result = map_site(
+                                site, free, store, user_agent=USER_AGENT, now=now,
+                                max_pages=args.pages_per_site, retry_failed=args.retry_failed,
+                                refresh_pages=args.refresh_pages,
+                            )
+                        print(f"{site.key}: seções={result.sections} lidas={result.visited} "
+                              f"pendentes={result.pending} falhas={result.issues} {result.detail}",
+                              flush=True)
+                    if validating:
+                        known = store.mapping_pages(site.key)
+                        attempted: set[str] = set()
+                        while True:
+                            audit_time = clock() if args.drain else now
+                            queue = plan_source_audit(
+                                site, known, store.mapping_sources(site.key),
+                                [r for key, r, _ in candidates if key == site.key], now=audit_time,
+                                hints=hints.for_site(site), forced=manual.for_site(site).force,
+                                retry_failed=args.retry_failed and first,
+                            )
+                            queue = [url for url in queue if url not in attempted]
+                            if not queue:
+                                break
+                            audited = audit_sources(
+                                site, free, queue, user_agent=USER_AGENT, now=audit_time,
+                                max_requests=args.source_requests,
+                                exclude=manual.for_site(site).exclude,
+                                on_source=lambda source: store.save_mapping_sources(
+                                    site.key, [source]
+                                ),
+                            )
+                            print(f'{site.key}: mecanismos conferidos={len(audited)}', flush=True)
+                            attempted.update(source.url for source in audited)
+                            if not args.drain or not audited:
+                                break
+
+                def visit(site: Site) -> None:
+                    first = True
+                    while True:
+                        visit_pass(site, first=first)
+                        first = False
+                        if not args.drain or args.sources_only:
+                            break
+                        additional = sections_from_sources(
+                            site, store.mapping_pages(site.key), store.mapping_sources(site.key)
+                        )
+                        if not additional:
+                            break
+                        store.save_mapping_pages(site.key, additional)
+                        print(f"{site.key}: candidatas em mecanismos={len(additional)}", flush=True)
+
+                with ThreadPoolExecutor(max_workers=args.workers) as pool:
+                    jobs = {pool.submit(visit, site): site.key for site in sites}
+                    for future in as_completed(jobs):
+                        try:
+                            future.result()
+                        except Exception as error:  # noqa: BLE001 - preserva os demais mapas
+                            failed = True
+                            print(f"{jobs[future]}: {type(error).__name__}; checkpoint preservado",
+                                  file=sys.stderr)
+                pages = {site.key: store.mapping_pages(site.key) for site in sites}
+                checks = {site.key: store.mapping_sources(site.key) for site in sites}
+            write_mapping(mapping_tables(sites, pages, previous, candidates, checks), args.out)
+        except (StateSchemaError, RuntimeError, OSError, psycopg.Error) as error:
+            message = str(error) if isinstance(error, (StateSchemaError, RuntimeError)) else (
+                type(error).__name__
+            )
+            print(message, file=sys.stderr)
+            return 2
+    print(f"Inventário de {len(sites)} fontes em {args.out}; cobertura de notícias não validada.")
+    return 1 if failed else 0
 
 
 def _probe_sources(
