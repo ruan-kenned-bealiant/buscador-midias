@@ -11,6 +11,30 @@ from enum import StrEnum
 from buscador_midias.domain.strategy import ProbeState, RoundHealth
 
 
+class Condition(StrEnum):
+    """Como está o padrão de leitura de uma fonte que tem estratégia gravada."""
+
+    BROKEN = "quebrou"
+    WATCH = "atenção"
+
+
+@dataclass(frozen=True, slots=True)
+class HealthFinding:
+    """O problema que as rodadas mostram numa fonte.
+
+    Attributes:
+        site_key: A fonte.
+        condition: ``BROKEN`` (a leitura não funciona mais) ou ``WATCH`` (funciona, mas algo mudou).
+        symptom: O que se observou, em uma frase.
+        history: As últimas rodadas desde a última sondagem, da mais nova para a mais antiga.
+    """
+
+    site_key: str
+    condition: Condition
+    symptom: str
+    history: str
+
+
 class DueReason(StrEnum):
     """Por que uma fonte está na vez de ser sondada."""
 
@@ -104,6 +128,55 @@ def due_reason(
     if _shrunk(since, policy):
         return DueReason.SHRUNK
     return None
+
+
+def diagnose(
+    site_key: str,
+    state: ProbeState | None,
+    rounds: Sequence[RoundHealth],
+    *,
+    has_strategy: bool,
+    policy: HealthPolicy,
+) -> HealthFinding | None:
+    """Diz se o padrão de leitura de uma fonte quebrou, ou se pede atenção.
+
+    Diferente de ``due_reason`` (quando sondar de novo), isto é o que se mostra ao humano:
+    o que já está quebrado, sem esperar a vez da reavaliação nem a espera crescente.
+
+    Args:
+        site_key: A fonte.
+        state: O estado da fonte (``None`` se nunca foi sondada).
+        rounds: As rodadas da fonte, da mais nova para a mais antiga.
+        has_strategy: Se há estratégia gravada (uma fonte que nunca teve padrão não "quebrou").
+        policy: Parâmetros da saúde.
+
+    Returns:
+        O achado, ou ``None`` se a fonte está bem (ou nunca teve padrão).
+    """
+    if state is None:
+        return None
+    since = [r for r in rounds if r.started_at > state.probed_at]
+    history = _history(since)
+    if not state.found:
+        if not has_strategy:
+            return None
+        symptom = "a sondagem mais recente não achou padrão (a estratégia antiga segue gravada)"
+        return HealthFinding(site_key, Condition.BROKEN, symptom, history)
+    if _failing(since, policy):
+        symptom = f"a leitura falhou nas últimas {policy.failure_rounds} rodadas"
+        return HealthFinding(site_key, Condition.BROKEN, symptom, history)
+    if _silent(since, rounds, policy):
+        symptom = f"sem URL nova nas últimas {policy.silence_rounds} rodadas (antes rendia)"
+        return HealthFinding(site_key, Condition.WATCH, symptom, history)
+    if _shrunk(since, policy):
+        symptom = "a lista encolheu: muito menos URLs que o de costume"
+        return HealthFinding(site_key, Condition.WATCH, symptom, history)
+    return None
+
+
+def _history(since: Sequence[RoundHealth], limit: int = 6) -> str:
+    """As últimas rodadas em uma linha: ``ok +7`` (URLs novas) ou ``falha``."""
+    return ", ".join(f"ok +{r.new_urls}" if _ok(r) else "falha" for r in since[:limit])
 
 
 def next_state(

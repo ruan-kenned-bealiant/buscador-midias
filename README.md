@@ -189,10 +189,13 @@ scripts/bm.sh export-strategies --out var/estrategias.xlsx       # as 1.294 font
 ```
 
 Abas: **Estratégia** (uma linha por fonte, inclusive as não sondadas e as sem estratégia, com o
-motivo), **Candidatos** (tudo o que foi baixado e medido, com veredito, seções e cobertura) e
-**Seções** (as seções mais frequentes de cada candidato escolhido). As colunas "Ref." trazem o que o
-levantamento de 07/10 estimou (categoria, itens/dia no feed, artigos/dia no GDELT) só para você
-comparar com a "Estimativa por dia" (união de 48 h ÷ 2). Precisa do extra `xlsx`
+motivo e, para as lentas, a data da última matéria), **Candidatos** (tudo o que foi baixado e medido,
+com veredito, seções e cobertura), **Seções** (as seções mais frequentes de cada candidato escolhido)
+e **Mapa de seções** (uma linha por seção vista em qualquer candidata da fonte, com a maior contagem,
+se o conjunto escolhido a lista e em qual papel; em site de URL plana, em que o primeiro trecho do
+caminho muda a cada matéria, só o aviso, porque ali não há seção para mapear). As colunas "Ref."
+trazem o que o levantamento de 07/10 estimou (categoria, itens/dia no feed, artigos/dia no GDELT) só
+para você comparar com a "Estimativa por dia" (união de 48 h ÷ 2). Precisa do extra `xlsx`
 (`pip install -e '.[xlsx]'`).
 
 **Dicas manuais** (`data/hints_manuais.csv`, além do levantamento): feeds que a home não declara e só
@@ -228,6 +231,23 @@ lendo os 3 mais recentes.
 
 **Fontes do mesmo host** (as dez do g1) baixam cada arquivo uma só vez por rodada de `probe-sources`
 (`net/memoizing.py`, só nesses hosts, para não guardar em memória o resto do catálogo).
+
+#### Relatório de quebras (`strategy-health`)
+
+Só leitura: mostra o que o humano precisa ver, sem esperar a vez da reavaliação.
+
+```bash
+scripts/bm.sh strategy-health                       # no terminal
+scripts/bm.sh strategy-health --out var/saude.csv   # e em CSV
+```
+
+- **QUEBROU:** a leitura falhou nas últimas rodadas desde a sondagem, ou a sondagem mais recente não
+  achou padrão e a estratégia antiga segue gravada (ela ainda é usada, mas ninguém sabe se serve).
+- **ATENÇÃO:** o padrão funciona, mas mudou: sem URL nova por várias rodadas numa fonte que rendia,
+  ou a lista encolheu muito.
+- Uma fonte que nunca teve padrão não "quebrou": aparece só em "sem estratégia" no resumo.
+
+A reavaliação automática (abaixo) tenta consertar sozinha; o relatório é o que sobra depois dela.
 
 #### Reavaliação automática (`probe-sources --due`, o passo 0 do `run`)
 

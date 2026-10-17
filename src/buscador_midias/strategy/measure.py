@@ -12,7 +12,7 @@ from buscador_midias.domain.strategy import Item, Measure, StrategyKind
 
 RECENT_WINDOW = timedelta(hours=48)
 OTHER_SECTION = "(outros)"
-MAX_TOP_SECTIONS = 12
+MAX_TOP_SECTIONS = 40
 # Sites que publicam em horário local sem fuso aparecem algumas horas "no futuro".
 FUTURE_TOLERANCE = timedelta(hours=14)
 
@@ -69,7 +69,8 @@ def recent_of(
 def section_of(url: str, prefix: str = "") -> str:
     """A seção do site a que a URL pertence: o primeiro segmento do caminho, sem o prefixo da fonte.
 
-    Datas, números e nomes de arquivo (``2026``, ``12345``, ``materia.html``) não são seção.
+    Datas, números e nomes de arquivo (``2026``, ``12345``, ``materia.html``) não são seção, nem um
+    caminho de um segmento só (``/titulo-da-materia``: o segmento é a própria matéria).
 
     Args:
         url: A URL da matéria.
@@ -81,7 +82,9 @@ def section_of(url: str, prefix: str = "") -> str:
     path = urlsplit(url).path
     if prefix and path.lower().startswith(prefix.lower()):
         path = path[len(prefix) :]
-    segment = next((part for part in path.split("/") if part), "").lower()
+    parts = [part for part in path.split("/") if part]
+    # Com um segmento só, ele é o título da matéria (URL plana), não uma seção.
+    segment = parts[0].lower() if len(parts) > 1 else ""
     if not segment or "." in segment or re.fullmatch(r"[\d_-]+", segment):
         return OTHER_SECTION
     return segment

@@ -146,7 +146,7 @@ def evaluate_candidate(
             )
             return report(worst.verdict, f"índice: {worst.detail}")
         kinds = {d.kind for d in documents}
-        kind = next(
+        kind: StrategyKind = next(
             k
             for k in (StrategyKind.NEWS_SITEMAP, StrategyKind.SITEMAP, StrategyKind.FEED)
             if k in kinds

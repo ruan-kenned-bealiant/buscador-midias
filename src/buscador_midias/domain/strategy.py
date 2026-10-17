@@ -8,11 +8,16 @@ from enum import StrEnum
 
 
 class StrategyKind(StrEnum):
-    """Que tipo de documento lista as matérias recentes de uma fonte."""
+    """Que tipo de documento lista as matérias recentes de uma fonte.
+
+    ``LISTING`` não é um documento de máquina: é a varredura da home e das páginas de seção, para
+    o site que não publica sitemap nem feed.
+    """
 
     NEWS_SITEMAP = "news_sitemap"
     SITEMAP = "sitemap"
     FEED = "feed"
+    LISTING = "listing"
 
 
 class CandidateOrigin(StrEnum):

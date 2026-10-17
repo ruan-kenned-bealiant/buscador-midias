@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import fcntl
 import os
 import sys
@@ -70,7 +71,16 @@ from buscador_midias.state.store import (
     StateStore,
 )
 from buscador_midias.strategy.export import build_tables, write_csv, write_xlsx
-from buscador_midias.strategy.health import DueReason, HealthPolicy, adopt, due_reason, next_state
+from buscador_midias.strategy.health import (
+    Condition,
+    DueReason,
+    HealthFinding,
+    HealthPolicy,
+    adopt,
+    diagnose,
+    due_reason,
+    next_state,
+)
 from buscador_midias.strategy.hints import load_hints
 from buscador_midias.strategy.manual import load_manual_rules
 from buscador_midias.strategy.probe import DEFAULT_MAX_REQUESTS, SiteStrategy, probe_site
@@ -80,6 +90,8 @@ DEFAULT_SITES = _REPO_ROOT / "data" / "sites.csv"
 DEFAULT_HINTS = _REPO_ROOT / "data" / "discovery_hints.csv"
 DEFAULT_MANUAL_HINTS = _REPO_ROOT / "data" / "hints_manuais.csv"
 DEFAULT_MANUAL_RULES = _REPO_ROOT / "data" / "estrategias_manuais.csv"
+# Rodadas lidas de cada fonte para diagnosticar (o histórico mostrado é menor).
+HEALTH_ROUNDS_ANALYSED = 30
 DEFAULT_EXPORT = _REPO_ROOT / "var" / "estrategias.xlsx"
 DEFAULT_REPORT = _REPO_ROOT / "var" / "probe-report.csv"
 DEFAULT_LOCK = _REPO_ROOT / "var" / "run.lock"
@@ -421,6 +433,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_EXPORT,
         help="Arquivo de saída: .xlsx (três abas) ou .csv (um arquivo por aba).",
     )
+    health = commands.add_parser(
+        "strategy-health",
+        help=(
+            "Lista as fontes cujo padrão de leitura quebrou (falha nas rodadas, ou a sondagem "
+            "nova não achou nada) ou pede atenção (silêncio, lista que encolheu)."
+        ),
+    )
+    _add_site_args(health)
+    health.add_argument(
+        "--rounds", type=int, default=6, help="Quantas rodadas mostrar no histórico de cada fonte."
+    )
+    health.add_argument("--out", type=Path, default=None, help="Também grava um CSV.")
     commands.add_parser("report", help="Estatísticas das rodadas de descoberta.")
     migrate = commands.add_parser(
         "migrate-sqlite",
@@ -528,6 +552,8 @@ def main(
         return _migrate(args.sqlite)
     if args.command == "export-strategies":
         return _export_strategies(args)
+    if args.command == "strategy-health":
+        return _strategy_health(args)
     if args.command == "run":
         return _run(
             args,
@@ -1289,6 +1315,81 @@ def _export_strategies(args: argparse.Namespace) -> int:
     probed = sum(1 for r in tables.summary.rows if r[5] != "não sondada")
     ok = sum(1 for r in tables.summary.rows if r[5] in ("ok", "lenta"))
     print(f"{len(sites)} fontes ({probed} sondadas, {ok} com estratégia) em {args.out}")
+    return 0
+
+
+def _strategy_health(args: argparse.Namespace) -> int:
+    """Subcomando ``strategy-health``: o que quebrou e o que pede atenção, sem tocar em nada."""
+    sites = _select_sites(args)
+    if sites is None:
+        return 2
+    store = _open_state(read_only=True)
+    if store is None:
+        return 2
+    try:
+        states = store.probe_states()
+        rounds = store.recent_rounds(per_site=HEALTH_ROUNDS_ANALYSED)
+        with_strategy = set(store.strategy_probe_times())
+        primaries = {
+            key: chosen.url
+            for key, chosen in store.chosen_strategies()
+            if chosen.role is Role.PRIMARY
+        }
+    finally:
+        store.close()
+    if not states and not with_strategy:
+        print("nenhuma fonte com padrão gravado: rode probe-sources primeiro")
+        return 0
+    policy = HealthPolicy()
+    findings: list[tuple[Site, HealthFinding]] = []
+    counts: Counter[str] = Counter()
+    for site in sites:
+        state = states.get(site.key)
+        finding = diagnose(
+            site.key,
+            state,
+            rounds.get(site.key, []),
+            has_strategy=site.key in with_strategy,
+            policy=policy,
+        )
+        if finding is not None:
+            findings.append((site, finding))
+            counts[finding.condition.value] += 1
+        elif state is None:
+            counts["nunca sondada"] += 1
+        elif site.key in with_strategy:
+            counts["em dia"] += 1
+        else:
+            counts["sem estratégia"] += 1
+    for condition in (Condition.BROKEN, Condition.WATCH):
+        group = [(s, f) for s, f in findings if f.condition is condition]
+        print(f"{condition.value.upper()} ({len(group)})")
+        for site, finding in group:
+            recent = ", ".join(finding.history.split(", ")[: args.rounds])
+            print(f"  {site.key}: {finding.symptom} [{recent}]")
+    print(
+        f"resumo: {counts['quebrou']} quebrou, {counts['atenção']} atenção, "
+        f"{counts['em dia']} em dia, {counts['sem estratégia']} sem estratégia, "
+        f"{counts['nunca sondada']} nunca sondadas"
+    )
+    if args.out is not None:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        with args.out.open("w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(
+                ["Chave", "Fonte", "Situação", "Sintoma", "Últimas rodadas", "Estratégia atual"]
+            )
+            for site, finding in findings:
+                writer.writerow(
+                    [
+                        site.key,
+                        site.name,
+                        finding.condition.value,
+                        finding.symptom,
+                        finding.history,
+                        primaries.get(site.key, ""),
+                    ]
+                )
     return 0
 
 

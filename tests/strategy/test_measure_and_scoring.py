@@ -306,6 +306,15 @@ def test_url_sem_secao_legivel_vai_para_outros():
     assert section_of("https://x.com/12345") == OTHER_SECTION
 
 
+def test_um_unico_segmento_e_o_titulo_da_materia_nao_uma_secao():
+    """URL plana (/titulo-da-materia): sem isso, cada matéria virava uma "seção"."""
+    from buscador_midias.strategy.measure import OTHER_SECTION, section_of
+
+    assert section_of("https://x.com/governo-anuncia-medida-para-o-setor") == OTHER_SECTION
+    assert section_of("https://x.com/governo-anuncia-medida-para-o-setor/") == OTHER_SECTION
+    assert section_of("https://x.com/politica/governo-anuncia-medida") == "politica"
+
+
 def test_a_medida_conta_secoes_so_entre_os_itens_recentes():
     items = [
         Item("https://exemplo.com/a", NOW - timedelta(hours=1), "t", "politica"),

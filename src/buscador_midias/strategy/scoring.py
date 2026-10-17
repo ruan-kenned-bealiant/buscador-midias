@@ -43,7 +43,8 @@ class ScoringPolicy:
         min_gain_share: ...e a fração mínima da união (vale o maior dos dois): uma fonte que traz
             uma ou duas matérias a mais não paga outra leitura por rodada.
         kind_factor: Peso de cada tipo; o sitemap de notícias é o mais confiável e o genérico o
-            menos (não traz título, e ``lastmod`` muda quando a matéria é só editada).
+            menos (não traz título, e ``lastmod`` muda quando a matéria é só editada); a varredura
+            de listagens é o último recurso (não traz data nem título).
     """
 
     archive_min_items: int = 5000
@@ -62,6 +63,7 @@ class ScoringPolicy:
             StrategyKind.NEWS_SITEMAP: 1.0,
             StrategyKind.FEED: 0.9,
             StrategyKind.SITEMAP: 0.6,
+            StrategyKind.LISTING: 0.5,
         }
     )
 

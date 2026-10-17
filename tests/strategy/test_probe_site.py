@@ -416,3 +416,55 @@ def test_sitemap_lento_declarado_nao_dispensa_procurar_o_de_noticias():
 
     assert NEWS in fetcher.calls
     assert result.primary is not None and result.primary.url == NEWS
+
+
+def listing_home() -> bytes:
+    links = "".join(
+        f'<a href="/economia/governo-anuncia-medida-numero-{n}-para-o-setor">x</a>'
+        for n in range(10)
+    )
+    return f'<html><body><a href="/economia">Economia</a>{links}</body></html>'.encode()
+
+
+def test_sem_sitemap_nem_feed_a_varredura_da_home_vira_a_estrategia():
+    fetcher = FakeFetcher({ROBOTS: robots(), HOME: listing_home()})
+
+    result = probe(fetcher)
+
+    assert result.status is ProbeStatus.OK
+    assert result.primary is not None
+    assert result.primary.kind is StrategyKind.LISTING and result.primary.url == HOME
+
+
+def test_com_feed_que_serve_a_varredura_nem_e_tentada():
+    fetcher = FakeFetcher({ROBOTS: robots(), HOME: listing_home(), FEED: rss(("a", 1), ("b", 2))})
+
+    result = probe(fetcher)
+
+    assert result.primary is not None and result.primary.kind is StrategyKind.FEED
+    assert f"{HOME}/economia" not in fetcher.calls  # nenhuma página de seção foi lida
+
+
+def test_fonte_lenta_tambem_dispensa_a_varredura():
+    fetcher = FakeFetcher({ROBOTS: robots(), HOME: listing_home(), FEED: rss(("a", 240))})
+
+    result = probe(fetcher)
+
+    assert result.primary is not None and result.primary.verdict is Verdict.SLOW
+    assert f"{HOME}/economia" not in fetcher.calls
+
+
+def test_home_sem_materias_leva_o_motivo_da_falha_com_a_varredura_contada():
+    fetcher = FakeFetcher({ROBOTS: robots(), HOME: b"<html><body>nada</body></html>"})
+
+    result = probe(fetcher)
+
+    assert result.status is ProbeStatus.NO_SITEMAP and "empty" in result.detail
+
+
+def test_endereco_da_home_excluido_a_mao_dispensa_a_varredura():
+    fetcher = FakeFetcher({ROBOTS: robots(), HOME: listing_home()})
+
+    result = probe(fetcher, exclude=[HOME])
+
+    assert result.primary is None

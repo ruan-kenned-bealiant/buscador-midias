@@ -30,6 +30,7 @@ from buscador_midias.domain.strategy import (
 )
 from buscador_midias.net.fetcher import Fetcher
 from buscador_midias.strategy.evaluate import DEFAULT_MAX_CHILDREN, evaluate_candidate
+from buscador_midias.strategy.listing import DEFAULT_MAX_PAGES, evaluate_listing
 from buscador_midias.strategy.manual import is_excluded
 from buscador_midias.strategy.scoring import ScoringPolicy, choose, plan_coverage
 
@@ -147,6 +148,26 @@ class _Run:
             if until_usable and report.score > 0 and report.verdict is not Verdict.SLOW:
                 break
 
+    def evaluate_listing(self) -> None:
+        """Último recurso: varre a home e as páginas de seção (sem sitemap nem feed que sirva)."""
+        if self._is_excluded(self.site.url):
+            self.reports.append(_excluded(self.site.url, CandidateOrigin.HOME_LINK))
+            return
+        remaining = self.max_requests - self.requests
+        if remaining < 1:
+            return
+        report = evaluate_listing(
+            self.site,
+            self.fetcher,
+            robots=self.robots,
+            user_agent=self.user_agent,
+            now=self.now,
+            scoring=self.scoring,
+            max_pages=min(DEFAULT_MAX_PAGES, remaining),
+        )
+        self.requests += report.requests
+        self.reports.append(report)
+
     def _evaluate_once(self, url: str, origin: CandidateOrigin, forced: bool) -> CandidateReport:
         """Avalia o endereço (de hoje, se for modelo) uma vez."""
         return evaluate_candidate(
@@ -195,7 +216,8 @@ def probe_site(
        que o ``robots.txt`` declara (sem sitemaps de tags e produtos) ou, sem declaração,
        ``/sitemap.xml``;
     2. se nenhum sitemap de notícias serviu, os nomes usuais de sitemap de notícias;
-    3. se nenhum feed serviu, os feeds que a home declara ou, sem declaração, os caminhos usuais.
+    3. se nenhum feed serviu, os feeds que a home declara ou, sem declaração, os caminhos usuais;
+    4. se nada serviu (nem uma fonte lenta), a varredura da home e das páginas de seção.
 
     Cada candidato é baixado, medido (quantas matérias recentes, com título, com data) e julgado; a
     nota escolhe o principal e, de outro tipo de documento, a reserva. A sondagem respeita o
@@ -243,6 +265,8 @@ def probe_site(
         run.evaluate([f"{origin}{p}" for p in NEWS_SITEMAP_PATHS], CandidateOrigin.COMMON_PATH)
     if not run.has_usable(StrategyKind.FEED):
         _probe_feeds(run, origin)
+    if not any(r.score > 0 for r in run.reports):
+        run.evaluate_listing()
 
     reports = plan_coverage(choose(run.reports), run.scoring)
     chosen = any(r.role is Role.PRIMARY for r in reports)

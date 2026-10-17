@@ -4,10 +4,12 @@ from datetime import UTC, datetime, timedelta
 
 from buscador_midias.domain.strategy import ProbeState, RoundHealth
 from buscador_midias.strategy.health import (
+    Condition,
     DueReason,
     HealthPolicy,
     adopt,
     backoff,
+    diagnose,
     due_reason,
     next_state,
 )
@@ -200,3 +202,61 @@ def test_rodadas_de_antes_da_sondagem_nao_servem_de_base_para_o_encolhimento():
     old = [RoundHealth(before - timedelta(hours=8 * n), "ok", 10, 5000, 0) for n in range(5)]
 
     assert due([rnd(4, seen=100), *old]) is None
+
+
+# --- diagnóstico: o padrão quebrou? ---
+
+
+def diag(rounds, st=None, *, has_strategy=True):
+    return diagnose(
+        "a.com",
+        st if st is not None else state(),
+        rounds,
+        has_strategy=has_strategy,
+        policy=POLICY,
+    )
+
+
+def test_fonte_saudavel_nao_tem_diagnostico():
+    assert diag([rnd(6), rnd(14)]) is None
+
+
+def test_fonte_nunca_sondada_nao_e_quebra():
+    assert diagnose("a.com", None, [], has_strategy=False, policy=POLICY) is None
+
+
+def test_duas_rodadas_com_falha_desde_a_sondagem_quebraram_o_padrao():
+    finding = diag([rnd(6, status="error"), rnd(14, status="blocked")])
+
+    assert finding is not None and finding.condition is Condition.BROKEN
+    assert "falhou" in finding.symptom
+    assert finding.history == "falha, falha"
+
+
+def test_sondagem_nova_que_nao_achou_nada_com_estrategia_antiga_gravada_e_quebra():
+    finding = diag([], state(found=False), has_strategy=True)
+
+    assert finding is not None and finding.condition is Condition.BROKEN
+    assert "não achou" in finding.symptom
+
+
+def test_fonte_que_nunca_teve_padrao_nao_e_quebra_e_sim_sem_estrategia():
+    assert diag([], state(found=False), has_strategy=False) is None
+
+
+def test_silencio_e_encolhimento_pedem_atencao_nao_quebra():
+    silent = diag([rnd(6, new=0), rnd(14, new=0), rnd(22, new=0), rnd(30, new=0), rnd(300, new=50)])
+    shrunk = diag(
+        [rnd(6, seen=5), rnd(14, seen=100), rnd(22, seen=100), rnd(30, seen=100), rnd(38, seen=100)]
+    )
+
+    assert silent is not None and silent.condition is Condition.WATCH
+    assert shrunk is not None and shrunk.condition is Condition.WATCH
+    assert "encolheu" in shrunk.symptom
+
+
+def test_o_historico_mostra_as_rodadas_da_mais_nova_para_a_mais_antiga_com_as_novas():
+    finding = diag([rnd(6, status="error", new=0), rnd(14, status="error", new=0), rnd(22, new=7)])
+
+    assert finding is not None
+    assert finding.history.startswith("falha, falha")

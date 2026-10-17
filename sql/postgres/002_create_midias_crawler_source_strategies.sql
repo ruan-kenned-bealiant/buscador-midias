@@ -16,7 +16,7 @@ CREATE TABLE midias_crawler_source_strategies (
     verdict      varchar(16) NOT NULL
                  CHECK (verdict IN ('fresh', 'undated', 'slow', 'stale', 'archive', 'empty',
                                     'invalid', 'blocked', 'disallowed', 'unavailable')),
-    kind         varchar(16) CHECK (kind IN ('news_sitemap', 'sitemap', 'feed')),
+    kind         varchar(16) CHECK (kind IN ('news_sitemap', 'sitemap', 'feed', 'listing')),
     role         varchar(10) CHECK (role IN ('primary', 'backup', 'complement')),
     score        double precision NOT NULL DEFAULT 0,
     coverage     real,

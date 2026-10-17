@@ -174,7 +174,7 @@ def test_secoes_dos_candidatos_escolhidos_com_a_parte_de_cada_uma():
     assert rows[2]["Papel"] == "complemento"
 
 
-def test_xlsx_tem_tres_abas_com_cabecalho_e_dados(tmp_path: Path):
+def test_xlsx_tem_quatro_abas_com_cabecalho_e_dados(tmp_path: Path):
     from openpyxl import load_workbook
 
     path = tmp_path / "estrategias.xlsx"
@@ -182,7 +182,7 @@ def test_xlsx_tem_tres_abas_com_cabecalho_e_dados(tmp_path: Path):
     write_xlsx(tables(), path)
 
     book = load_workbook(path)
-    assert book.sheetnames == ["Estratégia", "Candidatos", "Seções"]
+    assert book.sheetnames == ["Estratégia", "Candidatos", "Seções", "Mapa de seções"]
     sheet = book["Estratégia"]
     assert sheet.cell(1, 1).value == "Fonte"
     assert sheet.max_row == 4  # cabeçalho + 3 fontes
