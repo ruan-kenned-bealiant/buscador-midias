@@ -15,6 +15,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 import psycopg
@@ -86,7 +87,6 @@ from buscador_midias.strategy.listing import DEFAULT_MAX_PAGES as DEFAULT_LISTIN
 from buscador_midias.strategy.manual import load_manual_rules
 from buscador_midias.strategy.mapping import drain_site, map_site, sections_from_sources
 from buscador_midias.strategy.mapping_coverage import (
-    audit_paused,
     audit_sources,
     normalize_source_audits,
     plan_source_audit,
@@ -1282,8 +1282,10 @@ def _map_sites(
                 if not args.drain:
                     free = MemoizingFetcher(free, hosts=_shared_hosts(sites))
 
-                def visit_pass(site: Site, *, first: bool) -> bool:
-                    paused = False
+                def visit_pass(
+                    site: Site, *, first: bool, suspended_pages: dict[str, str],
+                    suspended_sources: dict[str, str],
+                ) -> None:
                     if not args.sources_only:
                         if args.drain:
                             result = drain_site(
@@ -1291,6 +1293,7 @@ def _map_sites(
                                 clock=clock, batch_pages=args.pages_per_site,
                                 retry_failed=args.retry_failed and first,
                                 refresh_pages=args.refresh_pages and first,
+                                suspended_origins=suspended_pages,
                                 on_batch=lambda batch: print(
                                     f"{site.key}: lote lidas={batch.visited} "
                                     f"pendentes={batch.pending}", flush=True,
@@ -1301,11 +1304,11 @@ def _map_sites(
                                 site, free, store, user_agent=USER_AGENT, now=now,
                                 max_pages=args.pages_per_site, retry_failed=args.retry_failed,
                                 refresh_pages=args.refresh_pages,
+                                suspended_origins=suspended_pages,
                             )
                         print(f"{site.key}: seções={result.sections} lidas={result.visited} "
                               f"pendentes={result.pending} falhas={result.issues} {result.detail}",
                               flush=True)
-                        paused = bool(result.detail)
                     if validating:
                         known = store.mapping_pages(site.key)
                         attempted: set[str] = set()
@@ -1317,30 +1320,35 @@ def _map_sites(
                                 hints=hints.for_site(site), forced=manual.for_site(site).force,
                                 retry_failed=args.retry_failed and first,
                             )
-                            queue = [url for url in queue if url not in attempted]
+                            queue = [
+                                url for url in queue if url not in attempted
+                                and urlsplit(url).netloc not in suspended_sources
+                            ]
                             if not queue:
                                 break
                             audited = audit_sources(
                                 site, free, queue, user_agent=USER_AGENT, now=audit_time,
                                 max_requests=args.source_requests,
                                 exclude=manual.for_site(site).exclude,
+                                suspended_origins=suspended_sources,
                                 on_source=lambda source: store.save_mapping_sources(
                                     site.key, [source]
                                 ),
                             )
                             print(f'{site.key}: mecanismos conferidos={len(audited)}', flush=True)
                             attempted.update(source.url for source in audited)
-                            if audit_paused(audited):
-                                paused = True
-                                break
                             if not args.drain or not audited:
                                 break
-                    return paused
 
                 def visit(site: Site) -> None:
                     first = True
+                    suspended_pages: dict[str, str] = {}
+                    suspended_sources: dict[str, str] = {}
                     while True:
-                        paused = visit_pass(site, first=first)
+                        visit_pass(
+                            site, first=first, suspended_pages=suspended_pages,
+                            suspended_sources=suspended_sources,
+                        )
                         first = False
                         if not args.drain or args.sources_only:
                             break
@@ -1351,8 +1359,6 @@ def _map_sites(
                             break
                         store.save_mapping_pages(site.key, additional)
                         print(f"{site.key}: candidatas em mecanismos={len(additional)}", flush=True)
-                        if paused:
-                            break
 
                 with ThreadPoolExecutor(max_workers=args.workers) as pool:
                     jobs = {pool.submit(visit, site): site.key for site in sites}

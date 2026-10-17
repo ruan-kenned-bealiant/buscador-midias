@@ -80,6 +80,20 @@ def test_invalid_link_does_not_abort_feed_discovery():
     assert found.direct == (HOME + "/rss.xml",)
 
 
+def test_atom_editorial_e_host_relativo_sob_feed_nao_sao_fontes_xml():
+    article = "/atom/art17007131-uma-materia-sobre-energia-nuclear"
+    malformed = "/personalities/alguem/feed/www.exemplo.com/noticia"
+    real = "/materia-com-titulo-longo-do-jornal/feed/"
+    declared = "/atom/feed-especial-com-nome-de-categoria-longo"
+    found = find_feed_sources(
+        html(link(declared), a(article), a(malformed), a(real), a("/rss/g1/ac/acre")),
+        HOME, make_site(),
+    )
+    assert found.declared == (HOME + declared,)
+    assert found.direct == (HOME + real, HOME + "/rss/g1/ac/acre")
+    assert found.indexes == ()
+
+
 def test_sem_repeticao_e_na_ordem_em_que_aparecem():
     page = html(link("/feed"), link("/feed"), a("/rss.xml"), a("/rss.xml"))
 

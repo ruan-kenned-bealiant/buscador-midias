@@ -123,10 +123,26 @@ candidatas apontadas explicitamente na navegação e, por último, os palpites p
 dentro de cada grupo, páginas mais rasas primeiro. Guarda endereço, primeira
 página ou mecanismo que o apontou, título, links com aparência de matéria, feeds/sitemaps apontados, índices
 de feeds, tentativas e falhas. Tags, autores e diretórios de tópicos (`topic`, `topics`,
-`topics-list`, `themen`, `tagg`, `amnen`, `persons`) ficam como taxonomias excluídas para revisão.
+`topics-list`, `themen`, `tagg`, `amnen`, `persons`, `mot-cle`, `mots-cles`, `tema`, `topico`)
+ficam como
+taxonomias excluídas para revisão.
 Essa classificação também é
 aplicada às filas antigas ao retomá-las, preservando os registros e as amostras já salvas.
 Uma URL de entrada cadastrada nesses caminhos continua sendo lida.
+Rotas de serviço observadas também ficam excluídas: o guia de TV em `tvguide.vg.no`,
+a previsão em `tempo.folha.uol.com.br`, os diretórios de previsão da Euronews
+(`weather`, `idojaras`, `meteo`, `wetter`, `hava-durumu`, `tempo`, `meteorologia`, `tiempo`),
+`lvbp/estadisticas` do El Nacional, contatos de perfis `/<perfil>/contacts` em
+`blogs.mediapart.fr` e caminhos de atendimento do Correio do Estado.
+Gráficos e históricos de preços sob `/nkd/company/us/<ticker>/chart|history` da Nikkei,
+e os diretórios de citações e biografias `citations`/`celebre/biographie` da Evene/Le Figaro,
+também são serviços. Perfis de empresas e notícias culturais continuam elegíveis.
+O diretório `noticias-assinantes` continua elegível; restringir acesso não o torna
+automaticamente uma rota de serviço. Uma regra de serviço retirada reabre as candidatas
+antigas a seção, mantendo ciclos excluídos e sem enfileirar matérias pelo título longo da URL.
+Essas regras são limitadas aos hosts e caminhos identificados; uma editoria de clima
+ou uma notícia sobre atendimento em outro caminho continua elegível. Na retomada,
+registros antigos são reclassificados preservando títulos, amostras e datas.
 Rotas com três segmentos iguais consecutivos (`category/category/category`, `index/index/index`)
 são preservadas como possível ciclo de navegação,
 sem continuar expandindo os links relativos. Seções profundas sem esse padrão continuam elegíveis.
@@ -148,13 +164,16 @@ escopo da fonte, não reabre páginas conhecidas e exclui datas, taxonomias e ro
 Um prefixo derivado continua `unknown` até ser lido: não é uma seção confirmada. A aba Fontes
 mostra essa origem separadamente; navegação explícita pode promovê-la na prioridade da fila.
 O inventário confere robots por caminho: uma entrada proibida não impede a leitura de uma
-subseção explicitamente permitida. Falha ao baixar a política mantém a fila suspensa.
+subseção explicitamente permitida. Falha ao baixar a política mantém a fila daquele host
+suspensa; outros hosts continuam sujeitos às suas próprias políticas.
 
 Três falhas consecutivas de conexão na mesma origem (DNS, TLS, timeout ou transporte),
 dentro do mesmo lote de páginas ou passagem de auditoria,
-suspendem a passagem e preservam as páginas ainda não tentadas. O motivo fica na entrada;
-uma nova execução pode retomar a fila. A auditoria aplica a mesma regra aos mecanismos e
-não reinicia essa passagem automaticamente. Respostas 404 e proibições de caminho não
+suspendem somente aquela origem e preservam suas páginas ainda não tentadas. Os demais hosts
+da fonte continuam sendo explorados, incluindo subseções novas apontadas pelos mecanismos.
+O motivo fica na entrada; uma nova execução pode retomar a origem suspensa. A auditoria mantém
+sua própria suspensão por origem, sem reiniciá-la entre passagens da mesma execução.
+Respostas 404 e proibições de caminho não
 disparam essa suspensão. Falha de conexão não é tratada como seção sem notícias.
 
 O relatório contém **Fontes**, **Páginas**, **Mecanismos**, **Amostras**, **Cobertura**, **Lacunas**,
@@ -184,6 +203,10 @@ só entram novamente se a amostra da página for mais nova ou após 24 h. Leitur
 por orçamento têm prioridade de retomada; `--retry-failed` também vale para falhas dos mecanismos.
 Páginas HTML que apontam feeds recebem `feed_index`: seus links alimentam a fila persistida,
 mas só a leitura dos feeds/sitemaps de destino pode comprovar correspondência com matérias.
+Links desses índices para feeds de taxonomias são preservados, mas não disparam uma varredura
+de todas as palavras-chave ou autores. Continuam elegíveis quando uma página do inventário
+os declara ou quando constam das dicas, regras forçadas ou candidatos anteriores úteis.
+Leituras já feitas continuam disponíveis para comparar as amostras das seções.
 Paginação HTML em `/index/feed/pagina-N` recebe `html_pagination`: o nome do caminho não
 a transforma em feed, nem dispara uma varredura do arquivo histórico. Índices desse formato
 registrados antes da correção deixam de expandir a fila. XML válido continua sendo medido.
@@ -191,6 +214,12 @@ Feeds cujos links apontam exclusivamente a comentários (`#comment-N` ou `replyt
 `comments_feed`, preservando as observações e sem comprovar cobertura de notícias. Em feeds
 mistos esses links também não entram na comparação canônica. A palavra `feed` no meio de um
 título de matéria não basta para descobrir um mecanismo.
+Isso também vale para matérias sob uma editoria `/atom` e hosts resolvidos indevidamente
+como caminhos relativos sob `/feed`. Uma resposta HTML nesse formato recebe `html_article`
+e não expande a auditoria. Índices antigos são corrigidos preservando URLs, datas e custos.
+Metadados de artigo da própria página também interrompem essa expansão em HTML.
+Endpoints que terminam em `/feed`, índices HTML de feeds e feeds declarados continuam
+elegíveis; uma resposta XML válida prevalece sobre a aparência de matéria da URL.
 
 O relatório compara URLs canônicas e mostra, por página, quantos links da amostra aparecem nos
 mecanismos medidos e quais ficaram de fora. `sample_full` é **amostra coberta**, `partial` é

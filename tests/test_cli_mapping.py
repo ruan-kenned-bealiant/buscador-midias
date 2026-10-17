@@ -87,6 +87,43 @@ def test_drain_does_not_restart_paused_source_audits_in_the_same_run(tmp_path: P
         store.close()
 
 
+def test_drain_mapeia_prefixos_novos_de_outro_host_apos_suspender_subdominio(tmp_path: Path):
+    from tests.strategy.helpers import plain_sitemap
+
+    from buscador_midias.net.fetcher import FetchResult
+
+    sites = tmp_path / "sites.csv"
+    sites.write_text(
+        "region,name,url,country,country_code,language,source_type\n"
+        f"Brasil,Exemplo,{HOME},Brasil,BR,Português,Jornal\n"
+    )
+    bad = [f"https://falha.exemplo.com/secao-{c}" for c in "abcde"]
+    feed = HOME + "/feed.xml"
+    fetcher = FakeFetcher({
+        HOME + "/robots.txt": robots(), "https://falha.exemplo.com/robots.txt": robots(),
+        HOME: page(*bad, "/politica"),
+        HOME + "/politica": b'<html><link rel="alternate" type="application/rss+xml" '
+                            b'href="/feed.xml"></html>',
+        HOME + "/oculta": page("/oculta/materia-com-titulo-do-jornal"),
+        feed: plain_sitemap(("oculta/materia-com-titulo-do-jornal", 1)),
+        **{u: FetchResult(u, None, b"", "ConnectError: DNS indisponivel") for u in bad},
+    })
+    assert main([
+        "map-sites", "--sites", str(sites), "--drain", "--validate-sources",
+        "--pages-per-site", "4", "--out", str(tmp_path / "mapa.xlsx"),
+    ], fetcher=fetcher, now=NOW) == 0
+    assert HOME + "/oculta" in fetcher.calls
+    assert not set(bad[3:]).intersection(fetcher.calls)
+    assert fetcher.calls.count(feed) == 1
+    store = StateStore()
+    try:
+        pending = {p.url for p in store.mapping_pages("exemplo.com") if p.status.value == "pending"}
+        assert pending == set(bad[3:])
+        assert store.is_empty()
+    finally:
+        store.close()
+
+
 def test_drain_completa_subsecoes_e_mecanismos_em_uma_execucao(tmp_path: Path):
     from tests.strategy.helpers import plain_sitemap
 

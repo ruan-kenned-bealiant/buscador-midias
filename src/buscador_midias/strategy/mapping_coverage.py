@@ -22,22 +22,25 @@ from buscador_midias.domain.url import canonicalize_url
 from buscador_midias.net.fetcher import Fetcher, FetchResult
 from buscador_midias.strategy.evaluate import evaluate_candidate
 from buscador_midias.strategy.manual import is_excluded
+from buscador_midias.strategy.mapping import is_taxonomy_url
 from buscador_midias.strategy.mapping_net import (
     ORIGIN_FAILURE_LIMIT,
     MappingFetcher,
     is_transport_failure,
 )
-from buscador_midias.strategy.section_sources import find_feed_sources
+from buscador_midias.strategy.page_classification import classify_page
+from buscador_midias.strategy.section_sources import find_feed_sources, looks_like_article_hint
 
 _READABLE = frozenset({"fresh", "undated", "slow", "stale", "archive", "empty"})
 _LISTING_PAGINATION = re.compile(
     r"/index/feed/pagina-\d+(?:\.(?:ghtml|html?|shtml))?/?$", re.IGNORECASE
 )
 _AUDIT_PAUSED = "auditoria suspensa após"
+_NON_FEED_HTML = frozenset({"html_pagination", "html_article", "comments_feed"})
 
 
 def audit_paused(checks: Sequence[MapSource]) -> bool:
-    """A passagem parou por falhas de conexão, mantendo mecanismos ainda não tentados."""
+    """Há origens suspensas por conexão, mantendo seus mecanismos ainda não tentados."""
     return any(_AUDIT_PAUSED in check.detail for check in checks)
 
 
@@ -55,6 +58,9 @@ def normalize_source_audits(checks: Sequence[MapSource]) -> list[MapSource]:
             check, verdict="invalid", kind="html_pagination",
             detail="paginação HTML de listagem; não é índice de mecanismos",
         ) if check.kind == "feed_index" and is_html_pagination(check) else replace(
+            check, verdict="invalid", kind="html_article",
+            detail="HTML em URL com aparência de matéria; não é índice de mecanismos",
+        ) if check.kind == "feed_index" and looks_like_article_hint(check.url) else replace(
             check, verdict="invalid", kind="comments_feed",
             detail="feed de comentários; não comprova matérias da seção",
         ) if check.kind == "feed" and check.listed_urls and all(
@@ -88,18 +94,19 @@ def plan_source_audit(
     Leituras atuais são reaproveitadas por até 24 h; amostras mais novas invalidam esse
     reaproveitamento. Índices HTML já lidos alimentam a fila com os mecanismos que apontam.
     """
+    checks = normalize_source_audits(checks)
     urls = list(forced)
     urls += [u for p in pages if p.is_section_candidate for u in p.feeds + p.feed_indexes]
-    urls += [
-        u for check in checks if check.kind == "feed_index" and not is_html_pagination(check)
-        for u in check.listed_urls
-    ]
     saved = sorted(
         (r for r in candidates if r.kind not in (None, StrategyKind.LISTING) and r.score > 0),
         key=lambda r: (r.role is None, -r.score),
     )
-    urls += [r.url for r in saved]
-    urls += list(hints)
+    explicit = set(urls) | {r.url for r in saved} | set(hints)
+    urls += [
+        u for check in checks if check.kind == "feed_index"
+        for u in check.listed_urls if not is_taxonomy_url(u) or u in explicit
+    ]
+    urls += [r.url for r in saved] + list(hints)
     expanded = dict.fromkeys(
         u for raw in urls for u in render_window(raw, now) if site.owns_host(u)
     )
@@ -120,7 +127,7 @@ def plan_source_audit(
         u
         for u in expanded
         if u not in previous or (
-            not is_html_pagination(previous[u]) and previous[u].kind != "comments_feed" and (
+            previous[u].kind not in _NON_FEED_HTML and (
                 previous[u].checked_at < threshold
                 or "orçamento" in previous[u].detail
                 or (retry_failed and previous[u].verdict not in _READABLE | {"feed_index"})
@@ -161,6 +168,7 @@ def audit_sources(
     max_requests: int = 20,
     exclude: Sequence[str] = (),
     on_source: Callable[[MapSource], None] | None = None,
+    suspended_origins: dict[str, str] | None = None,
 ) -> list[MapSource]:
     """Lê cada mecanismo uma vez, com orçamento incluindo robots e filhos de índices.
 
@@ -172,6 +180,8 @@ def audit_sources(
     guarded = MappingFetcher(fetcher, site, user_agent, max_requests)
     checks: list[MapSource] = []
     queue = deque(dict.fromkeys(urls))
+    explicit = set(urls)
+    suspended = suspended_origins if suspended_origins is not None else {}
     seen: set[str] = set()
     failures: dict[str, int] = {}
     while queue:
@@ -179,7 +189,10 @@ def audit_sources(
         if url in seen:
             continue
         seen.add(url)
-        if not site.owns_host(url) or is_excluded(url, exclude):
+        if (
+            urlsplit(url).netloc in suspended
+            or not site.owns_host(url) or is_excluded(url, exclude)
+        ):
             continue
         if guarded.requests >= max_requests:
             break
@@ -219,6 +232,22 @@ def audit_sources(
         if pagination:
             kind = "html_pagination"
             detail = "paginação HTML de listagem; não é índice de mecanismos"
+        elif (
+            verdict == "invalid" and response is not None and response.ok
+            and (
+                "html" in (response.content_type or "").lower()
+                or bool(re.search(
+                    rb"<(?:!doctype\s+html|html|head|body|div|section|article)\b",
+                    response.content[:1024], re.IGNORECASE,
+                ))
+            )
+            and (
+                looks_like_article_hint(url)
+                or classify_page(response.content, response.final_url or url).page_type == "article"
+            )
+        ):
+            kind = "html_article"
+            detail = "HTML em URL com aparência de matéria; não é índice de mecanismos"
         elif verdict == "invalid" and response is not None and response.ok:
             found = find_feed_sources(response.content, response.final_url or url, site)
             discovered = tuple(dict.fromkeys(found.declared + found.direct + found.indexes))
@@ -226,8 +255,11 @@ def audit_sources(
             if discovered:
                 kind = verdict = "feed_index"
                 listed = discovered
-                queue.extend(discovered)
+                automatic = [u for u in discovered if not is_taxonomy_url(u) or u in explicit]
+                queue.extend(automatic)
                 detail = "página HTML aponta mecanismos; cada endereço exige sua própria leitura"
+                if len(automatic) < len(discovered):
+                    detail += "; links de taxonomias preservados fora da fila automática"
         if guarded.exhausted and "orçamento" not in detail:
             detail += "; orçamento de mapeamento esgotado"
         origin = urlsplit(url).netloc
@@ -241,6 +273,7 @@ def audit_sources(
                 f"; {_AUDIT_PAUSED} {ORIGIN_FAILURE_LIMIT} falhas consecutivas "
                 f"de conexão em {origin}; mecanismos não tentados preservados"
             )
+            suspended[origin] = detail
         check = MapSource(
             url=url,
             verdict=verdict,
@@ -255,8 +288,6 @@ def audit_sources(
         checks.append(check)
         if on_source is not None:
             on_source(check)
-        if paused:
-            break
     return checks
 
 

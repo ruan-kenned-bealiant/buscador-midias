@@ -60,6 +60,27 @@ def test_audit_pauses_connection_failures_without_claiming_unattempted_endpoints
     assert queue == urls[3:]
 
 
+def test_falha_de_feed_em_subdominio_nao_suspende_xml_de_outro_host():
+    from buscador_midias.net.fetcher import FetchResult
+
+    bad = [f"https://feeds.exemplo.com/feed-{n}.xml" for n in range(5)]
+    good = HOME + "/sitemap.xml"
+    fetcher = FakeFetcher({
+        HOME + "/robots.txt": robots(), "https://feeds.exemplo.com/robots.txt": robots(),
+        good: plain_sitemap(("politica/materia-com-titulo-do-jornal", 1)),
+        **{u: FetchResult(u, None, b"", "ConnectError: DNS indisponivel") for u in bad},
+    })
+    suspended = {}
+    checks = audit_sources(make_site(), fetcher, [*bad, good], user_agent=UA,
+                           now=NOW, suspended_origins=suspended)
+    assert len(checks) == 4 and checks[-1].kind == "sitemap"
+    assert not set(bad[3:]).intersection(fetcher.calls)
+    assert audit_paused(checks) and "feeds.exemplo.com" in suspended
+    later = audit_sources(make_site(), fetcher, [bad[-1]], user_agent=UA,
+                          now=NOW, suspended_origins=suspended)
+    assert later == [] and bad[-1] not in fetcher.calls
+
+
 def test_sem_amostra_nao_vira_cobertura_total():
     page = MapPage(HOME, "", "root", PageStatus.OK, checked_at=NOW)
     assert compare_page(page, []).status == "no_sample"
@@ -98,6 +119,55 @@ def test_real_xml_feed_with_pagination_name_is_still_audited():
     })
     check = audit_sources(make_site(), fetcher, [url], user_agent=UA, now=NOW)[0]
     assert check.kind == "sitemap" and check.verdict != "invalid"
+
+
+def test_html_de_materia_sob_atom_nao_expande_fontes_e_corrige_indice_antigo():
+    url = HOME + "/atom/art17007131-uma-materia-sobre-energia-nuclear"
+    feed = HOME + "/rss.xml"
+    fetcher = FakeFetcher({
+        HOME + "/robots.txt": robots(),
+        url: b'<html><head><link rel="alternate" type="application/rss+xml" '
+             b'href="/rss.xml"></head><body>Uma materia</body></html>',
+    })
+    checks = audit_sources(make_site(), fetcher, [url], user_agent=UA, now=NOW)
+    assert len(checks) == 1 and checks[0].kind == "html_article"
+    assert checks[0].verdict == "invalid" and feed not in fetcher.calls
+    legacy = MapSource(url, "feed_index", "feed_index", (feed,), NOW)
+    normalized = normalize_source_audits([legacy])[0]
+    assert normalized.kind == "html_article" and normalized.listed_urls == (feed,)
+    assert normalized.checked_at == NOW
+    root = MapPage(HOME, "", "root", PageStatus.OK, feeds=(url,), checked_at=NOW)
+    assert plan_source_audit(
+        make_site(), [root], [legacy], [], now=NOW, retry_failed=True,
+    ) == []
+
+
+def test_html_com_schema_da_propria_materia_nao_e_indice_mesmo_com_slug_curto():
+    import json
+
+    url = HOME + "/atom/energia"
+    data = {"@type": "NewsArticle", "url": url, "headline": "Energia",
+            "datePublished": "2026-10-17"}
+    content = (
+        '<html><head><script type="application/ld+json">' + json.dumps(data)
+        + '</script><link rel="alternate" type="application/rss+xml" href="/rss.xml">'
+        + '</head><body>Energia</body></html>'
+    ).encode()
+    fetcher = FakeFetcher({HOME + "/robots.txt": robots(), url: content})
+    checks = audit_sources(make_site(), fetcher, [url], user_agent=UA, now=NOW)
+    assert len(checks) == 1 and checks[0].kind == "html_article"
+    assert HOME + "/rss.xml" not in fetcher.calls
+
+
+def test_xml_real_em_url_com_aparencia_de_materia_prevalece_sobre_o_formato():
+    url = HOME + "/atom/feed-especial-com-nome-de-categoria-longo"
+    fetcher = FakeFetcher({
+        HOME + "/robots.txt": robots(),
+        url: plain_sitemap(("politica/materia-com-titulo-do-jornal", 1)),
+    })
+    check = audit_sources(make_site(), fetcher, [url], user_agent=UA, now=NOW)[0]
+    assert check.kind == "sitemap" and check.verdict != "invalid"
+    assert normalize_source_audits([check]) == [check]
 
 
 def test_comentarios_nao_comprovam_cobertura_apos_remover_fragmentos():
@@ -266,6 +336,28 @@ def test_pagina_indice_html_revela_feeds_sem_ser_tratada_como_feed_de_materias()
     )
     assert compare_page(page, checks).status == "sample_full"
     assert compare_page(page, checks[:1]).status == "pending"
+
+
+def test_indice_preserva_links_de_taxonomia_sem_varrer_todos_os_feeds_de_palavras_chave():
+    index, section, tag = HOME + "/rss.html", HOME + "/politica.xml", HOME + "/tema/alguem/feed"
+    fetcher = FakeFetcher({
+        HOME + "/robots.txt": robots(),
+        index: f'<html><a href="{section}">RSS</a><a href="{tag}">Tag</a></html>'.encode(),
+        section: plain_sitemap(("politica/materia-com-titulo-do-jornal", 1)),
+        tag: plain_sitemap(("politica/outra-materia-do-jornal", 1)),
+    })
+    checks = audit_sources(make_site(), fetcher, [index], user_agent=UA, now=NOW)
+    assert checks[0].listed_urls == (section, tag)
+    assert tag not in fetcher.calls and section in fetcher.calls
+    assert 'taxonomias' in checks[0].detail
+    root = MapPage(HOME, "", "root", PageStatus.OK, feeds=(index,), checked_at=NOW)
+    assert plan_source_audit(make_site(), [root], checks, [], now=NOW) == []
+    assert plan_source_audit(make_site(), [root], checks, [], now=NOW, hints=(tag,)) == [tag]
+    # Uma seção declara seu próprio feed: a rota de taxonomia não o impede.
+    declared = MapPage(HOME + "/politica", HOME, "section", feeds=(tag,))
+    assert plan_source_audit(make_site(), [root, declared], checks, [], now=NOW) == [tag]
+    explicit = audit_sources(make_site(), fetcher, [tag], user_agent=UA, now=NOW)
+    assert explicit[0].kind == "sitemap"
 
 
 def test_checkpoint_por_mecanismo_inclui_erro_de_orcamento_para_retomada():

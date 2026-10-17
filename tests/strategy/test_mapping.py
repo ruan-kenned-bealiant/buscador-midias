@@ -100,6 +100,43 @@ def test_repeated_connection_failures_pause_drain_preserving_unattempted_pages()
     assert not next(p for p in store.mapping_pages(make_site().key) if p.kind == "root").detail
 
 
+def test_falha_em_subdominio_nao_suspende_secoes_do_host_principal_entre_lotes():
+    store = MemoryMap()
+    bad = [f"https://falha.exemplo.com/secao-{c}" for c in "abcde"]
+    store.save_mapping_pages(make_site().key, [
+        MapPage(HOME, "", "root", PageStatus.OK),
+        *(MapPage(u, HOME, "section", discovery_basis="navigation") for u in bad),
+        MapPage(HOME + "/politica", HOME, "section"),
+    ])
+    fetcher = FakeFetcher({
+        HOME + "/robots.txt": robots(),
+        "https://falha.exemplo.com/robots.txt": robots(),
+        HOME + "/politica": page("/politica/congresso"),
+        HOME + "/politica/congresso": page(),
+        **{u: FetchResult(u, None, b"", "ConnectError: DNS indisponivel") for u in bad},
+    })
+    result = drain_site(make_site(), fetcher, store, user_agent=UA,
+                        clock=lambda: NOW, batch_pages=3)
+    assert result.pending == 2 and "falha.exemplo.com" in result.detail
+    assert HOME + "/politica" in fetcher.calls and HOME + "/politica/congresso" in fetcher.calls
+    assert not set(bad[3:]).intersection(fetcher.calls)
+
+
+def test_robots_indisponivel_na_entrada_nao_bloqueia_politica_propria_do_subdominio():
+    store = MemoryMap()
+    url = "https://noticias.exemplo.com/politica"
+    store.save_mapping_pages(make_site().key, [
+        MapPage(HOME, "", "root"), MapPage(url, HOME, "section"),
+    ])
+    fetcher = FakeFetcher({
+        HOME + "/robots.txt": status(HOME + "/robots.txt", 403),
+        "https://noticias.exemplo.com/robots.txt": robots(), url: page(),
+    })
+    result = drain_site(make_site(), fetcher, store, user_agent=UA, clock=lambda: NOW)
+    assert result.pending == 1 and url in fetcher.calls and HOME not in fetcher.calls
+    assert "robots" in result.detail
+
+
 def test_missing_urls_do_not_pause_other_sections():
     paths = [f"/secao-{name}" for name in ("a", "b", "c", "d", "e")]
     fetcher = FakeFetcher({HOME + "/robots.txt": robots(), HOME: page(*paths)})
@@ -114,20 +151,70 @@ def test_topic_directories_are_taxonomies_in_new_and_resumed_queues():
     previous = MapPage(HOME + "/topic/alguem", HOME, "section", title="Preservar")
     store.save_mapping_pages(make_site().key, [
         previous, MapPage(HOME + "/en/persons/alguem", HOME, "section"),
+        MapPage(HOME + "/mot-cle/brasil", HOME, "section"),
+        MapPage(HOME + "/tema/brasil", HOME, "section"),
+        MapPage(HOME + "/topico/alguem", HOME, "section"),
     ])
     fetcher = FakeFetcher({
         HOME + "/robots.txt": robots(),
-        HOME: page("/topics-list/a", "/topic/brasil", "/politica"),
+        HOME: page("/topics-list/a", "/topic/brasil", "/politica", "/blog/mots-cles/mundo"),
         HOME + "/politica": page(art(1, "politica")),
     })
     result = run(fetcher, store)
     assert result.pending == 0 and result.visited == 2
     saved = {p.url: p for p in store.mapping_pages(make_site().key)}
-    for path in ("/topic/alguem", "/topic/brasil", "/topics-list/a", "/en/persons/alguem"):
+    for path in (
+        "/topic/alguem", "/topic/brasil", "/topics-list/a", "/en/persons/alguem",
+        "/mot-cle/brasil", "/blog/mots-cles/mundo", "/tema/brasil", "/topico/alguem",
+    ):
         assert saved[HOME + path].page_type == "taxonomy"
         assert saved[HOME + path].status is PageStatus.EXCLUDED
         assert HOME + path not in fetcher.calls
     assert saved[previous.url].title == previous.title
+
+
+def test_servicos_em_fila_antiga_sao_preservados_sem_voltar_a_expandi_los():
+    site = make_site("https://correiodoestado.com.br")
+    store = MemoryMap()
+    url = site.url + "/opiniao/coluna/atendimento/noticias-assinantes"
+    previous = MapPage(url, site.url, "section", title="Atendimento", article_urls=(url + "/x",))
+    store.save_mapping_pages(site.key, [previous])
+    fetcher = FakeFetcher({
+        site.url + "/robots.txt": robots(),
+        site.url: page("/politica", "/atendimento"),
+        site.url + "/politica": page(),
+    })
+    result = map_site(site, fetcher, store, user_agent=UA, now=NOW)
+    assert result.pending == 0
+    saved = {p.url: p for p in store.mapping_pages(site.key)}
+    assert saved[url].status is PageStatus.EXCLUDED and saved[url].page_type == "service"
+    assert saved[url].title == previous.title and saved[url].article_urls == previous.article_urls
+    assert url not in fetcher.calls and site.url + "/atendimento" not in fetcher.calls
+    assert site.url + "/politica" in fetcher.calls
+
+
+def test_revisao_de_servico_reabre_secao_de_assinantes_sem_expandir_ciclo_ou_materia():
+    site = make_site("https://correiodoestado.com.br")
+    store = MemoryMap()
+    section = site.url + "/noticias-assinantes"
+    loop = section + "/noticias-assinantes/noticias-assinantes"
+    article = section + "/uma-materia-com-um-titulo-longo-e-claro"
+    store.save_mapping_pages(site.key, [
+        MapPage(site.url, "", "root", PageStatus.OK),
+        *(
+            MapPage(u, site.url, "section", PageStatus.EXCLUDED, page_type="service",
+                    type_basis="observed_service_route")
+            for u in (section, loop, article)
+        ),
+    ])
+    fetcher = FakeFetcher({site.url + "/robots.txt": robots(), section: page()})
+    result = map_site(site, fetcher, store, user_agent=UA, now=NOW)
+    assert result.pending == 0 and section in fetcher.calls
+    saved = {p.url: p for p in store.mapping_pages(site.key)}
+    assert saved[section].status is PageStatus.OK
+    assert saved[section].page_type == "unknown"
+    assert saved[loop].status is PageStatus.EXCLUDED and loop not in fetcher.calls
+    assert saved[article].status is PageStatus.EXCLUDED and article not in fetcher.calls
 
 
 def test_catalog_entry_with_topic_path_is_not_silently_excluded():

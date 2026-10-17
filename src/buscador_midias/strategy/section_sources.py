@@ -26,7 +26,11 @@ _HREF = re.compile(r"""<a\s[^>]*?href=["']([^"']+)["']""", re.IGNORECASE)
 # "feed", "feeds", "rss" ou "atom" como palavra do caminho: "feedback" não conta.
 _FEED_WORD = re.compile(r"(?:^|[/_.\-])(?:feeds?|rss|atom)(?:$|[/_.\-])", re.IGNORECASE)
 _FEED_EXTENSION = re.compile(r"\.(?:xml|rss|atom)$", re.IGNORECASE)
-_FEED_SEGMENT = re.compile(r"(?:^|/)(?:feeds?|rss|atom)(?:/|$)", re.IGNORECASE)
+_FEED_ENDPOINT = re.compile(r"^(?:feeds?|rss|atom)$", re.IGNORECASE)
+_EMBEDDED_HOST = re.compile(r"^(?:www\.)?[\w-]+(?:\.[\w-]+)*\.[a-z]{2,}$", re.IGNORECASE)
+_INDEX_NAME = re.compile(
+    r"^(?:lista?|liste|index|indice|feeds?|rss|atom)(?:[_.-]|$)", re.IGNORECASE
+)
 _HTML_EXTENSION = re.compile(r"\.(?:html?|shtml|ghtml|php|aspx?)$", re.IGNORECASE)
 MODEL_MARK = "{section}"
 
@@ -46,6 +50,24 @@ class PageSources:
     declared: tuple[str, ...]
     direct: tuple[str, ...]
     indexes: tuple[str, ...]
+
+
+def looks_like_article_hint(url: str) -> bool:
+    """Não confunde matéria sob /atom nem host relativo sob /feed com mecanismo.
+
+    XML explícito e endpoints /feed continuam válidos, inclusive após slug de matéria.
+    Esta é uma pista de URL; uma resposta XML válida prevalece sobre ela na auditoria.
+    """
+    path = urlsplit(url).path
+    segments = [s for s in path.split("/") if s]
+    if not segments or _FEED_EXTENSION.search(path) or _FEED_ENDPOINT.fullmatch(segments[-1]):
+        return False
+    if any(_EMBEDDED_HOST.fullmatch(s) for s in segments[:-1]):
+        return True
+    leaf = segments[-1]
+    if _HTML_EXTENSION.search(leaf) and _FEED_WORD.search(leaf) and _INDEX_NAME.search(leaf):
+        return False
+    return any(len(s) >= 20 and s.count("-") >= 3 for s in segments)
 
 
 def find_feed_sources(html: bytes, base_url: str, site: Site) -> PageSources:
@@ -69,10 +91,7 @@ def find_feed_sources(html: bytes, base_url: str, site: Site) -> PageSources:
             continue
         if not (_FEED_EXTENSION.search(parts.path) or _FEED_WORD.search(parts.path)):
             continue
-        if not (
-            _FEED_EXTENSION.search(parts.path) or _FEED_SEGMENT.search(parts.path)
-            or _HTML_EXTENSION.search(parts.path)
-        ) and any(len(s) >= 20 and s.count("-") >= 3 for s in parts.path.split("/")):
+        if looks_like_article_hint(url):
             continue
         if _HTML_EXTENSION.search(parts.path):
             indexes.setdefault(url, None)

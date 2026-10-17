@@ -71,6 +71,47 @@ def test_servico_da_propria_url_e_identificado_sem_confundir_noticia_sobre_priva
     )
 
 
+def test_diretorios_de_servico_observados_nao_excluem_editorias_de_outros_sites():
+    services = (
+        "https://tvguide.vg.no/program/between",
+        "https://tempo.folha.uol.com.br/pa/belem",
+        "https://www.euronews.com/weather/asia/pakistan/islamabad",
+        "https://hu.euronews.com/idojaras/europe/bulgaria",
+        "https://fr.euronews.com/meteo/europe/royaume-uni/tenby",
+        "https://de.euronews.com/wetter/asien/indien/warangal",
+        "https://tr.euronews.com/hava-durumu/avrupa",
+        "https://it.euronews.com/tempo/europa",
+        "https://pt.euronews.com/meteorologia/europa",
+        "https://es.euronews.com/tiempo/europa",
+        "https://www.elnacional.com/lvbp/estadisticas/fildeo/orden/e/asc",
+        "https://blogs.mediapart.fr/abirato/contacts",
+        "https://www.nikkei.com/nkd/company/us/JADB/chart",
+        "https://www.nikkei.com/nkd/company/us/HODU/history/dprice",
+        "https://evene.lefigaro.fr/citations/theme/admiration",
+        "https://evene.lefigaro.fr/celebre/biographie/mike-vogel",
+        "https://correiodoestado.com.br/opiniao/coluna/atendimento/noticias-assinantes",
+    )
+    for url in services:
+        result = classify_url(url)
+        assert result.page_type == "service" and result.basis == "observed_service_route"
+    for url in (
+        HOME + "/weather",
+        "https://www.euronews.com/news/weather",
+        "https://hu.euronews.com/hirek/europa",
+        "https://www.elnacional.com/deportes/lvbp",
+        "https://blogs.mediapart.fr/abirato/blog/170126/contacts",
+        "https://www.nikkei.com/nkd/company/us/JADB",
+        "https://www.nikkei.com/nkd/company/us/JADB/news",
+        "https://evene.lefigaro.fr/actualite/cinema",
+        "https://www.lefigaro.fr/culture",
+        "https://correiodoestado.com.br/opiniao/atendimento-publico",
+        "https://correiodoestado.com.br/noticias-assinantes",
+        "https://correiodoestado.com.br/noticias-assinantes/politica",
+        "https://not-euronews.com/weather/asia",
+    ):
+        assert classify_url(url).page_type == "unknown"
+
+
 def test_schema_sem_identidade_e_json_invalido_ficam_para_revisao():
     assert (
         classify_page(page({"@type": "Article", "headline": "Notícia"}), HOME + "/mundo").page_type

@@ -35,6 +35,7 @@ from buscador_midias.strategy.section_sources import find_feed_sources
 _TAXONOMIES = frozenset({
     "tag", "tags", "author", "authors", "autor", "autores", "keyword",
     "topic", "topics", "topics-list", "themen", "tagg", "amnen", "persons",
+    "mot-cle", "mots-cles", "tema", "topico",
 })
 _REPEATED_SEGMENT = re.compile(r"(?:^|/)([^/]+)/\1/\1(?:/|$)", re.IGNORECASE)
 _LOOP_DETAIL = "segmento repetido três vezes; revisar possível ciclo de navegação"
@@ -59,6 +60,11 @@ def normalize_page(url: str) -> str:
     """Remove fragmento e barra final, mantendo caminhos, esquema e query."""
     parts = urlsplit(urldefrag(url)[0])
     return urlunsplit((parts.scheme, parts.netloc.lower(), parts.path.rstrip("/"), parts.query, ""))
+
+
+def is_taxonomy_url(url: str) -> bool:
+    """Diretórios de tags, autores e palavras-chave reconhecidos no inventário."""
+    return any(s.casefold() in _TAXONOMIES for s in urlsplit(url).path.split("/"))
 
 
 def _is_section_candidate(url: str) -> bool:
@@ -98,17 +104,35 @@ def map_site(
     max_pages: int = 50,
     retry_failed: bool = False,
     refresh_pages: bool = False,
+    suspended_origins: dict[str, str] | None = None,
 ) -> MapSummary:
     """Explora um lote e persiste a fila, sem baixar os links de matéria nem feeds.
 
     A próxima chamada continua pelas páginas pendentes. Falhas só voltam à fila com
-    ``retry_failed``. A política robots é relida em cada lote. O limite conta páginas
-    processadas (inclusive proibidas), além de uma requisição de robots por fonte.
+    ``retry_failed``. A política robots é relida em cada lote para hosts não suspensos.
+    O limite conta páginas processadas (inclusive proibidas), além das leituras de robots.
     """
     if max_pages < 1:
         raise ValueError("max_pages precisa ser positivo")
     pages = {p.url: p for p in store.mapping_pages(site.key)}
     # Classificações novas também se aplicam às filas preservadas de execuções anteriores.
+    reopened = [
+        replace(
+            p, page_type="unknown", type_basis="",
+            status=PageStatus.PENDING if (
+                _is_section_candidate(p.url)
+                or (p.discovery_basis == "navigation" and _navigation_section(p.url))
+            ) else PageStatus.EXCLUDED,
+            detail="regra de serviço revisada; reavaliar pela heurística de seção",
+        )
+        for p in pages.values()
+        if p.kind != "root" and p.page_type == "service"
+        and p.type_basis == "observed_service_route"
+        and classify_url(p.url).page_type == "unknown"
+    ]
+    if reopened:
+        store.save_mapping_pages(site.key, reopened)
+        pages.update((p.url, p) for p in reopened)
     taxonomies = [
         replace(
             p, kind="taxonomy", status=PageStatus.EXCLUDED, page_type="taxonomy",
@@ -116,7 +140,7 @@ def map_site(
         )
         for p in pages.values()
         if p.kind != "root" and p.page_type != "taxonomy"
-        and any(s.casefold() in _TAXONOMIES for s in urlsplit(p.url).path.split("/"))
+        and is_taxonomy_url(p.url)
     ]
     if taxonomies:
         store.save_mapping_pages(site.key, taxonomies)
@@ -130,6 +154,18 @@ def map_site(
     if loops:
         store.save_mapping_pages(site.key, loops)
         pages.update((p.url, p) for p in loops)
+    services = [
+        replace(
+            p, status=PageStatus.EXCLUDED, page_type="service",
+            type_basis=classify_url(p.url).basis, detail="rota de serviço",
+        )
+        for p in pages.values()
+        if p.kind != "root" and p.page_type != "service"
+        and classify_url(p.url).page_type == "service"
+    ]
+    if services:
+        store.save_mapping_pages(site.key, services)
+        pages.update((p.url, p) for p in services)
     root = normalize_page(site.url)
     if root not in pages:
         pages[root] = MapPage(url=root, found_on="", kind="root", discovery_basis="entrypoint")
@@ -156,22 +192,36 @@ def map_site(
             enqueue(p)
     if not queue:
         return summarize_map(site.key, list(pages.values()))
-    robots = read_robots(site, fetcher, user_agent, require_root=False)
+    suspended = suspended_origins if suspended_origins is not None else {}
+    root_origin = urlsplit(site.url).netloc
+    robots = None if root_origin in suspended else read_robots(
+        site, fetcher, user_agent, require_root=False
+    )
     if isinstance(robots, Exploration):
-        detail = robots.detail or robots.status.value
-        pages[root] = replace(pages[root], detail=detail)
-        store.save_mapping_pages(site.key, [pages[root]])
-        return summarize_map(site.key, list(pages.values()), detail)
-    if pages[root].detail and pages[root].status is PageStatus.OK:
+        suspended[root_origin] = (
+            f"{robots.detail or robots.status.value}; origem {root_origin}; fila preservada"
+        )
+        robots = None
+    if not suspended and pages[root].detail and pages[root].status is PageStatus.OK:
         pages[root] = replace(pages[root], detail="")
         store.save_mapping_pages(site.key, [pages[root]])
+
+    def save_suspensions() -> None:
+        if suspended:
+            detail = "; ".join(suspended.values())
+            if pages[root].detail != detail:
+                pages[root] = replace(pages[root], detail=detail)
+                store.save_mapping_pages(site.key, [pages[root]])
+
+    save_suspensions()
     guarded = MappingFetcher(fetcher, site, user_agent, max_pages * 2 + 1)
-    guarded.seed_policy(site.url, robots)
-    root_origin = urlsplit(site.url).netloc
+    if robots is not None:
+        guarded.seed_policy(site.url, robots)
     failures: dict[str, int] = {}
-    pause_detail = ""
     for _ in range(max_pages):
-        while queue and queue[0][3] in processed:
+        while queue and (
+            queue[0][3] in processed or urlsplit(queue[0][3]).netloc in suspended
+        ):
             heappop(queue)
         if not queue:
             break
@@ -192,7 +242,10 @@ def map_site(
                 feed_indexes=(),
             )
             children: list[MapPage] = []
-        elif urlsplit(url).netloc == root_origin and not robots.allows(url, user_agent):
+        elif (
+            robots is not None and urlsplit(url).netloc == root_origin
+            and not robots.allows(url, user_agent)
+        ):
             current = replace(
                 previous, status=PageStatus.DISALLOWED, detail="robots.txt", checked_at=now
             )
@@ -203,7 +256,7 @@ def map_site(
             origin = urlsplit(url).netloc
             failures[origin] = failures.get(origin, 0) + 1 if is_transport_failure(result) else 0
             if failures[origin] >= ORIGIN_FAILURE_LIMIT:
-                pause_detail = (
+                suspended[origin] = (
                     f"exploração suspensa após {ORIGIN_FAILURE_LIMIT} falhas consecutivas "
                     f"de conexão em {origin}: {current.detail}; fila preservada"
                 )
@@ -224,11 +277,13 @@ def map_site(
                     enqueue(pages[child.url])
         store.save_mapping_pages(site.key, updates)
         pages[url] = current
-        if pause_detail:
-            pages[root] = replace(pages[root], detail=pause_detail)
-            store.save_mapping_pages(site.key, [pages[root]])
-            break
-    return summarize_map(site.key, list(pages.values()), pause_detail)
+        save_suspensions()
+    active = any(
+        p.status is PageStatus.PENDING and (p.kind == "root" or p.is_section_candidate)
+        and urlsplit(p.url).netloc not in suspended for p in pages.values()
+    )
+    detail = "; ".join(suspended.values()) if suspended and not active else ""
+    return summarize_map(site.key, list(pages.values()), detail)
 
 
 def drain_site(
@@ -242,6 +297,7 @@ def drain_site(
     retry_failed: bool = False,
     refresh_pages: bool = False,
     on_batch: Callable[[MapSummary], None] | None = None,
+    suspended_origins: dict[str, str] | None = None,
 ) -> MapSummary:
     """Continua até esgotar as pendências reconhecidas ou não conseguir avançar.
 
@@ -249,6 +305,7 @@ def drain_site(
     bloqueadas em páginas concluídas; o motivo e os checkpoints continuam no inventário.
     """
     first = True
+    suspended = suspended_origins if suspended_origins is not None else {}
     while True:
         before = {p.url for p in store.mapping_pages(site.key) if p.status is PageStatus.PENDING}
         result = map_site(
@@ -260,6 +317,7 @@ def drain_site(
             max_pages=batch_pages,
             retry_failed=retry_failed and first,
             refresh_pages=refresh_pages and first,
+            suspended_origins=suspended,
         )
         first = False
         if on_batch is not None:
@@ -429,7 +487,7 @@ def _inspect(
                     "section",
                     PageStatus.EXCLUDED,
                     page_type="service",
-                    type_basis="service_path",
+                    type_basis=classify_url(url).basis,
                     discovery_basis=discovery,
                     detail="rota de serviço",
                 ),
