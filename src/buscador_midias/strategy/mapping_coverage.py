@@ -22,13 +22,23 @@ from buscador_midias.domain.url import canonicalize_url
 from buscador_midias.net.fetcher import Fetcher, FetchResult
 from buscador_midias.strategy.evaluate import evaluate_candidate
 from buscador_midias.strategy.manual import is_excluded
-from buscador_midias.strategy.mapping_net import MappingFetcher
+from buscador_midias.strategy.mapping_net import (
+    ORIGIN_FAILURE_LIMIT,
+    MappingFetcher,
+    is_transport_failure,
+)
 from buscador_midias.strategy.section_sources import find_feed_sources
 
 _READABLE = frozenset({"fresh", "undated", "slow", "stale", "archive", "empty"})
 _LISTING_PAGINATION = re.compile(
     r"/index/feed/pagina-\d+(?:\.(?:ghtml|html?|shtml))?/?$", re.IGNORECASE
 )
+_AUDIT_PAUSED = "auditoria suspensa após"
+
+
+def audit_paused(checks: Sequence[MapSource]) -> bool:
+    """A passagem parou por falhas de conexão, mantendo mecanismos ainda não tentados."""
+    return any(_AUDIT_PAUSED in check.detail for check in checks)
 
 
 def is_html_pagination(check: MapSource) -> bool:
@@ -163,6 +173,7 @@ def audit_sources(
     checks: list[MapSource] = []
     queue = deque(dict.fromkeys(urls))
     seen: set[str] = set()
+    failures: dict[str, int] = {}
     while queue:
         url = queue.popleft()
         if url in seen:
@@ -219,6 +230,17 @@ def audit_sources(
                 detail = "página HTML aponta mecanismos; cada endereço exige sua própria leitura"
         if guarded.exhausted and "orçamento" not in detail:
             detail += "; orçamento de mapeamento esgotado"
+        origin = urlsplit(url).netloc
+        failures[origin] = (
+            failures.get(origin, 0) + 1
+            if response is not None and is_transport_failure(response) else 0
+        )
+        paused = failures[origin] >= ORIGIN_FAILURE_LIMIT
+        if paused:
+            detail += (
+                f"; {_AUDIT_PAUSED} {ORIGIN_FAILURE_LIMIT} falhas consecutivas "
+                f"de conexão em {origin}; mecanismos não tentados preservados"
+            )
         check = MapSource(
             url=url,
             verdict=verdict,
@@ -233,6 +255,8 @@ def audit_sources(
         checks.append(check)
         if on_source is not None:
             on_source(check)
+        if paused:
+            break
     return checks
 
 

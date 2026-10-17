@@ -72,6 +72,14 @@ def test_palavra_feed_em_titulo_de_materia_nao_cria_indice_de_mecanismos():
     assert found.direct == (HOME + "/rss-noticias",) and found.indexes == ()
 
 
+def test_invalid_link_does_not_abort_feed_discovery():
+    found = find_feed_sources(
+        html(link("https://[invalid/feed"), a("https://[invalid/rss"), a("/rss.xml")),
+        HOME, make_site(),
+    )
+    assert found.direct == (HOME + "/rss.xml",)
+
+
 def test_sem_repeticao_e_na_ordem_em_que_aparecem():
     page = html(link("/feed"), link("/feed"), a("/rss.xml"), a("/rss.xml"))
 

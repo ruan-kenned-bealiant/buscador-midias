@@ -56,6 +56,37 @@ def test_rejeita_orcamento_invalido_antes_de_acessar_rede(tmp_path: Path):
     assert fetcher.calls == []
 
 
+def test_drain_does_not_restart_paused_source_audits_in_the_same_run(tmp_path: Path):
+    from buscador_midias.net.fetcher import FetchResult
+
+    sites = tmp_path / "sites.csv"
+    sites.write_text(
+        "region,name,url,country,country_code,language,source_type\n"
+        f"Brasil,Exemplo,{HOME},Brasil,BR,Português,Jornal\n"
+    )
+    urls = [HOME + f"/feed-{i}.xml" for i in range(5)]
+    markup = "<html><head>" + "".join(
+        f'<link rel="alternate" type="application/rss+xml" href="{url}">'
+        for url in urls
+    ) + "</head><body></body></html>"
+    fetcher = FakeFetcher({HOME + "/robots.txt": robots(), HOME: markup.encode()})
+    fetcher.responses.update({
+        url: FetchResult(url, None, b"", "ConnectError: Temporary failure in name resolution")
+        for url in urls
+    })
+    assert main([
+        "map-sites", "--sites", str(sites), "--drain", "--validate-sources",
+        "--out", str(tmp_path / "mapa.xlsx"),
+    ], fetcher=fetcher, now=NOW) == 0
+    assert not set(urls[3:]).intersection(fetcher.calls)
+    store = StateStore()
+    try:
+        assert len(store.mapping_sources("exemplo.com")) == 3
+        assert store.is_empty()
+    finally:
+        store.close()
+
+
 def test_drain_completa_subsecoes_e_mecanismos_em_uma_execucao(tmp_path: Path):
     from tests.strategy.helpers import plain_sitemap
 

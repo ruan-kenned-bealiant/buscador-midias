@@ -86,6 +86,7 @@ from buscador_midias.strategy.listing import DEFAULT_MAX_PAGES as DEFAULT_LISTIN
 from buscador_midias.strategy.manual import load_manual_rules
 from buscador_midias.strategy.mapping import drain_site, map_site, sections_from_sources
 from buscador_midias.strategy.mapping_coverage import (
+    audit_paused,
     audit_sources,
     normalize_source_audits,
     plan_source_audit,
@@ -1281,7 +1282,8 @@ def _map_sites(
                 if not args.drain:
                     free = MemoizingFetcher(free, hosts=_shared_hosts(sites))
 
-                def visit_pass(site: Site, *, first: bool) -> None:
+                def visit_pass(site: Site, *, first: bool) -> bool:
+                    paused = False
                     if not args.sources_only:
                         if args.drain:
                             result = drain_site(
@@ -1303,6 +1305,7 @@ def _map_sites(
                         print(f"{site.key}: seções={result.sections} lidas={result.visited} "
                               f"pendentes={result.pending} falhas={result.issues} {result.detail}",
                               flush=True)
+                        paused = bool(result.detail)
                     if validating:
                         known = store.mapping_pages(site.key)
                         attempted: set[str] = set()
@@ -1327,13 +1330,17 @@ def _map_sites(
                             )
                             print(f'{site.key}: mecanismos conferidos={len(audited)}', flush=True)
                             attempted.update(source.url for source in audited)
+                            if audit_paused(audited):
+                                paused = True
+                                break
                             if not args.drain or not audited:
                                 break
+                    return paused
 
                 def visit(site: Site) -> None:
                     first = True
                     while True:
-                        visit_pass(site, first=first)
+                        paused = visit_pass(site, first=first)
                         first = False
                         if not args.drain or args.sources_only:
                             break
@@ -1344,6 +1351,8 @@ def _map_sites(
                             break
                         store.save_mapping_pages(site.key, additional)
                         print(f"{site.key}: candidatas em mecanismos={len(additional)}", flush=True)
+                        if paused:
+                            break
 
                 with ThreadPoolExecutor(max_workers=args.workers) as pool:
                     jobs = {pool.submit(visit, site): site.key for site in sites}

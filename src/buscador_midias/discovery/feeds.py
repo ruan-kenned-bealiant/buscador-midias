@@ -61,7 +61,10 @@ def find_feed_links(html: bytes | str, base_url: str) -> tuple[str, ...]:
             continue
         if "comment" in href.lower() or "comment" in title:
             continue
-        url = urljoin(base_url, href)
+        try:
+            url = urljoin(base_url, href)
+        except ValueError:
+            continue
         if url not in found:
             found.append(url)
     return tuple(found)

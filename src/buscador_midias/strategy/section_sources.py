@@ -58,8 +58,11 @@ def find_feed_sources(html: bytes, base_url: str, site: Site) -> PageSources:
     indexes: dict[str, None] = {}
     text = html.decode("utf-8", errors="replace")
     for raw in _HREF.findall(text):
-        url = urldefrag(urljoin(base_url, raw.strip()))[0]
-        parts = urlsplit(url)
+        try:
+            url = urldefrag(urljoin(base_url, raw.strip()))[0]
+            parts = urlsplit(url)
+        except ValueError:
+            continue
         if parts.scheme not in ("http", "https") or not site.owns_host(url):
             continue
         if "comment" in url.lower() or url in declared:

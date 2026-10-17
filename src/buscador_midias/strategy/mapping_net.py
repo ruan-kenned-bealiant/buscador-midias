@@ -6,6 +6,17 @@ from buscador_midias.discovery.robots import RobotsPolicy
 from buscador_midias.domain.site import Site
 from buscador_midias.net.fetcher import Fetcher, FetchResult
 
+ORIGIN_FAILURE_LIMIT = 3
+_TRANSPORT_ERRORS = (
+    "ConnectError:", "ConnectTimeout:", "ReadTimeout:", "ReadError:",
+    "WriteError:", "WriteTimeout:", "RemoteProtocolError:", "PoolTimeout:", "ProxyError:",
+)
+
+
+def is_transport_failure(result: FetchResult) -> bool:
+    """Falhas de conexão/origem; 404, proibições e orçamento não pausam outras páginas."""
+    return result.status is None and any(t in (result.error or "") for t in _TRANSPORT_ERRORS)
+
 
 class MappingFetcher:
     """Aplica robots a cada host e conta chamadas à pilha HTTP, inclusive sua leitura.

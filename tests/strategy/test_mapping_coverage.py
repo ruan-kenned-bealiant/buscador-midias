@@ -2,6 +2,7 @@ from tests.strategy.helpers import HOME, NOW, UA, FakeFetcher, make_site, plain_
 
 from buscador_midias.domain.mapping import MapPage, MapSource, PageStatus
 from buscador_midias.strategy.mapping_coverage import (
+    audit_paused,
     audit_sources,
     compare_page,
     normalize_source_audits,
@@ -38,6 +39,25 @@ def test_valida_uma_fonte_uma_vez_e_compara_amostras_por_secao():
     assert coverage.matched == 1 and coverage.sampled == 2
     assert coverage.sources == (url,)
     assert fetcher.calls.count(url) == 1
+
+
+def test_audit_pauses_connection_failures_without_claiming_unattempted_endpoints():
+    from buscador_midias.net.fetcher import FetchResult
+
+    urls = [HOME + f"/feed-{i}.xml" for i in range(5)]
+    fetcher = FakeFetcher({HOME + "/robots.txt": robots()})
+    fetcher.responses.update({
+        url: FetchResult(url, None, b"", "ConnectError: Temporary failure in name resolution")
+        for url in urls
+    })
+    saved = []
+    checks = audit_sources(
+        make_site(), fetcher, urls, user_agent=UA, now=NOW, on_source=saved.append
+    )
+    assert len(checks) == 3 and checks == saved and audit_paused(checks)
+    assert not set(urls[3:]).intersection(fetcher.calls)
+    queue = plan_source_audit(make_site(), [], checks, [], now=NOW, hints=urls)
+    assert queue == urls[3:]
 
 
 def test_sem_amostra_nao_vira_cobertura_total():

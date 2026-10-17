@@ -4,6 +4,7 @@ from tests.strategy.helpers import HOME, NOW, UA, FakeFetcher, make_site, robots
 from tests.strategy.test_listing import art, page
 
 from buscador_midias.domain.mapping import MapPage, MapSource, PageStatus
+from buscador_midias.net.fetcher import FetchResult
 from buscador_midias.strategy.mapping import drain_site, map_site, sections_from_sources
 
 
@@ -79,10 +80,41 @@ def test_drain_does_not_repeat_failures_between_batches():
     assert fetcher.calls.count(HOME + "/mundo") == 1
 
 
+def test_repeated_connection_failures_pause_drain_preserving_unattempted_pages():
+    paths = [f"/secao-{name}" for name in ("a", "b", "c", "d", "e")]
+    fetcher = FakeFetcher({HOME + "/robots.txt": robots(), HOME: page(*paths)})
+    for path in paths:
+        fetcher.responses[HOME + path] = FetchResult(
+            HOME + path, None, b"", "ConnectError: Temporary failure in name resolution"
+        )
+    store = MemoryMap()
+    result = drain_site(make_site(), fetcher, store, user_agent=UA, clock=lambda: NOW)
+    assert result.pending == 2 and "suspensa" in result.detail
+    assert sum(HOME + path in fetcher.calls for path in paths) == 3
+    root = next(p for p in store.mapping_pages(make_site().key) if p.kind == "root")
+    assert root.status is PageStatus.OK and "fila preservada" in root.detail
+    for path in paths:
+        fetcher.responses[HOME + path] = page()
+    resumed = drain_site(make_site(), fetcher, store, user_agent=UA, clock=lambda: NOW)
+    assert resumed.pending == 0 and not resumed.detail
+    assert not next(p for p in store.mapping_pages(make_site().key) if p.kind == "root").detail
+
+
+def test_missing_urls_do_not_pause_other_sections():
+    paths = [f"/secao-{name}" for name in ("a", "b", "c", "d", "e")]
+    fetcher = FakeFetcher({HOME + "/robots.txt": robots(), HOME: page(*paths)})
+    fetcher.responses.update({HOME + path: status(HOME + path, 404) for path in paths})
+    result = drain_site(make_site(), fetcher, MemoryMap(), user_agent=UA, clock=lambda: NOW)
+    assert result.pending == 0 and not result.detail
+    assert all(HOME + path in fetcher.calls for path in paths)
+
+
 def test_topic_directories_are_taxonomies_in_new_and_resumed_queues():
     store = MemoryMap()
     previous = MapPage(HOME + "/topic/alguem", HOME, "section", title="Preservar")
-    store.save_mapping_pages(make_site().key, [previous])
+    store.save_mapping_pages(make_site().key, [
+        previous, MapPage(HOME + "/en/persons/alguem", HOME, "section"),
+    ])
     fetcher = FakeFetcher({
         HOME + "/robots.txt": robots(),
         HOME: page("/topics-list/a", "/topic/brasil", "/politica"),
@@ -91,7 +123,7 @@ def test_topic_directories_are_taxonomies_in_new_and_resumed_queues():
     result = run(fetcher, store)
     assert result.pending == 0 and result.visited == 2
     saved = {p.url: p for p in store.mapping_pages(make_site().key)}
-    for path in ("/topic/alguem", "/topic/brasil", "/topics-list/a"):
+    for path in ("/topic/alguem", "/topic/brasil", "/topics-list/a", "/en/persons/alguem"):
         assert saved[HOME + path].page_type == "taxonomy"
         assert saved[HOME + path].status is PageStatus.EXCLUDED
         assert HOME + path not in fetcher.calls
@@ -125,6 +157,31 @@ def test_relative_category_loop_is_preserved_for_review_without_expanding_foreve
     for url in (third, legacy):
         assert saved[url].status is PageStatus.EXCLUDED
         assert "ciclo" in saved[url].detail and url not in fetcher.calls
+
+
+def test_malformed_ipv6_link_does_not_abort_the_source_or_lose_valid_links():
+    store = MemoryMap()
+    fetcher = FakeFetcher({
+        HOME + "/robots.txt": robots(),
+        HOME: page("https://[invalid/feed", "/politica"),
+        HOME + "/politica": page(art(1, "politica")),
+    })
+    result = run(fetcher, store)
+    assert result.visited == 2 and result.pending == 0
+
+
+def test_repeated_index_segments_also_suspend_new_and_persisted_navigation_cycles():
+    old = HOME + "/index/pays/" + "index/" * 20 + "sujet"
+    new = HOME + "/index/index/index/pays"
+    store = MemoryMap()
+    store.save_mapping_pages(make_site().key, [MapPage(old, HOME, "section")])
+    fetcher = FakeFetcher({HOME + "/robots.txt": robots(), HOME: page(new)})
+    result = run(fetcher, store)
+    assert result.visited == 1 and result.pending == 0
+    for url in (old, new):
+        saved = next(p for p in store.mapping_pages(make_site().key) if p.url == url)
+        assert saved.status is PageStatus.EXCLUDED and "ciclo" in saved.detail
+        assert url not in fetcher.calls
 
 
 def test_mecanismos_revelam_prefixos_sem_incluir_datas_taxonomias_servicos_ou_outro_host():

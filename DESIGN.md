@@ -70,6 +70,10 @@ O trabalho segue esta ordem:
    A aba Revisão distingue falhas das entradas: proibição explícita de robots, falha ao ler a
    política, limites, DNS, TLS, rede, conteúdo e redirecionamento fora do escopo. Preserva o estado
    e o motivo e não dispara tentativas ou mudanças no catálogo automaticamente.
+   Três falhas consecutivas de conexão na mesma origem, dentro do mesmo lote de páginas
+   ou passagem de auditoria, suspendem a passagem, mantendo
+   páginas/mecanismos não tentados pendentes e o motivo explícito. A retomada depende de
+   outra execução; `--drain` não reinicia automaticamente a passagem suspensa.
 2. Ampliar o reconhecimento de seções pela navegação e cruzar a estrutura com sitemaps; distinguir
    editorias, taxonomias e serviços. A heurística de URL atual ainda é limitada. Primeira
    classificação por evidência implementada (DDL 006): schemas da própria página, com proteção
@@ -77,11 +81,13 @@ O trabalho segue esta ordem:
    para revisão. Registra navegação explícita, que passa à frente dos palpites de URL na fila.
    Matérias e serviços reconhecidos não expandem a fila. A navegação também permite reconhecer
    rotas de seção com extensão HTML/PHP, antes ignoradas.
-   Diretórios de tópicos (`topic`, `topics`, `topics-list`, `themen`, `tagg`, `amnen`) são taxonomias e ficam
+   Diretórios de tópicos/pessoas (`topic`, `topics`, `topics-list`, `themen`, `tagg`, `amnen`,
+   `persons`) são taxonomias e ficam
    preservados para revisão, inclusive quando já estavam pendentes antes dessa classificação.
    A entrada cadastrada mantém prioridade e não é excluída por esse caminho.
-   A expansão relativa observada em `exit.al/category/category/category/...` é suspensa como
-   possível ciclo, mantendo os registros para revisão. Não impõe teto geral à profundidade.
+   A expansão relativa com três segmentos iguais consecutivos, observada em `exit.al`
+   (`category/category/category/...`) e `monde-diplomatique.fr` (`index/index/index/...`),
+   é suspensa como possível ciclo, mantendo registros para revisão, sem teto geral de profundidade.
    O modo contínuo também cruza caminhos de matérias em mecanismos lidos com o inventário:
    prefixos ainda desconhecidos entram como candidatas `mechanism_path`, respeitando escopo,
    taxonomias, serviços e datas; seguem sem confirmação até leitura. A exploração e a auditoria

@@ -24,16 +24,20 @@ from buscador_midias.extraction.reliability import (
 )
 from buscador_midias.net.fetcher import Fetcher, FetchResult
 from buscador_midias.strategy.listing import is_article_url, is_section_url
-from buscador_midias.strategy.mapping_net import MappingFetcher
+from buscador_midias.strategy.mapping_net import (
+    ORIGIN_FAILURE_LIMIT,
+    MappingFetcher,
+    is_transport_failure,
+)
 from buscador_midias.strategy.page_classification import classify_page, classify_url
 from buscador_midias.strategy.section_sources import find_feed_sources
 
 _TAXONOMIES = frozenset({
     "tag", "tags", "author", "authors", "autor", "autores", "keyword",
-    "topic", "topics", "topics-list", "themen", "tagg", "amnen",
+    "topic", "topics", "topics-list", "themen", "tagg", "amnen", "persons",
 })
-_REPEATED_CATEGORY = re.compile(r"(?:^|/)category/category/category(?:/|$)", re.IGNORECASE)
-_LOOP_DETAIL = "caminho category repetido; revisar possível ciclo de navegação"
+_REPEATED_SEGMENT = re.compile(r"(?:^|/)([^/]+)/\1/\1(?:/|$)", re.IGNORECASE)
+_LOOP_DETAIL = "segmento repetido três vezes; revisar possível ciclo de navegação"
 _FAILURES = frozenset(
     {PageStatus.BLOCKED, PageStatus.ERROR, PageStatus.DISALLOWED, PageStatus.INVALID}
 )
@@ -121,7 +125,7 @@ def map_site(
         replace(p, status=PageStatus.EXCLUDED, detail=_LOOP_DETAIL)
         for p in pages.values()
         if p.kind != "root" and p.status is not PageStatus.EXCLUDED
-        and _REPEATED_CATEGORY.search(urlsplit(p.url).path)
+        and _REPEATED_SEGMENT.search(urlsplit(p.url).path)
     ]
     if loops:
         store.save_mapping_pages(site.key, loops)
@@ -164,6 +168,8 @@ def map_site(
     guarded = MappingFetcher(fetcher, site, user_agent, max_pages * 2 + 1)
     guarded.seed_policy(site.url, robots)
     root_origin = urlsplit(site.url).netloc
+    failures: dict[str, int] = {}
+    pause_detail = ""
     for _ in range(max_pages):
         while queue and queue[0][3] in processed:
             heappop(queue)
@@ -194,6 +200,13 @@ def map_site(
         else:
             result = guarded.get(url)
             current, children = _inspect(site, previous, result, now)
+            origin = urlsplit(url).netloc
+            failures[origin] = failures.get(origin, 0) + 1 if is_transport_failure(result) else 0
+            if failures[origin] >= ORIGIN_FAILURE_LIMIT:
+                pause_detail = (
+                    f"exploração suspensa após {ORIGIN_FAILURE_LIMIT} falhas consecutivas "
+                    f"de conexão em {origin}: {current.detail}; fila preservada"
+                )
         updates = [current]
         for child in children:
             if child.url not in pages:
@@ -211,7 +224,11 @@ def map_site(
                     enqueue(pages[child.url])
         store.save_mapping_pages(site.key, updates)
         pages[url] = current
-    return summarize_map(site.key, list(pages.values()))
+        if pause_detail:
+            pages[root] = replace(pages[root], detail=pause_detail)
+            store.save_mapping_pages(site.key, [pages[root]])
+            break
+    return summarize_map(site.key, list(pages.values()), pause_detail)
 
 
 def drain_site(
@@ -248,7 +265,7 @@ def drain_site(
         if on_batch is not None:
             on_batch(result)
         after = {p.url for p in store.mapping_pages(site.key) if p.status is PageStatus.PENDING}
-        if not after or after == before:
+        if result.detail or not after or after == before:
             return result
 
 
@@ -288,7 +305,7 @@ def sections_from_sources(
                     or not _is_section_candidate(url)
                     or any(part.lower() in _TAXONOMIES for part in prefix)
                     or classify_url(url).page_type == "service"
-                    or _REPEATED_CATEGORY.search(urlsplit(url).path)
+                    or _REPEATED_SEGMENT.search(urlsplit(url).path)
                 ):
                     continue
                 known.add(url)
@@ -372,14 +389,17 @@ def _inspect(
         href = anchor.get("href")
         if not href:
             continue
-        url = normalize_page(urljoin(base, href.strip()))
+        try:
+            url = normalize_page(urljoin(base, href.strip()))
+        except ValueError:
+            continue  # Um href inválido não descarta a seção nem seus outros links.
         if not site.owns(url) or url in (normalize_page(site.url), page.url, normalize_page(base)):
             continue
         ancestors = list(anchor.iterancestors())
         navigation = any(a.tag == "nav" or a.get("role") == "navigation" for a in ancestors)
         discovery = "navigation" if navigation else "url_shape"
         segments = urlsplit(url).path.lower().split("/")
-        if _REPEATED_CATEGORY.search(urlsplit(url).path):
+        if _REPEATED_SEGMENT.search(urlsplit(url).path):
             children.setdefault(
                 url, MapPage(
                     url, page.url, "section", PageStatus.EXCLUDED,

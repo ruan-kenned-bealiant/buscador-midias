@@ -99,7 +99,10 @@ existentes em `var/` são os resultados anteriores; não precisam ser substituí
 relatório. Os nomes de seção truncados das planilhas antigas não viram URLs por adivinhação.
 
 ```bash
-# Aplicar antes o DDL sql/postgres/004_create_midias_crawler_section_pages.sql.
+# Aplicar antes os DDLs em sql/postgres/, nesta ordem:
+# 004_create_midias_crawler_section_pages.sql
+# 005_create_midias_crawler_section_sources.sql
+# 006_add_midias_crawler_page_classification.sql
 scripts/bm.sh map-sites --only folha.uol.com.br g1.globo.com m28investigates.com bbs.bt/news \
     --pages-per-site 10 --out var/mapa-sites-piloto.xlsx
 # Repetir o comando continua pela fila, sem reler as páginas concluídas.
@@ -120,11 +123,12 @@ candidatas apontadas explicitamente na navegação e, por último, os palpites p
 dentro de cada grupo, páginas mais rasas primeiro. Guarda endereço, primeira
 página ou mecanismo que o apontou, título, links com aparência de matéria, feeds/sitemaps apontados, índices
 de feeds, tentativas e falhas. Tags, autores e diretórios de tópicos (`topic`, `topics`,
-`topics-list`, `themen`, `tagg`, `amnen`) ficam como taxonomias excluídas para revisão.
+`topics-list`, `themen`, `tagg`, `amnen`, `persons`) ficam como taxonomias excluídas para revisão.
 Essa classificação também é
 aplicada às filas antigas ao retomá-las, preservando os registros e as amostras já salvas.
 Uma URL de entrada cadastrada nesses caminhos continua sendo lida.
-Rotas com três `category` consecutivos são preservadas como possível ciclo de navegação,
+Rotas com três segmentos iguais consecutivos (`category/category/category`, `index/index/index`)
+são preservadas como possível ciclo de navegação,
 sem continuar expandindo os links relativos. Seções profundas sem esse padrão continuam elegíveis.
 O limite de páginas vale **por lote** (inclui páginas proibidas; robots é uma requisição extra).
 A execução usa somente HTTP gratuito, respeita robots e intervalo por host; não chama LLM,
@@ -145,6 +149,13 @@ Um prefixo derivado continua `unknown` até ser lido: não é uma seção confir
 mostra essa origem separadamente; navegação explícita pode promovê-la na prioridade da fila.
 O inventário confere robots por caminho: uma entrada proibida não impede a leitura de uma
 subseção explicitamente permitida. Falha ao baixar a política mantém a fila suspensa.
+
+Três falhas consecutivas de conexão na mesma origem (DNS, TLS, timeout ou transporte),
+dentro do mesmo lote de páginas ou passagem de auditoria,
+suspendem a passagem e preservam as páginas ainda não tentadas. O motivo fica na entrada;
+uma nova execução pode retomar a fila. A auditoria aplica a mesma regra aos mecanismos e
+não reinicia essa passagem automaticamente. Respostas 404 e proibições de caminho não
+disparam essa suspensão. Falha de conexão não é tratada como seção sem notícias.
 
 O relatório contém **Fontes**, **Páginas**, **Mecanismos**, **Amostras**, **Cobertura**, **Lacunas**,
 **Complementos** e **Revisão**,
