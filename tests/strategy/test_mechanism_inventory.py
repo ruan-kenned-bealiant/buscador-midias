@@ -50,6 +50,7 @@ def record(url="https://a.com/rss"):
 
 def test_endereco_de_maquina_pode_ficar_fora_do_prefixo_editorial():
     assert record()["group"] == "recent"
+    assert record()["functional"] is True
     assert record()["checked_at"] == NOW.isoformat()
     for url in (
         "https://outro.com/rss",
@@ -59,7 +60,8 @@ def test_endereco_de_maquina_pode_ficar_fora_do_prefixo_editorial():
     ):
         assert record(url)["group"] == "excluded"
         assert record(url)["url"] is None
-    assert record("https://a.com/sitemap-2026-10-18.xml")["group"] == "review"
+    dated = record("https://a.com/sitemap-2026-10-18.xml")
+    assert dated["group"] == "review" and dated["functional"] and dated["fixed_date"]
 
 
 def test_classifica_legibilidade_sem_prometer_atualizacao():
@@ -79,6 +81,12 @@ def test_classifica_legibilidade_sem_prometer_atualizacao():
             partial=False,
         )
         assert mechanism_record(SITE, row)["group"] == expected
+        assert mechanism_record(SITE, row)["functional"] is True
+    row["listed_count"] = 0
+    row["verdict"] = "empty"
+    assert mechanism_record(SITE, row)["functional"] is True
+    row["verdict"] = "unavailable"
+    assert mechanism_record(SITE, row)["functional"] is False
     row["kind"] = "html_pagination"
     assert mechanism_record(SITE, row)["group"] == "excluded"
     row["kind"] = "feed"
@@ -160,6 +168,18 @@ def test_exportacao_gera_plano_e_hints_consumiveis_sem_promover_estrategias(
     assert [r.url for r in plan[SITE.key]] == ["https://a.com/rss"]
     assert load_hints(tmp_path / "hints-recentes.csv").for_site(SITE) == ("https://a.com/rss",)
     assert summary["plan_sources"] == 1 and summary["http_requests"] == 0
+    functional = load_discovery_plan(tmp_path / "plano-funcional.json", {SITE.key: SITE})
+    assert {r.url for r in functional[SITE.key]} == {
+        "https://a.com/rss",
+        "https://a.com/antigo",
+        "https://a.com/sem-data",
+        "https://a.com/sitemap-2026-10-18.xml",
+    }
+    assert summary["functional_plan_sources"] == 1
+    assert summary["functional_plan_mechanisms"] == 4
+    assert set(load_hints(tmp_path / "hints-funcionais.csv").for_site(SITE)) == {
+        r.url for r in functional[SITE.key]
+    }
     assert summary["mechanisms_supplement"] == 1
     expanded = load_discovery_plan(tmp_path / "plano-ampliado.json", {SITE.key: SITE})
     assert {r.url for r in expanded[SITE.key]} == {"https://a.com/rss", "https://a.com/sem-data"}

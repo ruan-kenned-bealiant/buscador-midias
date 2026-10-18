@@ -18,6 +18,7 @@ from buscador_midias.domain.sitemap import ParsedSitemap, SitemapKind, SitemapRe
 from buscador_midias.net.fetcher import Fetcher, FetchResult
 
 DEFAULT_MAX_SITEMAP_FETCHES = 6
+DEFAULT_MAX_SITEMAP_DEPTH = 10
 _FALLBACK_PATHS = ("/sitemap.xml", "/sitemap_index.xml")
 # Palavras inteiras do nome de um sitemap filho que indicam o mais recente ("recente" não conta).
 _FRESH_WORDS = frozenset({"latest", "recent"})
@@ -114,6 +115,7 @@ def explore_site(
     max_sitemap_fetches: int = DEFAULT_MAX_SITEMAP_FETCHES,
     skip_child: Callable[[SitemapRef], bool] | None = None,
     entry_points: Sequence[str] = (),
+    max_sitemap_depth: int = DEFAULT_MAX_SITEMAP_DEPTH,
 ) -> Exploration:
     """Lê o robots.txt e percorre os sitemaps do site dentro de um orçamento de leituras.
 
@@ -133,6 +135,8 @@ def explore_site(
             de entrada; ``True`` dispensa o filho sem requisição (ex.: ``lastmod`` inalterado),
             mas ele continua ocupando um lugar na janela, então nunca se avança para filhos
             mais antigos.
+        max_sitemap_depth: Máximo de níveis abaixo da entrada (nível zero). Padrão 10;
+            o orçamento de arquivos continua independente. Índices aninhados e ciclos são tratados.
         entry_points: Sitemaps por onde começar, no lugar dos declarados no robots.txt (ex.: o
             endereço escolhido pela estratégia da fonte). O robots.txt continua valendo: é lido
             e o que ele proíbe não é baixado.
@@ -140,6 +144,8 @@ def explore_site(
     Returns:
         A exploração; nunca levanta por causa do conteúdo ou da rede do site.
     """
+    if max_sitemap_depth < 0:
+        raise ValueError("max_sitemap_depth não pode ser negativo")
     origin = _origin(site.url)
     policy = read_robots(site, fetcher, user_agent)
     if isinstance(policy, Exploration):
@@ -152,7 +158,17 @@ def explore_site(
         or tuple(f"{origin}{path}" for path in _FALLBACK_PATHS)
     )
     ranked = rank_urls(declared, terms)
-    return _walk(site, fetcher, policy, ranked, terms, user_agent, max_sitemap_fetches, skip_child)
+    return _walk(
+        site,
+        fetcher,
+        policy,
+        ranked,
+        terms,
+        user_agent,
+        max_sitemap_fetches,
+        skip_child,
+        max_sitemap_depth,
+    )
 
 
 def _failed(status: ProbeStatus, detail: str, *, fetched: int = 0, skipped: int = 0) -> Exploration:
@@ -218,6 +234,7 @@ def _walk(
     user_agent: str,
     budget: int,
     skip_child: Callable[[SitemapRef], bool] | None,
+    max_sitemap_depth: int,
 ) -> Exploration:
     """Percorre os sitemaps de entrada e filhos de índice dentro do orçamento de leituras."""
     queue: deque[str] = deque(entry_points)
@@ -227,9 +244,15 @@ def _walk(
     declared_lastmod: dict[str, datetime | None] = {}
     fetched = 0
     skipped = 0
+    depths = dict.fromkeys(entry_points, 0)
+    visited: set[str] = set()
 
     while queue and fetched < budget:
         url = queue.popleft()
+        identity = url.split("#", 1)[0]
+        if identity in visited:
+            continue
+        visited.add(identity)
         if not policy.allows(url, user_agent):
             failures.append((ProbeStatus.ROBOTS_DISALLOWED, f"{url}: proibido pelo robots.txt"))
             continue
@@ -252,7 +275,7 @@ def _walk(
                 is_entry=url in is_entry,
             )
         )
-        if sitemap.kind is SitemapKind.INDEX and url in is_entry:
+        if sitemap.kind is SitemapKind.INDEX and depths[url] < max_sitemap_depth:
             kept: list[str] = []
             # O orçamento é uma janela dos filhos mais recentes: pular um filho inalterado
             # consome a janela em vez de avançar para arquivos mais antigos que nunca lemos.
@@ -260,14 +283,28 @@ def _walk(
             candidates = [child for child in ranked if not is_taxonomy_sitemap(child.loc)] or ranked
             # Os sitemaps declarados no robots.txt (ex.: o de notícias) têm vez antes dos filhos.
             reserved = sum(1 for u in queue if u in is_entry and policy.allows(u, user_agent))
+            candidates = [
+                child
+                for child in candidates
+                if child.loc.split("#", 1)[0] not in visited and child.loc not in queue
+            ]
             window = candidates[: max(budget - fetched - reserved, 0)]
             for child in window:
+                if child.loc.split("#", 1)[0] in visited or child.loc in queue:
+                    continue
                 if skip_child is not None and skip_child(child):
                     skipped += 1
                     continue
+                depths[child.loc] = depths[url] + 1
                 declared_lastmod[child.loc] = child.lastmod
                 kept.append(child.loc)
-            queue.extend(kept)
+            if url in is_entry:
+                queue.extend(kept)
+            else:
+                # Desce no índice aninhado sem deixar os outros pontos de entrada para trás.
+                entries = [u for u in queue if u in is_entry]
+                siblings = [u for u in queue if u not in is_entry]
+                queue = deque(entries + kept + siblings)
 
     return _conclude(explored, failures, fetched, skipped)
 

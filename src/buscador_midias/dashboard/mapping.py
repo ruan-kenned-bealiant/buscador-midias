@@ -34,9 +34,12 @@ def mapping_catalog(
     mechanism_counts: dict[str, dict[str, int]] = {}
     for record in mapping_mechanisms(store, catalog.sites, rules=rules):
         counts = mechanism_counts.setdefault(
-            record["site_key"], {"recent": 0, "supplement": 0, "review": 0}
+            record["site_key"],
+            {"recent": 0, "supplement": 0, "review": 0, "functional": 0, "fixed_date": 0},
         )
         counts[record["group"]] += 1
+        counts["functional"] += bool(record["functional"])
+        counts["fixed_date"] += bool(record["functional"] and record["fixed_date"])
     entries: list[dict[str, Any]] = []
     for duplicate, sources in ((False, catalog.sites), (True, catalog.duplicates)):
         for site in sources:
@@ -51,7 +54,14 @@ def mapping_catalog(
                     "language": site.language,
                     "duplicate": duplicate,
                     "mechanisms": mechanism_counts.get(
-                        site.key, {"recent": 0, "supplement": 0, "review": 0}
+                        site.key,
+                        {
+                            "recent": 0,
+                            "supplement": 0,
+                            "review": 0,
+                            "functional": 0,
+                            "fixed_date": 0,
+                        },
                     ),
                     **{
                         k: counts.get(k, 0)
@@ -75,8 +85,10 @@ def mapping_catalog(
         "totals": {
             "with_recent_mechanisms": sum(bool(e["mechanisms"]["recent"]) for e in unique),
             "recent_mechanisms": sum(e["mechanisms"]["recent"] for e in unique),
-            "with_usable_mechanisms": sum(
-                bool(e["mechanisms"]["recent"] or e["mechanisms"]["supplement"]) for e in unique
+            "with_usable_mechanisms": sum(bool(e["mechanisms"]["functional"]) for e in unique),
+            "functional_mechanisms": sum(e["mechanisms"]["functional"] for e in unique),
+            "with_stable_functional": sum(
+                e["mechanisms"]["functional"] > e["mechanisms"]["fixed_date"] for e in unique
             ),
             "without_recent_mechanisms": sum(not e["mechanisms"]["recent"] for e in unique),
             "with_sections": sum(bool(e["read"]) for e in unique),
@@ -160,7 +172,13 @@ def mapping_mechanisms(
         record = mechanism_record(site, row, rules.for_site(site).exclude if rules else ())
         if record["group"] == "excluded":
             continue
-        if mode != "all" and record["group"] != mode:
+        if mode == "functional":
+            if not record["functional"]:
+                continue
+        elif mode == "fixed_date":
+            if not (record["functional"] and record["fixed_date"]):
+                continue
+        elif mode != "all" and record["group"] != mode:
             continue
         if search.casefold() not in (row["url"] + " " + (row["kind"] or "")).casefold():
             continue

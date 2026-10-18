@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import psycopg
 
+from buscador_midias.dashboard.access_audit import AccessAudit
 from buscador_midias.dashboard.mapping import mapping_catalog, mapping_mechanisms, mapping_sections
 from buscador_midias.dashboard.snapshot import DEFAULT_HOURS, DEFAULT_RECENT, build_snapshot
 from buscador_midias.sites.loader import load_sites
@@ -42,6 +43,7 @@ def make_server(
     schedule_path: Path | None = None,
     cache_seconds: float = DEFAULT_CACHE_SECONDS,
     sites_path: Path | None = None,
+    audit_directory: Path | None = None,
 ) -> ThreadingHTTPServer:
     """Cria o servidor do painel (sem iniciá-lo).
 
@@ -57,6 +59,7 @@ def make_server(
         cache_seconds: Por quanto tempo o retrato calculado é reaproveitado entre as requisições
             (várias abas ou atualizações seguidas não recalculam tudo).
         sites_path: Catálogo CSV do mapa; padrão é o catálogo versionado do projeto.
+        audit_directory: Pasta dos relatórios de acesso; padrão é ``var`` do projeto.
 
     Returns:
         O servidor, pronto para ``serve_forever``.
@@ -71,6 +74,9 @@ def make_server(
     map_cache: tuple[datetime, bytes] | None = None
     map_lock = threading.Lock()
     rules = load_manual_rules(Path(__file__).resolve().parents[3] / "data/estrategias_manuais.csv")
+    audit = AccessAudit(
+        audit_directory or Path(__file__).resolve().parents[3] / "var", list(catalog.sites), rules
+    )
     indexes: dict[str, tuple[datetime, MechanismIndex]] = {}
 
     class Handler(BaseHTTPRequestHandler):
@@ -85,6 +91,18 @@ def make_server(
                 self._send(200, "text/html; charset=utf-8", map_page)
             elif parts.path == "/fluxo":
                 self._send(200, "text/html; charset=utf-8", page)
+            elif parts.path == "/api/mapa/acesso":
+                self._access(parse_qs(parts.query))
+            elif parts.path == "/api/mapa/auditoria.xlsx":
+                report = audit.directory / "auditoria-acesso-rss/resultado.xlsx"
+                if report.is_file():
+                    self._send(
+                        200,
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        report.read_bytes(),
+                    )
+                else:
+                    self._json(404, {"error": "planilha de auditoria não disponível"})
             elif parts.path in (
                 "/api/mapa/fontes",
                 "/api/mapa/secoes",
@@ -114,8 +132,15 @@ def make_server(
                 if key and key not in sites:
                     self._json(404, {"error": "fonte não encontrada"})
                     return
-                mode = query.get("mode", ["recent"])[0]
-                if mode not in ("recent", "supplement", "review", "all"):
+                mode = query.get("mode", ["functional"])[0]
+                if mode not in (
+                    "functional",
+                    "fixed_date",
+                    "recent",
+                    "supplement",
+                    "review",
+                    "all",
+                ):
                     self._json(400, {"error": "filtro de mecanismos inválido"})
                     return
             with map_lock:
@@ -132,6 +157,10 @@ def make_server(
                     try:
                         if path.endswith("/fontes"):
                             data = mapping_catalog(store, catalog, rules)
+                            audit.refresh()
+                            data["access_audit"] = audit.summary
+                            for source in data["sites"]:
+                                source["access_audit"] = audit.sources.get(source["key"], {})
                         elif mechanisms:
                             records = mapping_mechanisms(
                                 store,
@@ -153,6 +182,8 @@ def make_server(
                                         "validado_em",
                                         "leitura_parcial",
                                         "grupo",
+                                        "xml_funcional",
+                                        "data_fixa",
                                     )
                                 )
                                 for record in records:
@@ -167,6 +198,8 @@ def make_server(
                                             record["checked_at"],
                                             record["partial"],
                                             record["group"],
+                                            record["functional"],
+                                            record["fixed_date"],
                                         ]
                                     )
                                 self._send(
@@ -217,7 +250,7 @@ def make_server(
                             )
                     finally:
                         store.close()
-                except (psycopg.Error, StateConfigError, StateSchemaError):
+                except (psycopg.Error, StateConfigError, StateSchemaError, OSError, ValueError):
                     _LOG.exception("falha ao consultar o mapa")
                     self._json(503, {"error": "mapa indisponível"})
                     return
@@ -225,6 +258,44 @@ def make_server(
                 if path.endswith("/fontes"):
                     map_cache = (now, body)
                 self._send(200, "application/json; charset=utf-8", body)
+
+        def _access(self, query: dict[str, list[str]]) -> None:
+            """Consulta os relatórios locais; não abre o banco nem acessa os sites."""
+            key = query.get("site", [""])[0]
+            if key not in sites:
+                self._json(404, {"error": "fonte não encontrada"})
+                return
+            mode = query.get("mode", ["all"])[0]
+            kind = query.get("kind", ["all"])[0]
+            if mode not in (
+                "all",
+                "accessible",
+                "readable",
+                "unconfirmed",
+                "untested",
+            ) or kind not in ("all", "feed", "sitemap"):
+                self._json(400, {"error": "filtro de auditoria inválido"})
+                return
+            try:
+                offset = min(1_000_000, max(0, int(query.get("offset", ["0"])[0])))
+            except ValueError:
+                offset = 0
+            with map_lock:
+                try:
+                    audit.refresh()
+                    data = audit.page(
+                        key,
+                        kind=kind,
+                        mode=mode,
+                        search=query.get("q", [""])[0][:200],
+                        offset=offset,
+                        limit=_bounded(query, "limit", 50, 200),
+                    )
+                except (OSError, ValueError, csv.Error):
+                    _LOG.exception("falha ao ler relatórios de acesso")
+                    self._json(503, {"error": "relatórios de auditoria indisponíveis"})
+                    return
+            self._json(200, data)
 
         def _snapshot(self, query: dict[str, list[str]]) -> None:
             """Responde o retrato do estado (do cache, se recente); falha de leitura vira 503."""

@@ -52,16 +52,31 @@ def mechanism_record(
     result = {k: v for k, v in row.items() if k != "samples"}
     url = row["url"]
     safe = safe_mechanism_url(site, url)
-    group, reason = "review", "Conteúdo antigo, vazio ou sem leitura XML válida"
+    fixed_date = find_date(url) is not None if safe else False
+    functional = (
+        safe
+        and not is_excluded(url, exclude)
+        and row["kind"] in XML_KINDS
+        and row["verdict"] in READABLE
+    )
+    group, reason = "review", "XML com conteúdo antigo ou vazio; leitura válida na auditoria"
     if not safe or is_excluded(url, exclude) or row["kind"] not in XML_KINDS:
         group, reason = "excluded", "Fora do escopo, excluído manualmente ou não é RSS/sitemap"
-    elif find_date(url) is not None:
-        reason = "URL com data fixa: preservar como histórico; exige índice ou modelo validado"
+    elif not functional:
+        reason = "Sem leitura XML válida na última tentativa"
+    elif fixed_date:
+        reason = "XML lido com sucesso; URL com data fixa, útil para o período indicado"
     elif row["verdict"] == "fresh" and row["listed_count"]:
         group, reason = "recent", "Conteúdo recente na última auditoria; revalidar na busca"
     elif row["verdict"] in {"slow", "undated"} and row["listed_count"]:
         group, reason = "supplement", "XML com itens, mas pouca atualização ou sem datas"
-    result.update(group=group, reason=reason, url=url if safe else None)
+    result.update(
+        group=group,
+        reason=reason,
+        url=url if safe else None,
+        functional=functional,
+        fixed_date=fixed_date,
+    )
     checked = result["checked_at"]
     if isinstance(checked, datetime):
         result["checked_at"] = checked.isoformat()
@@ -170,6 +185,8 @@ def export_mechanisms(
         "kind",
         "verdict",
         "group",
+        "functional",
+        "fixed_date",
         "reason",
         "checked_at",
         "partial",
@@ -202,6 +219,8 @@ def export_mechanisms(
                 "chave",
                 "nome",
                 "pais",
+                "funcionais",
+                "com_data_fixa",
                 "recentes",
                 "complementares",
                 "revisar",
@@ -340,6 +359,8 @@ def export_mechanisms(
                     site.key,
                     site.name,
                     site.country,
+                    sum(r["functional"] for r in records),
+                    sum(r["functional"] and r["fixed_date"] for r in records),
                     len(recent),
                     sum(r["group"] == "supplement" for r in records),
                     sum(r["group"] == "review" for r in records),
@@ -394,6 +415,61 @@ def export_mechanisms(
     (out / "plano-ampliado.json").write_text(
         json.dumps(expanded_plans, ensure_ascii=False, indent=2)
     )
+    functional_plans = []
+    with (out / "hints-funcionais.csv").open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(("dominio", "news_sitemap_url", "rss_url", "sitemap_url"))
+        for site in sites:
+            records = [r for r in metadata[site.key] if r["functional"]]
+            counts["sources_with_functional"] += bool(records)
+            counts["functional_mechanisms"] += len(records)
+            counts["fixed_date_mechanisms"] += sum(r["fixed_date"] for r in records)
+            counts["sources_with_stable_functional"] += any(not r["fixed_date"] for r in records)
+            force = rules.for_site(site).force
+            ordered_records = sorted(
+                records,
+                key=lambda r: (
+                    r["url"] not in force,
+                    r["fixed_date"],
+                    r["partial"],
+                    r["group"] != "recent",
+                    -r["listed_count"],
+                    r["url"],
+                ),
+            )
+            unique_records: dict[str, dict[str, Any]] = {}
+            for record in ordered_records:
+                unique_records.setdefault(canonicalize_url(record["url"]), record)
+            members = list(unique_records.values())
+            for record in members:
+                hint_cells = [site.key, "", "", ""]
+                column = {"news_sitemap": 1, "feed": 2, "sitemap": 3}[record["kind"]]
+                hint_cells[column] = record["url"]
+                writer.writerow(hint_cells)
+            if members and (not force or members[0]["url"] in force):
+                functional_plans.append(
+                    {
+                        "chave": site.key,
+                        "mecanismos": [
+                            {
+                                "url": r["url"],
+                                "kind": r["kind"],
+                                "resultado_auditoria": r["verdict"],
+                                "validado_em_utc": r["checked_at"],
+                                "leitura_parcial": r["partial"],
+                                "data_fixa": r["fixed_date"],
+                            }
+                            for r in members
+                        ],
+                    }
+                )
+            elif members:
+                counts["functional_sources_omitted_manual_force"] += 1
+    (out / "plano-funcional.json").write_text(
+        json.dumps(functional_plans, ensure_ascii=False, indent=2)
+    )
+    summary["functional_plan_sources"] = len(functional_plans)
+    summary["functional_plan_mechanisms"] = sum(len(p["mecanismos"]) for p in functional_plans)
     summary["expanded_plan_sources"] = len(expanded_plans)
     summary["expanded_plan_mechanisms"] = sum(len(p["mecanismos"]) for p in expanded_plans)
     summary.update(counts)
@@ -403,13 +479,16 @@ def export_mechanisms(
     (out / "resumo.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2))
     (out / "LEIA-ME.txt").write_text(
         "Inventário offline; não foram feitas novas requisições.\n"
+        "PRINCIPAIS: plano-funcional.json (--discovery-plan) e hints-funcionais.csv (--hints). "
+        "Incluem todo RSS/sitemap interpretado com sucesso, mesmo antigo, histórico ou vazio. "
+        "Atualidade e URL com data fixa são metadados, não critérios de exclusão.\n"
         "plano-descoberta.json: entrada explícita para --discovery-plan; somente recentes, "
         "respeitando exclusões/forçamentos. Não altera o plano padrão.\n"
         "hints-recentes.csv: entrada para --hints; dicas sujeitas à validação na busca.\n"
         "plano-ampliado.json e hints-complementares.csv: incluem também XML lento/sem data, "
         "explicitamente identificado; esses mecanismos não têm atualização recente comprovada.\n"
-        "mecanismos.csv: XML recente, complementar e a revisar. URLs com data fixa ficam "
-        "a revisar; não foram inventados modelos futuros.\n"
+        "mecanismos.csv: inventário com functional/fixed_date e resultado temporal separados. "
+        "URLs com data fixa são mantidas como tal; não foram inventados modelos futuros.\n"
         "secoes-mecanismos.csv.gz: declaração na página e/ou correspondência de até cinco "
         "links. Datas diferentes são explícitas; vínculo histórico não é cobertura atual.\n"
         "lacunas-secoes.csv.gz: todas as páginas sem correspondência integral da amostra "

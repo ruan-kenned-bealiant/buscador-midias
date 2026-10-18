@@ -655,7 +655,8 @@ def main(
             )
         finally:
             store.close()
-        print(f"Inventário exportado em {args.out}: {summary['plan_sources']} fontes no plano")
+        print(f"Inventário exportado em {args.out}: "
+              f"{summary['functional_plan_sources']} fontes no plano funcional")
         return 0
     if args.command == "dashboard":
         return _dashboard(args, serve)

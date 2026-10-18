@@ -365,3 +365,54 @@ def test_sem_lastmod_nem_data_continua_lendo_do_fim_da_lista():
     refs = children("https://e.com/a.xml", "https://e.com/b.xml", "https://e.com/c.xml")
 
     assert order(refs) == ["https://e.com/c.xml", "https://e.com/b.xml", "https://e.com/a.xml"]
+
+
+def test_indice_aninhado_chega_a_noticia_e_nao_repete_ciclo():
+    f = FakeFetcher(
+        {
+            "https://exemplo.com/robots.txt": ROBOTS,
+            "https://exemplo.com/index.xml": index(("https://exemplo.com/nivel1.xml", None)),
+            "https://exemplo.com/nivel1.xml": index(
+                ("https://exemplo.com/index.xml", None),
+                ("https://exemplo.com/nivel2.xml", None),
+            ),
+            "https://exemplo.com/nivel2.xml": urlset("https://exemplo.com/noticia"),
+        }
+    )
+    result = explore(f)
+    assert result.fetched == 3
+    assert len(f.calls) == len(set(f.calls))
+    assert result.sitemaps[-1].sitemap.entries[0].loc == "https://exemplo.com/noticia"
+
+
+def test_profundidade_padrao_para_em_dez_e_pode_ser_configurada():
+    responses = {"https://exemplo.com/robots.txt": ROBOTS}
+    urls = ["https://exemplo.com/index.xml"] + [
+        f"https://exemplo.com/n{i}.xml" for i in range(1, 12)
+    ]
+    for i, url in enumerate(urls[:-1]):
+        responses[url] = index((urls[i + 1], None))
+    responses[urls[-1]] = urlset("https://exemplo.com/noticia")
+    f = FakeFetcher(responses)
+    result = explore_site(make_site(), f, user_agent=UA, max_sitemap_fetches=30)
+    assert result.fetched == 11  # entrada 0, até o nível 10
+    assert urls[11] not in f.calls
+    f = FakeFetcher(responses)
+    result = explore_site(
+        make_site(), f, user_agent=UA, max_sitemap_fetches=30, max_sitemap_depth=11
+    )
+    assert result.sitemaps[-1].sitemap.entries
+
+
+def test_orcamento_de_arquivos_continua_valendo_em_indices_aninhados():
+    f = FakeFetcher(
+        {
+            "https://exemplo.com/robots.txt": ROBOTS,
+            "https://exemplo.com/index.xml": index(("https://exemplo.com/n1.xml", None)),
+            "https://exemplo.com/n1.xml": index(("https://exemplo.com/n2.xml", None)),
+            "https://exemplo.com/n2.xml": urlset("https://exemplo.com/noticia"),
+        }
+    )
+    result = explore_site(make_site(), f, user_agent=UA, max_sitemap_fetches=2)
+    assert result.fetched == 2
+    assert "https://exemplo.com/n2.xml" not in f.calls

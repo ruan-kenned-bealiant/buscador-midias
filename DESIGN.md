@@ -18,76 +18,232 @@ scripts/bm.sh dashboard
 ```
 
 A tela mostra os **1299 registros do catálogo**: 1294 fontes únicas e cinco duplicatas
-identificadas. Ao selecionar uma fonte, a visão inicial apresenta seus RSS/sitemaps auditados,
-com links e exportação para buscas. A aba de seções apresenta as associações observadas e lacunas.
-Há busca, filtros por país/situação e paginação. Fontes sem mecanismos continuam visíveis.
+identificadas. A visão inicial **Acesso às notícias** mostra o resultado da auditoria sem
+filtro de data: **810 fontes** com página de notícia acessível e **777** com texto legível,
+com **653** confirmadas por RSS e **656** por sitemap (há sobreposição entre esses grupos).
+Ao selecionar uma fonte, aparecem os mecanismos, links de notícias testadas, resultado HTTP,
+evidências de extração, limites e motivos de falha. Não testados aparecem explicitamente,
+sem serem classificados como falhas. Há busca, filtros por país, situação da fonte, tipo
+RSS/sitemap e resultado da auditoria, além de paginação e download da planilha completa.
+As abas **RSS e sitemaps** e **Associação às seções** preservam o inventário funcional e
+as associações observadas. Fontes sem mecanismos continuam visíveis.
 
 As rotas `/` e `/mapa` servem esta tela; `/fluxo` preserva o painel operacional anterior.
 `/api/mapa/fontes` consulta o catálogo e `/api/mapa/secoes?site=CHAVE` fornece as seções paginadas.
 Essas consultas abrem o estado somente leitura e não disparam buscas nos sites.
+`/api/mapa/acesso?site=CHAVE` lê os relatórios locais de `var/auditoria-acesso-sitemaps`
+e `var/auditoria-acesso-rss`, com `kind=all|feed|sitemap`,
+`mode=all|accessible|readable|unconfirmed|untested`, busca `q` e paginação `offset`/`limit`.
+`/api/mapa/auditoria.xlsx` baixa a planilha consolidada. A API de acesso não abre o banco
+nem faz requisições aos veículos. Sem os arquivos locais, informa que a auditoria está
+indisponível; os arquivos não são gerados ao abrir a tela.
 
-## RSS/sitemaps utilizáveis nas buscas
+## RSS/sitemaps funcionais para buscas
 
-A tela inicia em **RSS e sitemaps**. Cada fonte mostra os endereços de máquina,
-RSS/Atom, sitemap ou news sitemap, resultado/data da auditoria, leitura parcial,
-quantidade de URLs observadas e exemplo quando armazenado. O filtro separa:
+O critério principal é **XML acessível e interpretado com sucesso na última auditoria**,
+independentemente da idade ou quantidade de itens. Entram resultados `fresh`, `slow`,
+`undated`, `stale`, `archive` e `empty`, em RSS/Atom, sitemap ou news sitemap.
+Atualidade dos itens e URL com data fixa são informações separadas, sem excluir mecanismos.
+Uma URL com data fixa serve ao período indicado; sua existência não comprova um índice
+estável para atualizações futuras. A classificação é baseada em evidência armazenada,
+sem revalidar a internet ao abrir a tela.
 
-- **Recentes na última auditoria**: XML com itens e resultado `fresh`, endereço sem
-  data fixa, pertencente ao host da fonte e sem exclusão manual.
-- **Complementares**: XML com itens, mas atualização lenta (`slow`) ou sem datas (`undated`).
-- **A revisar**: vazios, antigos, históricos ou URLs com data fixa. Não entram no plano recente.
+Não entram como funcionais HTML, feeds de comentários, respostas inválidas, falhas/bloqueios,
+links assinados, credenciais na URL ou mecanismos excluídos manualmente. Um RSS pode ficar
+fora do prefixo editorial da fonte no mesmo host; os links de notícias respeitam o escopo.
 
-HTML, feeds de comentários, links assinados, credenciais na URL e mecanismos excluídos
-manualmente não entram na seleção utilizável. Um mecanismo pode estar fora do prefixo da
-seção no mesmo host (por exemplo, RSS em `/rss/...`); os links de notícias respeitam o
-escopo editorial. Não são inventados modelos de URL para o futuro.
+A aba **RSS e sitemaps** inicia em **Todos os RSS/sitemaps funcionais**, enquanto a tela
+abre na aba de acesso às notícias. O inventário funcional exibe resultado da leitura, idade dos
+itens, leitura parcial, exemplos e marca de data fixa. Há filtros opcionais de atualidade;
+esses filtros não definem o total funcional nem o plano principal. O CSV de download segue
+o critério funcional. A aba de seções preserva declarações e correspondências observadas
+com até cinco exemplos por página, distinguindo auditorias anteriores à página. Isso não
+comprova cobertura integral da seção.
 
-A aba **Associação às seções** compara até cinco exemplos armazenados por página com as
-URLs listadas pelos mecanismos. Mostra declaração na página, correspondência observada,
-leitura parcial e se a auditoria do mecanismo é anterior à página. Uma correspondência
-histórica é preservada como tal. Correspondência integral desses exemplos não equivale a
-cobertura total da seção. Seções sem mecanismo relacionado permanecem como lacunas explícitas.
+Retrato recalculado em 18/10/2026: **999 fontes** com XML funcional, **295** sem leitura funcional
+registrada. São 36.402 registros de mecanismos funcionais, ou **36.054** após deduplicação
+canônica por fonte no plano. **997 fontes** têm mecanismo sem data fixa; duas só têm endereços
+com data fixa identificados. As leituras gerais de referência são de 17/10; os RSS regionais do G1 foram validados em
+18/10 nas rodadas fechadas descritas abaixo.
+Os antigos totais 855/944 eram filtros por atualidade e não representam o total funcional.
 
-O botão de download fornece CSV compatível com `--hints`. APIs somente leitura:
-`/api/mapa/mecanismos?site=CHAVE&mode=recent|supplement|review|all` (paginada) e
-`/api/mapa/mecanismos.csv?site=CHAVE&mode=recent` (sem truncar; sem `site`, todo o catálogo).
-
-Exportação offline, em uma passagem finita pelo catálogo, sem HTTP ou agendamento:
+Exportação offline, finita e sem coleta/agendamento:
 
 ```bash
 scripts/bm.sh export-mechanisms --out var/mecanismos-busca
 ```
 
-Arquivos gerados:
+Arquivos principais:
 
-- `plano-descoberta.json`: mecanismos recentes deduplicados por fonte/URL canônica,
-  compatíveis com `--discovery-plan`. Preserva forçamento manual quando presente na seleção;
-  se não estiver, a fonte é omitida do plano e contabilizada no resumo.
-- `hints-recentes.csv`: dicas recentes para `--hints`, revalidadas pelo fluxo de sondagem.
-- `plano-ampliado.json` e `hints-complementares.csv`: acrescentam os XML lentos/sem datas,
-  sem tratá-los como recentes. Permitem tentar mais fontes, com essa limitação explícita.
-- `mecanismos.csv`: inventário de XML recente, complementar e a revisar, com evidências.
-- `fontes.csv`: resumo das 1.294 fontes únicas, inclusive sem mecanismos recentes.
-- `secoes-mecanismos.csv.gz`: associações observadas, datas e número de exemplos correspondentes.
-- `lacunas-secoes.csv.gz`: páginas sem correspondência integral da amostra em auditoria posterior.
-- `resumo.json` e `LEIA-ME.txt`: contagens e critérios.
+- `plano-funcional.json`: todos os XML funcionais, compatível com `--discovery-plan`, com resultado
+  temporal, data da auditoria, parcialidade e data fixa preservados.
+- `hints-funcionais.csv`: todos os mecanismos funcionais para `--hints`.
+- `mecanismos.csv`: inventário com `functional` e `fixed_date` separados do resultado temporal.
+- `fontes.csv`: todas as fontes únicas, inclusive sem mecanismo funcional.
+- `secoes-mecanismos.csv.gz` e `lacunas-secoes.csv.gz`: relações observadas e lacunas por página.
+- `resumo.json` e `LEIA-ME.txt`: critérios e contagens.
 
-O plano padrão e as estratégias do banco não são alterados. Na futura execução manual,
-`discover --discovery-plan var/mecanismos-busca/plano-descoberta.json` aceita esse arquivo;
-o orçamento de chamadas e `--max-complements` continuam limitando os mecanismos lidos por rodada.
-Isso executa busca de notícias e deve ser usado quando a etapa de coleta for retomada.
-“Recente” sempre se refere à data da auditoria: a busca revalida HTTP/conteúdo, aplica escopo,
-robots, deduplicação e checkpoints. Esta entrega não executa essa coleta.
+Os antigos `plano-descoberta.json`/`hints-recentes.csv` e `plano-ampliado.json`/
+`hints-complementares.csv` permanecem como seleções opcionais por atualidade. O plano padrão
+do projeto e as estratégias do banco não são alterados. Na futura busca manual, use
+`discover --discovery-plan var/mecanismos-busca/plano-funcional.json`; orçamento e
+`--max-complements` continuam limitando a leitura por rodada. Esse comando faz coleta e não
+foi executado nesta entrega. As buscas revalidam HTTP/conteúdo e respeitam robots/escopo.
 
-Resultado da consolidação de 18/10/2026, com auditorias armazenadas em 17/10:
-855 fontes e 11.337 mecanismos no plano recente; 944 fontes e 19.425 mecanismos no
-plano ampliado, incluindo XML lento/sem datas. As contagens dos planos deduplicam URLs
-canônicas por fonte. A tela conta os registros de auditoria (11.427 recentes), preservando
-as variações registradas. Restam 350 fontes sem mecanismo recente ou complementar nesta
-seleção. Foram exportadas 615.522 relações de declaração/correspondência com páginas;
-isso não representa 615.522 seções cobertas nem validação de atualização futura.
-Os arquivos foram carregados pelos leitores reais de `--discovery-plan`/`--hints` e
-conferidos com as regras manuais; a geração não fez HTTP externo.
+APIs somente leitura: `/api/mapa/mecanismos?site=CHAVE&mode=functional` (padrão, paginada),
+`mode=fixed_date|recent|supplement|review|all` (filtros opcionais) e
+`/api/mapa/mecanismos.csv?site=CHAVE&mode=functional` (sem truncar; sem `site`, todo o catálogo).
+
+## Exploração regional limitada: G1 e Folha
+
+Em 18/10/2026, a seleção fechada de páginas já mapeadas identificou estruturas do G1 nas
+27 UFs. Derivar um RSS dessas URLs foi uma hipótese, seguida de validação do XML: os
+27 endereços responderam como feeds com itens recentes. Cada um listou 100 URLs; entre
+93 e 100 pertenciam ao prefixo da UF correspondente. Essa correspondência não comprova
+que todas as notícias ou subseções do estado estejam presentes no feed.
+
+Os 27 RSS foram incorporados às auditorias da fonte nacional `g1.globo.com`, preservando
+as auditorias existentes e as fontes estaduais já cadastradas. O catálogo não recebeu
+27 fontes artificiais novas. Eles aparecem na tela do G1 e no plano funcional.
+
+A Folha apresentou páginas temáticas sobre lugares e dois RSS editoriais interpretáveis
+(`cotidiano` e `poder`, vazios nessa leitura), mas não foram confirmadas 27 edições estaduais
+independentes. Não se presume a mesma estrutura para todos os veículos.
+
+A rodada teve 31 chamadas à pilha HTTP em 31,7 segundos, com teto de 31 chamadas/120 segundos,
+intervalo por host e robots, sem retries, expansão automática ou leitura de artigos.
+Evidências: `var/exploracao-regional/rss-estaduais.csv`, `correspondencia-ufs.json`,
+`auditorias.json`, `plano-regional.json` e `hints-regionais.csv`. O arquivo
+`g1-auditorias-antes.json` preserva a fotografia anterior à incorporação; o procedimento
+fechado é `var/exploracao-regional/verificar_rss.py`.
+
+## Conferência encerrada de 20 veículos
+
+Rodada fechada em 18/10/2026: 16 veículos brasileiros e quatro estrangeiros, selecionados
+por links de mecanismos declarados ou padrões de RSS/sitemap já válidos em seções equivalentes
+do mesmo host. A triagem offline descartou combinações de blogs/hosts/áreas de serviço,
+sem fazer chamadas para elas. Não foram testadas combinações indiscriminadas de estados.
+
+A rede terminou em **213,3 segundos**, com **501 requisições físicas**, incluindo robots e
+redirecionamentos. Limites: 20 veículos, 30 chamadas por veículo, 900 segundos globais,
+quatro workers e intervalo por host. Não houve retries ou nova rodada automática.
+Os limites de chamadas, redirects e prazo foram verificados também com transporte simulado.
+
+Resultado: **300 mecanismos funcionais acrescentados em 18 veículos**, incluindo 70 vazios.
+**Balobaki Check, Malawi24 e Ukrinform** passaram de nenhuma auditoria funcional para mecanismos
+confirmados. Sul21 e Guineenews não acrescentaram mecanismo funcional nesta seleção.
+Auditorias válidas anteriores foram preservadas, com backup por veículo antes das inclusões.
+
+Na comparação limitada a até 500 páginas por fonte e cinco exemplos por página, **239 páginas
+de seção ganharam correspondência** e houve **719 correspondências de links adicionais**.
+Os novos documentos também listaram **12.815 URLs adicionais** sob escopo, após filtro de
+formato, em comparação com os documentos antigos armazenados. Isso não representa artigos
+lidos, publicação necessariamente recente ou prova de cobertura exclusiva: os retratos têm
+datas diferentes. O corpus não foi alterado, e não houve LLM, serviço pago ou agendamento.
+
+Entregas em `var/conferencia-20-veiculos/`: `resultado.xlsx`, `resultado-fontes.csv`,
+`mecanismos-validados.csv`, `hints-validados.csv`, `plano-validado.json`, `resumo.json` e
+`urls-adicionais.csv.gz`. Os leitores reais de plano/hints, as contagens da planilha e as
+regras manuais foram conferidos. A seleção, os procedimentos executados, as auditorias e
+backups gzip por fonte permanecem na mesma pasta. O plano funcional global e a tela foram
+atualizados; não existe continuação agendada desta conferência.
+
+## Profundidade de expansão de sitemaps
+
+O explorador de descoberta agora segue índices de sitemaps aninhados, com profundidade
+padrão máxima de **10 níveis abaixo da entrada** (entrada = nível zero). O parâmetro Python
+`max_sitemap_depth` de `explore_site` permite configurar essa profundidade. URLs já visitadas
+não são requisitadas novamente durante o caminhamento, inclusive em ciclos.
+
+A profundidade não substitui o orçamento de arquivos: `--max-sitemap-fetches` continua
+limitando o total lido (padrão seis). Uma cadeia com entrada mais dez filhos precisa de pelo
+menos 11 leituras disponíveis; use orçamento compatível quando for necessário atingir o
+nível dez. Os pontos de entrada declarados mantêm prioridade, e a descida dos índices
+aninhados não abre uma exploração sem limite. Datas e `lastmod` continuam ordenando o
+caminhamento da descoberta; a auditoria de acesso não descarta notícias pela data.
+
+Testes cobrem índices aninhados, ciclo entre índices, parada no nível dez e orçamento
+independente de arquivos; a descoberta incremental existente continua com os mesmos
+checkpoints e gancho de `lastmod`.
+
+## Auditoria de acesso a notícias pelos sitemaps
+
+Concluída em **2026-10-18**, sem filtro de data de publicação. Universo fechado:
+**1.814 URLs de entrada distintas**, com **1.856 associações a 822 fontes** do catálogo.
+RSS ficou fora desta rodada. A leitura incluiu índices e sitemaps filhos; os totais abaixo
+contam as entradas distintas, sem inflar a contagem pelos filhos percorridos.
+
+| Evidência observada | Sitemaps de entrada | Fontes |
+|---|---:|---:|
+| Pelo menos uma página de notícia acessível | **1.374** | **656** |
+| Também com texto legível na amostra | **1.286** | **623** |
+
+Em **1.742** entradas foi possível interpretar XML. Foram avaliadas **2.165 associações
+de amostras**, correspondentes a **1.692 URLs de notícias distintas**. A notícia precisa
+retornar HTML, ter título e passar pelas verificações de página de notícia, erro suave,
+desafio e redirecionamento. Texto legível exige também aprovação dos critérios de extração;
+isso não garante o texto integral. Das fontes com notícia acessível, **33** não tiveram
+texto legível confirmado; outras **166** ficaram sem uma página de notícia confirmada.
+Falha ou ausência de confirmação na amostra não demonstra impossibilidade de acesso ao site.
+O índice principal de O Globo foi confirmado com notícia acessível e texto legível.
+
+A verificação usou profundidade máxima **10** (entrada no nível zero), até **12 XML por
+entrada**, **duas tentativas de notícia por associação** e **40 chamadas por entrada**,
+respeitando robots.txt. Houve 20 minutos iniciais e uma única conclusão das 189 entradas
+que ainda não tinham sido consultadas, com teto adicional de cinco minutos e sem repetir
+as entradas concluídas. Resultado: **5.271 chamadas HTTP**, cerca de **22,4 minutos** de
+execução, nenhuma entrada pendente de início e nenhum erro interno. A profundidade efetivamente
+observada chegou a três; limites e falhas permanecem detalhados por associação no relatório.
+Nenhuma notícia foi gravada no corpus e nenhum agendamento foi criado.
+
+Planilha com abas Fontes, Sitemaps, Referências e Critérios:
+[`var/auditoria-acesso-sitemaps/resultado.xlsx`](var/auditoria-acesso-sitemaps/resultado.xlsx).
+Os CSVs, links de exemplo, avaliações de amostras e resumo JSON estão na mesma pasta.
+Este é um retrato amostral de acesso, sem garantia de cobertura integral ou acesso futuro;
+não substitui o inventário de mecanismos funcionais, que também inclui RSS.
+
+## Auditoria de acesso a notícias pelos feeds RSS/Atom
+
+Concluída em **2026-10-18**, sem filtro de data de publicação. O inventário contém
+**33.949 URLs distintas de feeds**, em **829 fontes** (34.546 associações fonte–feed).
+Esta foi uma amostra por fonte: até **três feeds selecionados por fonte**, priorizando
+links de exemplo e itens já observados, sem rejeitar feeds antigos, e até **dois links
+de notícia por feed**. A verificação encerra a fonte quando confirma texto legível;
+portanto, os números abaixo não representam uma auditoria de todos os feeds ou seções.
+
+| Evidência observada | Apenas RSS/Atom | União com sitemaps, sem duplicar fontes |
+|---|---:|---:|
+| Fontes com página de notícia acessível | **653** | **810** |
+| Fontes também com texto legível | **617** | **777** |
+
+O RSS acrescentou **154 fontes** com notícia acessível ao resultado da auditoria de
+sitemaps. Em 36 das fontes confirmadas por feed, não houve texto legível confirmado;
+outras **176** ficaram sem notícia acessível confirmada nesta amostra. Resultado negativo
+amostral não demonstra impossibilidade de acesso ao site ou aos feeds não testados.
+
+Foram consultadas **1.034 URLs distintas de feeds** (1.039 associações fonte–feed),
+com **1.148 associações de amostras de notícias**, correspondentes a **1.097 URLs distintas**.
+Das URLs de feeds consultadas, **689** levaram a uma notícia acessível e **616** também
+forneceram texto legível em pelo menos uma associação. O XML foi interpretado em pelo
+menos um feed de **787 fontes**. RSS, Atom e RDF foram aceitos; não se seguiu paginação
+nem se buscaram mecanismos novos. As páginas de notícias passaram pelos mesmos critérios
+de identificação, erro suave, desafio, redirecionamento, extração e paywall da auditoria
+de sitemaps. Texto legível não garante texto integral.
+
+A rodada respeitou robots.txt, intervalo por host, limites de 40 chamadas por fonte,
+90 segundos para iniciar novas requisições por fonte e teto global de 20 minutos/15 mil
+chamadas. Terminou em cerca de **8 minutos**, com **3.075 chamadas HTTP** e nenhum erro
+interno. Todas as 829 fontes tiveram ao menos um feed tentado; duas atingiram limite
+local e uma das entradas selecionadas ficou sem tentativa. Esses limites são registrados
+no relatório, assim como os feeds não testados por parada antecipada ou limite de três.
+Não houve coleta contínua, gravação no corpus, chamadas pagas ou novos agendamentos.
+
+Planilha: [`var/auditoria-acesso-rss/resultado.xlsx`](var/auditoria-acesso-rss/resultado.xlsx).
+Abas: **Consolidado** (1.294 fontes únicas do catálogo e evidências RSS/sitemap),
+**Fontes RSS**, **Feeds verificados**, **Inventário** (inclui não testados) e **Critérios**.
+CSVs, links de exemplo, avaliações de amostras, plano fechado e resumo JSON estão na mesma
+pasta. A união combina esta rodada com o retrato anterior dos sitemaps; não constitui
+medida de cobertura integral dos sites nem garantia de acesso futuro.
 
 ## Fechamento da recuperação estrutural
 

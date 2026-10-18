@@ -135,7 +135,10 @@ def test_mecanismos_trazem_urls_tipos_datas_e_csv_consumivel(map_base):
     )
     store.close()
     data = json.loads(get(map_base + "/api/mapa/mecanismos?site=a.com")[2])
-    assert data["total"] == 1
+    assert data["total"] == 3
+    assert all(r["functional"] for r in data["mechanisms"])
+    recent = json.loads(get(map_base + "/api/mapa/mecanismos?site=a.com&mode=recent")[2])
+    assert recent["total"] == 1
     assert data["mechanisms"][0]["url"] == "https://a.com/rss"
     assert data["mechanisms"][0]["checked_at"] == NOW.isoformat()
     review = json.loads(get(map_base + "/api/mapa/mecanismos?site=a.com&mode=review")[2])
@@ -155,4 +158,5 @@ def test_mecanismos_trazem_urls_tipos_datas_e_csv_consumivel(map_base):
     assert catalog["totals"]["with_recent_mechanisms"] == 1
     assert catalog["totals"]["recent_mechanisms"] == 1
     assert catalog["totals"]["with_usable_mechanisms"] == 1
+    assert catalog["totals"]["functional_mechanisms"] == 3
     assert catalog["totals"]["without_recent_mechanisms"] == 1
