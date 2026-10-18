@@ -14,8 +14,8 @@ scripts/bm.sh dashboard
 
 A tela mostra os **1299 registros do catálogo**: 1294 fontes únicas e cinco duplicatas
 identificadas. A visão inicial **Acesso às notícias** mostra o resultado da auditoria sem
-filtro de data: **810 fontes** com página de notícia acessível e **777** com texto legível,
-com **653** confirmadas por RSS e **656** por sitemap (há sobreposição entre esses grupos).
+filtro de data: **824 fontes** com página de notícia acessível e **790** com texto legível,
+com **658** confirmadas por RSS e **665** por sitemap (há sobreposição entre esses grupos).
 Ao selecionar uma fonte, aparecem os mecanismos, links de notícias testadas, resultado HTTP,
 evidências de extração, limites e motivos de falha. Não testados aparecem explicitamente,
 sem serem classificados como falhas. Há busca, filtros por país, situação da fonte, tipo
@@ -32,6 +32,74 @@ e `var/auditoria-acesso-rss`, com `kind=all|feed|sitemap`,
 `/api/mapa/auditoria.xlsx` baixa a planilha consolidada. A API de acesso não abre o banco
 nem faz requisições aos veículos. Sem os arquivos locais, informa que a auditoria está
 indisponível; os arquivos não são gerados ao abrir a tela.
+
+## Rodada exploratória final das fontes sem confirmação
+
+Rodada única concluída em 18/10/2026 nas **295 fontes únicas** correspondentes aos
+**297 registros** sem auditoria anterior (duas duplicatas). Foram reaproveitadas pistas,
+robots.txt, até três páginas conhecidas e caminhos usuais de mecanismos, sem filtro de data,
+serviços pagos ou continuação agendada. Limites: 32 chamadas e 75 segundos por fonte,
+12 XML por fonte, profundidade máxima dez e duas notícias amostrais; teto global de 15 minutos.
+A exploração terminou em cerca de 6,5 minutos, com **2.000 chamadas** e nenhum erro interno.
+
+| Resultado da rodada | Fontes |
+|---|---:|
+| XML confirmado | 31 |
+| Acesso bloqueado, incluindo mecanismo declarado da Band | 147 |
+| Restrições de robots | 19 |
+| Redirecionamento para outro domínio | 19 |
+| Falha de conexão/robots indisponível | 18 |
+| Mecanismo não localizado na amostra | 55 |
+| Limite local de execução | 6 |
+
+Das 31 fontes com XML confirmado, **14** permitiram acessar notícia e **13** também
+forneceram texto legível. O total combinado passou de 810 para **824 fontes** com notícia
+acessível e de 777 para **790** com texto legível. Isso não comprova cobertura integral;
+falhas e limites não significam inexistência de mecanismos. A Band está identificada como
+**mecanismo declarado; acesso automático bloqueado**, com seu sitemap-news.xml registrado,
+sem classificá-lo como XML validado ou notícia acessível.
+
+O diretório oficial [Siga o G1 por RSS](https://g1.globo.com/tecnologia/noticia/2012/11/siga-o-g1-por-rss.html),
+fornecido pelo usuário, acrescentou uma conferência finita de **70 links declarados**:
+**69 funcionaram com itens**; um teve falha temporária de DNS. Os redirecionamentos antigos
+`/dynamo/.../rss2.xml` foram resolvidos para os caminhos atuais; o inventário reutilizável
+registra os destinos validados. Uma única conclusão verificou os 22 links da lista original
+que ficaram sem tentativa na primeira janela, sem repetir os 48 confirmados nem ampliar
+os 70 links. O retrato detalhado está em `var/conferencia-diretorio-g1/validacao.json`.
+
+Os relatórios anteriores permanecem preservados. Os novos metadados de mecanismos foram
+salvos no mapeamento, com backups das fontes afetadas; artigos não foram gravados no corpus.
+O inventário e plano funcional foram regenerados offline. A tela inclui os resultados da
+rodada, os bloqueios conhecidos e os caminhos encontrados no G1; uma nova leitura de XML
+não apaga evidência anterior de notícia acessível. O download completo atualizado fica em
+`var/exploracao-pendentes-final/resultado.xlsx` e inclui as auditorias anteriores.
+
+Os padrões de XML definem como interpretar mecanismos, sem impor uma URL universal nem
+comprovar que o arquivo lista todas as páginas do site. O leitor existente aceita RSS,
+Atom e sitemaps sem exigir data; não houve troca de biblioteca nem implantação de coleta
+contínua a partir das sugestões de código fornecidas pelo usuário.
+
+## Limite de descoberta evidenciado pelo diretório do G1
+
+A conferência de acesso valida caminhos conhecidos; não mede completude de editorias.
+Uma fonte entre as 824 com notícia acessível pode ter muitos mecanismos ainda não
+localizados. As rodadas executadas não incluíram busca web sistemática por cada fonte;
+usaram sobretudo robots.txt, páginas conhecidas, dicas e caminhos usuais. O diretório
+oficial do G1, encontrado pelo usuário, expôs essa limitação de descoberta.
+
+No G1, o inventário funcional passou de 45 para **88 mecanismos** (editorias e regiões),
+incluindo política, tecnologia, economia e educação; são 89 registros com uma falha
+transitória de DNS preservada separadamente. Os 69 feeds funcionais do diretório foram
+normalizados para seus destinos atuais e cruzados com o que já existia, sem contar
+aliases como novas fontes. O material sobre protocolos XML não resolve essa etapa:
+padronização do conteúdo não implica endereço universal, publicação no robots obrigatório
+ou lista completa de páginas.
+
+Uma próxima melhoria de método deve avaliar também as fontes já confirmadas: busca web
+limitada por domínio por páginas oficiais de RSS/sitemaps, extração dos diretórios de
+editorias e comparação com as seções publicadas. Esse processo precisa de limites de
+consultas/páginas por fonte e resultado explícito, sem descoberta recursiva indefinida.
+**Essa busca web sistemática não foi executada nesta rodada**, nem foi agendada.
 
 ## RSS/sitemaps funcionais para buscas
 
@@ -55,7 +123,11 @@ o critério funcional. A aba de seções preserva declarações e correspondênc
 com até cinco exemplos por página, distinguindo auditorias anteriores à página. Isso não
 comprova cobertura integral da seção.
 
-Retrato recalculado em 18/10/2026: **999 fontes** com XML funcional, **295** sem leitura funcional
+Após a rodada exploratória: **1.030 fontes com XML funcional** e **264** sem confirmação
+funcional; 36.552 registros funcionais, ou 36.204 após deduplicação canônica por fonte no
+plano. Esse resultado é separado das 824 fontes com acesso a notícias comprovado.
+
+Retrato anterior à rodada exploratória de 18/10/2026: **999 fontes** com XML funcional, **295** sem leitura funcional
 registrada. São 36.402 registros de mecanismos funcionais, ou **36.054** após deduplicação
 canônica por fonte no plano. **997 fontes** têm mecanismo sem data fixa; duas só têm endereços
 com data fixa identificados. As leituras gerais de referência são de 17/10; os RSS regionais do G1 foram validados em

@@ -94,7 +94,9 @@ def make_server(
             elif parts.path == "/api/mapa/acesso":
                 self._access(parse_qs(parts.query))
             elif parts.path == "/api/mapa/auditoria.xlsx":
-                report = audit.directory / "auditoria-acesso-rss/resultado.xlsx"
+                report = audit.directory / "exploracao-pendentes-final/resultado.xlsx"
+                if not report.is_file():
+                    report = audit.directory / "auditoria-acesso-rss/resultado.xlsx"
                 if report.is_file():
                     self._send(
                         200,

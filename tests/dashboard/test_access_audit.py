@@ -200,3 +200,87 @@ def test_endpoint_de_auditoria_nao_abre_banco_e_valida_parametros(tmp_path):
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_exploracao_bloqueada_nao_vira_xml_funcional_ou_noticia_confirmada(tmp_path):
+    reports(tmp_path)
+    write_csv(
+        tmp_path / "exploracao-pendentes-final/fontes.csv",
+        [{"site_key": "b.test", "status": "mechanism_known_blocked", "detail": "Robots: 403."}],
+    )
+    write_csv(
+        tmp_path / "exploracao-pendentes-final/acesso.csv",
+        [
+            {
+                "site_key": "b.test",
+                "root": "https://b.test/sitemap-news.xml",
+                "kind": "sitemap",
+                "attempted": "False",
+                "status": "mechanism_known_blocked",
+                "xml_readable": "False",
+                "accessible": "False",
+                "readable": "False",
+                "basis": "official_robots_external",
+            }
+        ],
+    )
+    audit = index(tmp_path)
+    audit.refresh()
+    source = audit.sources["b.test"]
+    assert source["explored"] and not source["audited"] and not source["accessible"]
+    assert source["exploration_status"] == "mechanism_known_blocked"
+    assert audit.summary["sources_accessible"] == 1
+    record = audit.page("b.test", kind="sitemap", mode="untested", search="", offset=0, limit=10)[
+        "records"
+    ][0]
+    assert record["basis"] == "official_robots_external" and record["xml_readable"] is None
+
+
+def test_exploracao_acrescenta_fonte_com_noticia_real(tmp_path):
+    reports(tmp_path)
+    write_csv(
+        tmp_path / "exploracao-pendentes-final/acesso.csv",
+        [
+            {
+                "site_key": "b.test",
+                "root": "https://b.test/feed",
+                "kind": "feed",
+                "attempted": "True",
+                "status": "readable_news",
+                "xml_readable": "True",
+                "accessible": "True",
+                "readable": "True",
+                "example_url": "https://b.test/noticia-antiga",
+                "example_http": "200",
+            }
+        ],
+    )
+    audit = index(tmp_path)
+    audit.refresh()
+    assert audit.summary["sources_accessible"] == 2
+    assert audit.summary["rss_sources_readable"] == 1
+    assert audit.summary["sources_readable"] == 2
+
+
+def test_nova_leitura_de_xml_nao_apaga_noticia_ja_confirmada(tmp_path):
+    reports(tmp_path)
+    write_csv(
+        tmp_path / "exploracao-pendentes-final/acesso.csv",
+        [
+            {
+                "site_key": "a.test",
+                "root": "https://a.test/rss",
+                "kind": "feed",
+                "attempted": "True",
+                "status": "xml_confirmed_no_news",
+                "xml_readable": "True",
+                "accessible": "False",
+                "readable": "False",
+            }
+        ],
+    )
+    audit = index(tmp_path)
+    audit.refresh()
+    page = audit.page("a.test", kind="feed", mode="all", search="", offset=0, limit=10)
+    assert page["total"] == 1 and page["records"][0]["accessible"]
+    assert page["records"][0]["example_url"] == "https://a.test/noticia"

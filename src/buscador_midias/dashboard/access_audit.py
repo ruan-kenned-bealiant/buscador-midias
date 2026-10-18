@@ -31,12 +31,16 @@ class AccessAudit:
         """Relê somente se os arquivos de entrada tiverem mudado."""
         sm = self.directory / "auditoria-acesso-sitemaps"
         rss = self.directory / "auditoria-acesso-rss"
+        extra = self.directory / "exploracao-pendentes-final"
         paths = [
             sm / "referencias.csv",
             rss / "feeds.csv",
             rss / "inventario.csv",
             sm / "resumo.json",
             rss / "resumo.json",
+            extra / "acesso.csv",
+            extra / "fontes.csv",
+            extra / "resumo.json",
         ]
         signature = tuple(
             (p.stat().st_mtime_ns, p.stat().st_size) if p.is_file() else None for p in paths
@@ -55,6 +59,18 @@ class AccessAudit:
         if not paths[2].is_file():
             for row in rss_tested.values():
                 self._add(records, row, "feed", row.get("tentado") == "True")
+        for row in _csv(paths[5]):
+            self._add(records, row, row["kind"], row.get("attempted") == "True")
+        for source_key, rows in records.items():
+            unique: dict[tuple[str, str], dict[str, Any]] = {}
+            for row in rows:
+                identity = (row["url"], row["kind"])
+                prior = unique.get(identity)
+                # Uma nova leitura só do XML não apaga acesso a notícia já comprovado.
+                if prior is None or _evidence(row) >= _evidence(prior):
+                    unique[identity] = row
+            records[source_key] = list(unique.values())
+        exploration = {row["site_key"]: row for row in _csv(paths[6])}
         sources = {}
         for site in self.sites.values():
             rows = records.get(site.key, [])
@@ -68,22 +84,34 @@ class AccessAudit:
                 "tested": sum(r["attempted"] for r in rows),
                 "untested": sum(not r["attempted"] for r in rows),
                 "accessible_mechanisms": sum(r["accessible"] for r in rows),
+                "explored": site.key in exploration,
+                "exploration_status": exploration.get(site.key, {}).get("status"),
+                "exploration_detail": exploration.get(site.key, {}).get("detail"),
             }
         summaries = [_json(paths[3]), _json(paths[4])]
         self.summary = {
-            "available": any(p.is_file() for p in paths[:3]),
+            "available": any(paths[i].is_file() for i in (0, 1, 2, 5, 6)),
             "sources_accessible": sum(s["accessible"] for s in sources.values()),
             "sources_readable": sum(s["readable"] for s in sources.values()),
             "sources_audited": sum(s["audited"] for s in sources.values()),
             "rss_sources_accessible": sum(s["rss_accessible"] for s in sources.values()),
             "sitemap_sources_accessible": sum(s["sitemap_accessible"] for s in sources.values()),
-            "rss_sources_readable": summaries[1].get("sources_readable"),
-            "sitemap_sources_readable": summaries[0].get("sources_readable"),
+            "rss_sources_readable": sum(
+                any(r["readable"] and r["kind"] == "feed" for r in rows)
+                for rows in records.values()
+            ),
+            "sitemap_sources_readable": sum(
+                any(r["readable"] and r["kind"] == "sitemap" for r in rows)
+                for rows in records.values()
+            ),
             "sitemap_finished_at": summaries[0].get("finished_at"),
             "rss_finished_at": summaries[1].get("finished_at"),
             "rss_feeds_per_source": summaries[1].get("limits", {}).get("feeds_per_source"),
             "sitemap_max_depth": summaries[0].get("limits", {}).get("max_depth"),
-            "download_available": (rss / "resultado.xlsx").is_file(),
+            "download_available": any(
+                (folder / "resultado.xlsx").is_file() for folder in (rss, extra)
+            ),
+            "exploration": _json(paths[7]),
         }
         self.records, self.sources, self.signature = dict(records), sources, signature
 
@@ -125,6 +153,8 @@ class AccessAudit:
                 "xml_errors": row.get("xml_errors") or row.get("erro_feed") or "",
                 "depth_reached": row.get("depth_reached"),
                 "partial": row.get("traversal_partial") == "True",
+                "xml_http": row.get("http_status"),
+                "basis": row.get("basis"),
             }
         )
 
@@ -194,3 +224,7 @@ def _json(path: Path) -> dict[str, Any]:
 
 def _true(row: dict[str, str], *keys: str) -> bool:
     return any(row.get(k) == "True" for k in keys)
+
+
+def _evidence(row: dict[str, Any]) -> tuple[bool, bool, bool, bool]:
+    return row["readable"], row["accessible"], row["attempted"], bool(row["xml_readable"])
