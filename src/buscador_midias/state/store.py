@@ -1628,6 +1628,63 @@ class StateStore:
             discovery_basis=r[13],
         ) for r in rows]
 
+    def mapping_overview(self) -> dict[str, dict[str, int]]:
+        """Contagens estruturais por fonte sem transportar os arrays de notícias ao painel."""
+        rows = self._all(
+            "SELECT site_key, count(*),"
+            " count(*) FILTER (WHERE status='ok'),"
+            " count(*) FILTER (WHERE status='ok' AND kind='section' AND page_type='section'),"
+            " count(*) FILTER (WHERE status='ok' AND jsonb_array_length(article_urls)>0),"
+            " count(*) FILTER (WHERE status='pending'),"
+            " count(*) FILTER (WHERE status IN ('error','invalid','blocked','disallowed'))"
+            " FROM midias_crawler_section_pages"
+            " WHERE kind='root' OR (kind='section'"
+            " AND page_type NOT IN ('article','service','taxonomy') AND status<>'excluded')"
+            " GROUP BY site_key"
+        )
+        fields = ("pages", "read", "confirmed", "with_examples", "pending", "failures")
+        return {row[0]: dict(zip(fields, row[1:], strict=True)) for row in rows}
+
+    def mapping_section_rows(
+        self, site_key: str, *, mode: str, search: str, offset: int, limit: int,
+    ) -> tuple[int, list[dict[str, Any]]]:
+        """Página de seções com exemplos observados; lê somente as primeiras cinco amostras."""
+        filters = {
+            "examples": "status='ok' AND jsonb_array_length(article_urls)>0",
+            "read": "status='ok'",
+            "gaps": "status IN ('pending','error','invalid','blocked','disallowed')",
+            "all": "TRUE",
+        }
+        if mode not in filters:
+            raise ValueError("filtro de seções inválido")
+        where = (
+            "site_key=%s AND (kind='root' OR (kind='section'"
+            " AND page_type NOT IN ('article','service','taxonomy'))) AND status<>'excluded'"
+            " AND " + filters[mode]
+            + " AND strpos(lower(title || ' ' || url), lower(%s))>0"
+        )
+        rows = self._all(
+            "SELECT url,title,kind,status,page_type,type_basis,discovery_basis,checked_at,detail,"
+            " article_urls->>0,article_urls->>1,article_urls->>2,article_urls->>3,"
+            " article_urls->>4,count(*) OVER() FROM midias_crawler_section_pages WHERE "
+            + where + " ORDER BY (kind<>'root'),(page_type<>'section'),url LIMIT %s OFFSET %s",
+            (site_key, search, limit, offset),
+        )
+        if rows:
+            total = rows[0][-1]
+        else:
+            count = self._one(
+                "SELECT count(*) FROM midias_crawler_section_pages WHERE " + where,
+                (site_key, search),
+            )
+            total = count[0] if count else 0
+        fields = ("url", "title", "kind", "status", "page_type", "type_basis",
+                  "discovery_basis", "checked_at", "detail")
+        return total, [
+            {**dict(zip(fields, row[:9], strict=True)), "samples": list(row[9:14])}
+            for row in rows
+        ]
+
     def save_mapping_pages(self, site_key: str, pages: Sequence[MapPage]) -> None:
         """Grava o checkpoint e as páginas descobertas atomicamente, sem apagar outras."""
         with self.transaction():

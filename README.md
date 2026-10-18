@@ -1,11 +1,112 @@
 # buscador-midias
 
+Inventário estrutural das 1.294 fontes de notícias do catálogo: editorias, subseções,
+navegação, evidências e lacunas explícitas.
+
+## Consulta do mapa
+
+O painel abre a tela de mapeamento em `http://127.0.0.1:8765`:
+
+```bash
+scripts/bm.sh dashboard
+# Catálogo alternativo: scripts/bm.sh dashboard --sites caminho/sites.csv
+```
+
+A tela mostra os **1299 registros do catálogo**: 1294 fontes
+únicas e 5 duplicatas identificadas. Ao selecionar uma fonte, aparecem suas
+páginas/seções mapeadas, evidência do tipo, última leitura e um link de notícia de exemplo
+quando armazenado. Há busca por fonte/domínio/país, filtros, busca por seção e paginação.
+O modo inicial mostra páginas lidas com exemplos; os demais permitem ver todas as lidas,
+pendências/falhas e todo o mapa estrutural. Fontes sem seções ou sem exemplos continuam no catálogo.
+Um exemplo é um link observado na leitura da página; não foi revalidado ao abrir o painel.
+Não existe uma referência conhecida para medir 100% de cobertura do site.
+
+As rotas `/` e `/mapa` servem esta tela; `/fluxo` preserva o painel operacional anterior.
+`/api/mapa/fontes` consulta o catálogo e `/api/mapa/secoes?site=CHAVE` fornece as seções paginadas.
+Essas consultas abrem o estado somente leitura e não disparam buscas nos sites.
+
+## Fechamento da recuperação estrutural
+
+Retrato consolidado em 2026-10-18T11:44:04.169802+00:00:
+
+| Situação estrutural observada | Fontes |
+|---|---:|
+| Navegação identificada examinada | 347 |
+| Mapa parcial | 441 |
+| Acesso restrito | 227 |
+| Estrutura não confirmada | 279 |
+
+Foram saneados 26694 palpites sem evidência de seção/navegação que já
+haviam sido refutados por 404/410, recurso não HTML ou retorno à entrada. Links de menus e
+seções confirmadas não foram descartados por essa regra. A evidência anterior foi preservada
+em `var/recuperacao-mapeamento/candidatas-refutadas.jsonl.gz`. Saneamento não é ganho de cobertura.
+
+A seleção congelada tinha 767 fontes. 342 receberam
+chamadas; 425 não iniciaram por esgotamento do prazo global.
+Houve 1842 chamadas à pilha HTTP e 576 páginas
+que passaram de falha/pendência para leitura válida. As novas leituras produziram
+202 confirmações de tipo seção, incluindo entradas.
+O inventário consolidado tem 27947 registros de seções confirmadas
+(excluindo entradas) e 953 fontes com exemplos observados em páginas lidas.
+
+A exploração teve teto de 900 segundos, quatro workers, 20 chamadas e 40 segundos por fonte.
+Uma tentativa por URL selecionada, sem retry interno; robots e intervalo por host preservados.
+A entrada relida pôde acrescentar até duas leituras de navegação, sem expansão recursiva.
+O reconhecimento de menus passou a considerar identificadores CSS explícitos; isso gera
+candidatas, não confirmação de tipo. Se o menu atual aponta um palpite refutado, ele é reaberto.
+
+Entrega atual: `var/recuperacao-mapeamento/resumo-fontes.xlsx`,
+`var/recuperacao-mapeamento/resultado-final.xlsx` e `var/recuperacao-mapeamento/conclusao.json`.
+As planilhas completas anteriores permanecem como fotografias históricas. A tela consulta
+o estado atual. A etapa está fechada, sem nova rodada automática, LLM, serviços pagos,
+coleta contínua ou gravação no corpus.
+
+## Encerramento anterior do mapeamento estrutural
+
+O escopo desta entrega é o mapa de editorias, subseções e navegação das 1.294 fontes.
+A etapa foi encerrada em 2026-10-18T01:58:59.890213+00:00, após auditoria do catálogo e uma rodada final
+limitada de exploração. Não há novos lotes ou retomada automática.
+
+| Situação estrutural | Fontes |
+|---|---:|
+| Navegação identificada examinada | 94 |
+| Mapa parcial | 713 |
+| Acesso restrito | 227 |
+| Estrutura não confirmada | 260 |
+
+A rodada consultou 32 fontes, com 596 chamadas à
+pilha HTTP em 550.8 segundos. Aplicou tetos de 100 chamadas e 120 segundos por
+fonte, quatro fontes em paralelo e 1.200 segundos globais. As chamadas em andamento terminam
+pelos timeouts existentes; exportação e verificação ficam fora do prazo de exploração.
+Retentativas e redirecionamentos internos são contabilizados separadamente no transporte.
+As restrições conhecidas na entrada foram preservadas. As candidatas da navegação têm
+prioridade sobre caminhos inferidos; não houve nova expansão por sitemaps/feeds.
+
+O inventário final contém 673914 registros de páginas e 27774 registros de seções confirmadas por
+metadados, 243854 candidatas lidas sem confirmação de tipo e 25030
+candidatas pendentes preservadas. Navegação identificada examinada exige entrada válida,
+evidência estrutural e ausência de candidatas pendentes/falhas reconhecidas; não comprova
+que todas as seções existentes foram descobertas. Falhas, tipos incertos e restrições constam
+como lacunas. Relações de descoberta por link não declaram sozinhas hierarquia editorial.
+
+Entrega: `var/mapeamento-final/resumo-fontes.xlsx` traz a visão curta das 1.294 fontes.
+`var/mapeamento-final/mapa-estrutural-final.xlsx` contém o detalhamento completo:
+inventário completo, seções e candidatas, relações observadas, lacunas finais, artigos/serviços/
+taxonomias identificados, possíveis duplicatas e critérios. Cada aba também tem CSV gzip
+integral. `var/mapeamento-final/encerramento.json` registra métricas e verificações;
+`var/mapeamento-final/RESUMO.md` traz o balanço curto. As evidências e planilhas anteriores
+foram preservadas. Os procedimentos utilizados estão em `var/mapeamento-final/procedimentos/`.
+
+Esta etapa tratou somente do mapeamento estrutural, sem descoberta incremental, LLM, serviços
+pagos, gravação no corpus ou alteração do cron. Os fluxos de coleta documentados abaixo são
+funcionalidades anteriores e não fazem parte desta entrega.
+
+## Fluxo de coleta implementado anteriormente
+
 POC de um sistema separado que varre as 1294 fontes de notícias confiáveis da Mídias IA e alimenta
 o corpus (Postgres) e o armazenamento de evidências. A meta é aposentar o ramo de busca na web do
 pipeline de Mídias IA. Corpus **por entidade, não por adversidade**: entra toda matéria que nomeia
 uma pessoa ou organização identificável (a categoria "Diversos" do KyX recebe a neutra).
-
-## O fluxo (3 vezes ao dia: 06h, 12h e 16h)
 
 ```
 buscar notícias novas nos sites ──► analisar o contexto ──► conferir o critério ──►

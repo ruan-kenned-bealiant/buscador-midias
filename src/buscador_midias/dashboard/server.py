@@ -1,4 +1,4 @@
-"""Servidor HTTP local do painel: uma página e um endpoint JSON, só leitura."""
+"""Servidor local do mapa e do painel operacional, com APIs somente leitura."""
 
 from __future__ import annotations
 
@@ -14,7 +14,9 @@ from urllib.parse import parse_qs, urlsplit
 
 import psycopg
 
+from buscador_midias.dashboard.mapping import mapping_catalog, mapping_sections
 from buscador_midias.dashboard.snapshot import DEFAULT_HOURS, DEFAULT_RECENT, build_snapshot
+from buscador_midias.sites.loader import load_sites
 from buscador_midias.state.store import StateConfigError, StateSchemaError, StateStore
 
 DEFAULT_CACHE_SECONDS = 4.0
@@ -35,6 +37,7 @@ def make_server(
     clock: Callable[[], datetime] | None = None,
     schedule_path: Path | None = None,
     cache_seconds: float = DEFAULT_CACHE_SECONDS,
+    sites_path: Path | None = None,
 ) -> ThreadingHTTPServer:
     """Cria o servidor do painel (sem iniciá-lo).
 
@@ -49,6 +52,7 @@ def make_server(
         schedule_path: JSON com as execuções previstas, relido a cada requisição (opcional).
         cache_seconds: Por quanto tempo o retrato calculado é reaproveitado entre as requisições
             (várias abas ou atualizações seguidas não recalculam tudo).
+        sites_path: Catálogo CSV do mapa; padrão é o catálogo versionado do projeto.
 
     Returns:
         O servidor, pronto para ``serve_forever``.
@@ -57,21 +61,74 @@ def make_server(
     cache: dict[tuple[int, int], tuple[datetime, bytes]] = {}
     cache_lock = threading.Lock()
     page = resources.files("buscador_midias.dashboard").joinpath("index.html").read_bytes()
+    map_page = resources.files("buscador_midias.dashboard").joinpath("mapping.html").read_bytes()
+    catalog = load_sites(sites_path or Path(__file__).resolve().parents[3] / "data/sites.csv")
+    sites = {s.key: s for s in catalog.sites}
+    map_cache: tuple[datetime, bytes] | None = None
+    map_lock = threading.Lock()
 
     class Handler(BaseHTTPRequestHandler):
-        """Atende ``GET /`` (página) e ``GET /api/snapshot`` (dados)."""
+        """Atende o mapa, suas consultas e as rotas do painel operacional anterior."""
 
         server_version = "BuscadorPainel"
 
         def do_GET(self) -> None:  # noqa: N802 - nome exigido pelo http.server
             """Roteia as requisições GET."""
             parts = urlsplit(self.path)
-            if parts.path == "/":
+            if parts.path in ("/", "/mapa"):
+                self._send(200, "text/html; charset=utf-8", map_page)
+            elif parts.path == "/fluxo":
                 self._send(200, "text/html; charset=utf-8", page)
+            elif parts.path in ("/api/mapa/fontes", "/api/mapa/secoes"):
+                self._mapping(parts.path, parse_qs(parts.query))
             elif parts.path == "/api/snapshot":
                 self._snapshot(parse_qs(parts.query))
             else:
                 self._json(404, {"error": "não encontrado"})
+
+        def _mapping(self, path: str, query: dict[str, list[str]]) -> None:
+            """Consulta o catálogo ou uma página de seções, sem iniciar buscas."""
+            nonlocal map_cache
+            key = query.get("site", [""])[0]
+            mode = query.get("mode", ["examples"])[0]
+            if path.endswith("/secoes"):
+                if key not in sites:
+                    self._json(404, {"error": "fonte não encontrada"})
+                    return
+                if mode not in ("examples", "read", "gaps", "all"):
+                    self._json(400, {"error": "filtro de seções inválido"})
+                    return
+            with map_lock:
+                now = now_fn()
+                if (path.endswith("/fontes") and map_cache is not None
+                        and (now - map_cache[0]).total_seconds() < 30):
+                    self._send(200, "application/json; charset=utf-8", map_cache[1])
+                    return
+                try:
+                    store = open_state()
+                    try:
+                        if path.endswith("/fontes"):
+                            data = mapping_catalog(store, catalog)
+                        else:
+                            try:
+                                offset = min(1_000_000, max(0, int(query.get("offset", ["0"])[0])))
+                            except ValueError:
+                                offset = 0
+                            data = mapping_sections(
+                                store, sites[key], mode=mode,
+                                search=query.get("q", [""])[0][:200], offset=offset,
+                                limit=_bounded(query, "limit", 50, 200),
+                            )
+                    finally:
+                        store.close()
+                except (psycopg.Error, StateConfigError, StateSchemaError):
+                    _LOG.exception("falha ao consultar o mapa")
+                    self._json(503, {"error": "mapa indisponível"})
+                    return
+                body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+                if path.endswith("/fontes"):
+                    map_cache = (now, body)
+                self._send(200, "application/json; charset=utf-8", body)
 
         def _snapshot(self, query: dict[str, list[str]]) -> None:
             """Responde o retrato do estado (do cache, se recente); falha de leitura vira 503."""

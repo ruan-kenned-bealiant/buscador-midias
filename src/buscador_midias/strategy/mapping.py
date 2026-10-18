@@ -42,6 +42,20 @@ _LOOP_DETAIL = "segmento repetido três vezes; revisar possível ciclo de navega
 _FAILURES = frozenset(
     {PageStatus.BLOCKED, PageStatus.ERROR, PageStatus.DISALLOWED, PageStatus.INVALID}
 )
+_MENU_MARKERS = frozenset({
+    "menu", "main-menu", "primary-menu", "site-menu", "navbar", "navigation",
+    "main-nav", "primary-nav", "site-nav", "header-nav", "nav-menu", "menu-item",
+})
+
+
+def _navigation_element(element: etree._Element) -> bool:
+    """Reconhece contêineres de menu declarados por semântica ou identificador CSS."""
+    if element.tag == "nav" or element.get("role") == "navigation":
+        return True
+    if element.tag not in ("ul", "ol", "li", "div", "header"):
+        return False
+    markers = (element.get("class", "") + " " + element.get("id", "")).casefold().split()
+    return any(marker in _MENU_MARKERS for marker in markers)
 
 
 class MappingStore(Protocol):
@@ -272,6 +286,12 @@ def map_site(
                 "mechanism_path",
             ):
                 pages[child.url] = replace(pages[child.url], discovery_basis="navigation")
+                if (pages[child.url].status is PageStatus.EXCLUDED
+                        and pages[child.url].detail.startswith("candidata refutada:")):
+                    pages[child.url] = replace(
+                        pages[child.url], status=PageStatus.PENDING,
+                        detail="navegação atual voltou a apontar candidata antes refutada",
+                    )
                 updates.append(pages[child.url])
                 if child.url not in processed and eligible(pages[child.url]):
                     enqueue(pages[child.url])
@@ -454,7 +474,7 @@ def _inspect(
         if not site.owns(url) or url in (normalize_page(site.url), page.url, normalize_page(base)):
             continue
         ancestors = list(anchor.iterancestors())
-        navigation = any(a.tag == "nav" or a.get("role") == "navigation" for a in ancestors)
+        navigation = any(_navigation_element(a) for a in ancestors)
         discovery = "navigation" if navigation else "url_shape"
         segments = urlsplit(url).path.lower().split("/")
         if _REPEATED_SEGMENT.search(urlsplit(url).path):
@@ -494,7 +514,7 @@ def _inspect(
             )
         elif is_article_url(url):
             if not any(
-                a.tag in ("nav", "footer", "aside") or a.get("role") == "navigation"
+                a.tag in ("footer", "aside") or _navigation_element(a)
                 for a in ancestors
             ) and (not has_main or any(a.tag == "main" for a in ancestors)):
                 articles[url] = None

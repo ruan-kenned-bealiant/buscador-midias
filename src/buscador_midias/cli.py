@@ -222,6 +222,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Endereço de escuta. O painel não tem autenticação: mantenha em 127.0.0.1.",
     )
     dashboard.add_argument("--port", type=int, default=8765, help="Porta (0 escolhe uma livre).")
+    dashboard.add_argument("--sites", type=Path, default=DEFAULT_SITES, help="Catálogo do mapa.")
     dashboard.add_argument(
         "--schedule",
         type=Path,
@@ -1118,7 +1119,8 @@ def _dashboard(
         return 2
     probe.close()
     server = make_server(
-        lambda: StateStore(read_only=True), args.host, args.port, schedule_path=args.schedule
+        lambda: StateStore(read_only=True), args.host, args.port, schedule_path=args.schedule,
+        sites_path=args.sites,
     )
     port = server.server_address[1]
     print(f"painel em http://{args.host}:{port}  (Ctrl+C para sair)", flush=True)

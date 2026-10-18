@@ -585,3 +585,28 @@ def test_pagina_persistida_com_nul_e_associacoes():
         assert store.mapping_pages("exemplo.com") == [replace(mapped, title="Título")]
     finally:
         store.close()
+
+
+def test_menu_css_reconhece_secao_html_sem_transformar_manchete_em_navegacao():
+    store = MemoryMap()
+    html = b'''<html><div class="main-menu"><a href="/politica.html">Politica</a></div>
+      <div class="related-news"><a href="/economia.html">Destaque</a></div></html>'''
+    fetcher = FakeFetcher({HOME + '/robots.txt': robots(), HOME: html})
+    run(fetcher, store, max_pages=1)
+    pages = {p.url: p for p in store.mapping_pages(make_site().key)}
+    assert pages[HOME + '/politica.html'].discovery_basis == 'navigation'
+    assert HOME + '/economia.html' not in pages
+
+
+def test_navegacao_nova_reabre_palpite_anteriormente_refutado():
+    store = MemoryMap()
+    store.save_mapping_pages(make_site().key, [
+        MapPage(HOME, '', 'root'),
+        MapPage(HOME + '/politica', HOME, 'section', PageStatus.EXCLUDED,
+                detail='candidata refutada: HTTP 404', discovery_basis='mechanism_path'),
+    ])
+    html = b'<html><nav><a href="/politica">Politica</a></nav></html>'
+    run(FakeFetcher({HOME + '/robots.txt': robots(), HOME: html}), store, max_pages=1)
+    child = store.pages[make_site().key][HOME + '/politica']
+    assert child.status is PageStatus.PENDING
+    assert child.discovery_basis == 'navigation'
