@@ -79,5 +79,7 @@ if [ "$REMOVE" = 0 ]; then
   printf '{"daily": [%s]}\n' "${daily%, }" > "$SCHEDULE_FILE"
   echo "instalado: $TIMES (agenda do painel em $SCHEDULE_FILE)"
 else
+  mkdir -p "$(dirname "$SCHEDULE_FILE")"
+  printf '{"enabled": false, "daily": [], "jobs": []}\n' > "$SCHEDULE_FILE"
   echo "removido do crontab"
 fi

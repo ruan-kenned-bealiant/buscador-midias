@@ -109,6 +109,7 @@ def test_remove_so_o_bloco_do_buscador(tmp_path: Path):
 
     assert result.returncode == 0
     assert env.crontab() == ["30 3 * * * backup-do-banco"]
+    assert json.loads(env.schedule_file.read_text()) == {"enabled": False, "daily": [], "jobs": []}
 
 
 def test_dry_run_mostra_o_resultado_sem_instalar_nada(tmp_path: Path):

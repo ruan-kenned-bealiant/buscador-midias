@@ -2,9 +2,11 @@
 
 ## Objetivo
 
-Consolidar o mapa estrutural das 1.294 fontes, distinguindo editorias e subseções
-confirmadas, candidatas, relações registradas e lacunas. A entrega atual termina com um
-inventário final e suas limitações, sem retomada automática.
+Consolidar RSS/sitemaps utilizáveis nas futuras buscas das 1.294 fontes, associados ao
+mapa de editorias e subseções por evidência observada. Distinguir mecanismos recentes,
+complementares, históricos e lacunas; páginas HTML não substituem essa entrega.
+O inventário termina com seus arquivos reutilizáveis e limitações, sem coleta contínua
+ou retomada automática.
 
 ## Consulta do mapa
 
@@ -15,18 +17,77 @@ scripts/bm.sh dashboard
 # Catálogo alternativo: scripts/bm.sh dashboard --sites caminho/sites.csv
 ```
 
-A tela mostra os **1299 registros do catálogo**: 1294 fontes
-únicas e 5 duplicatas identificadas. Ao selecionar uma fonte, aparecem suas
-páginas/seções mapeadas, evidência do tipo, última leitura e um link de notícia de exemplo
-quando armazenado. Há busca por fonte/domínio/país, filtros, busca por seção e paginação.
-O modo inicial mostra páginas lidas com exemplos; os demais permitem ver todas as lidas,
-pendências/falhas e todo o mapa estrutural. Fontes sem seções ou sem exemplos continuam no catálogo.
-Um exemplo é um link observado na leitura da página; não foi revalidado ao abrir o painel.
-Não existe uma referência conhecida para medir 100% de cobertura do site.
+A tela mostra os **1299 registros do catálogo**: 1294 fontes únicas e cinco duplicatas
+identificadas. Ao selecionar uma fonte, a visão inicial apresenta seus RSS/sitemaps auditados,
+com links e exportação para buscas. A aba de seções apresenta as associações observadas e lacunas.
+Há busca, filtros por país/situação e paginação. Fontes sem mecanismos continuam visíveis.
 
 As rotas `/` e `/mapa` servem esta tela; `/fluxo` preserva o painel operacional anterior.
 `/api/mapa/fontes` consulta o catálogo e `/api/mapa/secoes?site=CHAVE` fornece as seções paginadas.
 Essas consultas abrem o estado somente leitura e não disparam buscas nos sites.
+
+## RSS/sitemaps utilizáveis nas buscas
+
+A tela inicia em **RSS e sitemaps**. Cada fonte mostra os endereços de máquina,
+RSS/Atom, sitemap ou news sitemap, resultado/data da auditoria, leitura parcial,
+quantidade de URLs observadas e exemplo quando armazenado. O filtro separa:
+
+- **Recentes na última auditoria**: XML com itens e resultado `fresh`, endereço sem
+  data fixa, pertencente ao host da fonte e sem exclusão manual.
+- **Complementares**: XML com itens, mas atualização lenta (`slow`) ou sem datas (`undated`).
+- **A revisar**: vazios, antigos, históricos ou URLs com data fixa. Não entram no plano recente.
+
+HTML, feeds de comentários, links assinados, credenciais na URL e mecanismos excluídos
+manualmente não entram na seleção utilizável. Um mecanismo pode estar fora do prefixo da
+seção no mesmo host (por exemplo, RSS em `/rss/...`); os links de notícias respeitam o
+escopo editorial. Não são inventados modelos de URL para o futuro.
+
+A aba **Associação às seções** compara até cinco exemplos armazenados por página com as
+URLs listadas pelos mecanismos. Mostra declaração na página, correspondência observada,
+leitura parcial e se a auditoria do mecanismo é anterior à página. Uma correspondência
+histórica é preservada como tal. Correspondência integral desses exemplos não equivale a
+cobertura total da seção. Seções sem mecanismo relacionado permanecem como lacunas explícitas.
+
+O botão de download fornece CSV compatível com `--hints`. APIs somente leitura:
+`/api/mapa/mecanismos?site=CHAVE&mode=recent|supplement|review|all` (paginada) e
+`/api/mapa/mecanismos.csv?site=CHAVE&mode=recent` (sem truncar; sem `site`, todo o catálogo).
+
+Exportação offline, em uma passagem finita pelo catálogo, sem HTTP ou agendamento:
+
+```bash
+scripts/bm.sh export-mechanisms --out var/mecanismos-busca
+```
+
+Arquivos gerados:
+
+- `plano-descoberta.json`: mecanismos recentes deduplicados por fonte/URL canônica,
+  compatíveis com `--discovery-plan`. Preserva forçamento manual quando presente na seleção;
+  se não estiver, a fonte é omitida do plano e contabilizada no resumo.
+- `hints-recentes.csv`: dicas recentes para `--hints`, revalidadas pelo fluxo de sondagem.
+- `plano-ampliado.json` e `hints-complementares.csv`: acrescentam os XML lentos/sem datas,
+  sem tratá-los como recentes. Permitem tentar mais fontes, com essa limitação explícita.
+- `mecanismos.csv`: inventário de XML recente, complementar e a revisar, com evidências.
+- `fontes.csv`: resumo das 1.294 fontes únicas, inclusive sem mecanismos recentes.
+- `secoes-mecanismos.csv.gz`: associações observadas, datas e número de exemplos correspondentes.
+- `lacunas-secoes.csv.gz`: páginas sem correspondência integral da amostra em auditoria posterior.
+- `resumo.json` e `LEIA-ME.txt`: contagens e critérios.
+
+O plano padrão e as estratégias do banco não são alterados. Na futura execução manual,
+`discover --discovery-plan var/mecanismos-busca/plano-descoberta.json` aceita esse arquivo;
+o orçamento de chamadas e `--max-complements` continuam limitando os mecanismos lidos por rodada.
+Isso executa busca de notícias e deve ser usado quando a etapa de coleta for retomada.
+“Recente” sempre se refere à data da auditoria: a busca revalida HTTP/conteúdo, aplica escopo,
+robots, deduplicação e checkpoints. Esta entrega não executa essa coleta.
+
+Resultado da consolidação de 18/10/2026, com auditorias armazenadas em 17/10:
+855 fontes e 11.337 mecanismos no plano recente; 944 fontes e 19.425 mecanismos no
+plano ampliado, incluindo XML lento/sem datas. As contagens dos planos deduplicam URLs
+canônicas por fonte. A tela conta os registros de auditoria (11.427 recentes), preservando
+as variações registradas. Restam 350 fontes sem mecanismo recente ou complementar nesta
+seleção. Foram exportadas 615.522 relações de declaração/correspondência com páginas;
+isso não representa 615.522 seções cobertas nem validação de atualização futura.
+Os arquivos foram carregados pelos leitores reais de `--discovery-plan`/`--hints` e
+conferidos com as regras manuais; a geração não fez HTTP externo.
 
 ## Fechamento da recuperação estrutural
 

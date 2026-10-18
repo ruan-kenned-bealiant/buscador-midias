@@ -78,7 +78,7 @@ def load_schedule(
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return []
-    if not isinstance(payload, dict):
+    if not isinstance(payload, dict) or payload.get("enabled") is False:
         return []
     entries = payload.get("jobs")
     jobs = [_job(entry) for entry in entries] if isinstance(entries, list) else []
@@ -119,6 +119,13 @@ def build_schedule(
     Returns:
         ``{"source": "arquivo" | "estimado" | None, "jobs": [...]}``.
     """
+    if path is not None:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            payload = None
+        if isinstance(payload, dict) and payload.get("enabled") is False:
+            return {"source": "arquivo", "jobs": []}
     first_run = min((run.started_at for run in discovery_runs), default=None)
     jobs = load_schedule(path, now=now, tz=tz, not_before=first_run - GRACE if first_run else None)
     source: str | None = "arquivo" if jobs else None

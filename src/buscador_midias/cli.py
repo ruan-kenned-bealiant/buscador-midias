@@ -212,6 +212,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_discovery_plan_args(discover)
 
+    mechanisms = commands.add_parser(
+        "export-mechanisms", help="Exporta RSS/sitemaps e associações offline, sem HTTP."
+    )
+    mechanisms.add_argument("--sites", type=Path, default=DEFAULT_SITES)
+    mechanisms.add_argument("--manual", type=Path, default=DEFAULT_MANUAL_RULES)
+    mechanisms.add_argument("--out", type=Path, default=Path("var/mecanismos-busca"))
+
     dashboard = commands.add_parser(
         "dashboard",
         help="Painel web local (somente leitura) para acompanhar o fluxo em tempo real.",
@@ -636,6 +643,20 @@ def main(
         return _corpus_sync(args, corpus_writer, now)
     if args.command == "enrich":
         return _enrich(args, enrich_ports or EnrichPorts(), now)
+    if args.command == "export-mechanisms":
+        from buscador_midias.strategy.mechanism_inventory import export_mechanisms
+
+        store = _open_state(read_only=True)
+        if store is None:
+            return 2
+        try:
+            summary = export_mechanisms(
+                store, load_sites(args.sites).sites, load_manual_rules(args.manual), args.out,
+            )
+        finally:
+            store.close()
+        print(f"Inventário exportado em {args.out}: {summary['plan_sources']} fontes no plano")
+        return 0
     if args.command == "dashboard":
         return _dashboard(args, serve)
 

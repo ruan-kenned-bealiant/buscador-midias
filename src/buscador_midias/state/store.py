@@ -1628,6 +1628,37 @@ class StateStore:
             discovery_basis=r[13],
         ) for r in rows]
 
+    def mapping_mechanism_rows(self, site_key: str | None = None) -> list[dict[str, Any]]:
+        """Metadados dos mecanismos, sem transportar listas grandes de notícias."""
+        where = " WHERE site_key=%s" if site_key is not None else ""
+        rows = self._all(
+            "SELECT site_key,url,kind,verdict,checked_at,partial,detail,"
+            "jsonb_array_length(listed_urls),listed_urls->>0,listed_urls->>1,"
+            "listed_urls->>2,listed_urls->>3,listed_urls->>4"
+            " FROM midias_crawler_section_sources" + where + " ORDER BY site_key,url",
+            (site_key,) if site_key is not None else (),
+        )
+        fields = ("site_key", "url", "kind", "verdict", "checked_at", "partial", "detail",
+                  "listed_count")
+        return [{**dict(zip(fields, row[:8], strict=True)), "samples": list(row[8:])}
+                for row in rows]
+
+    def mapping_inventory_pages(self, site_key: str) -> list[MapPage]:
+        """Páginas estruturais com até cinco exemplos para associação offline limitada."""
+        rows = self._all(
+            "SELECT url,title,kind,status,page_type,checked_at,feeds,discovery_basis,"
+            "article_urls->>0,article_urls->>1,article_urls->>2,article_urls->>3,article_urls->>4"
+            " FROM midias_crawler_section_pages WHERE site_key=%s AND status<>'excluded'"
+            " AND (kind='root' OR (kind='section'"
+            " AND page_type NOT IN ('article','service','taxonomy'))) ORDER BY id",
+            (site_key,),
+        )
+        return [MapPage(
+            url=r[0], found_on="", title=r[1], kind=r[2], status=PageStatus(r[3]),
+            page_type=r[4], checked_at=r[5], feeds=tuple(r[6]), discovery_basis=r[7],
+            article_urls=tuple(u for u in r[8:] if u),
+        ) for r in rows]
+
     def mapping_overview(self) -> dict[str, dict[str, int]]:
         """Contagens estruturais por fonte sem transportar os arrays de notícias ao painel."""
         rows = self._all(
@@ -1664,7 +1695,8 @@ class StateStore:
             + " AND strpos(lower(title || ' ' || url), lower(%s))>0"
         )
         rows = self._all(
-            "SELECT url,title,kind,status,page_type,type_basis,discovery_basis,checked_at,detail,"
+            "SELECT url,title,kind,status,page_type,type_basis,discovery_basis,checked_at,"
+            " detail,feeds,"
             " article_urls->>0,article_urls->>1,article_urls->>2,article_urls->>3,"
             " article_urls->>4,count(*) OVER() FROM midias_crawler_section_pages WHERE "
             + where + " ORDER BY (kind<>'root'),(page_type<>'section'),url LIMIT %s OFFSET %s",
@@ -1679,9 +1711,9 @@ class StateStore:
             )
             total = count[0] if count else 0
         fields = ("url", "title", "kind", "status", "page_type", "type_basis",
-                  "discovery_basis", "checked_at", "detail")
+                  "discovery_basis", "checked_at", "detail", "feeds")
         return total, [
-            {**dict(zip(fields, row[:9], strict=True)), "samples": list(row[9:14])}
+            {**dict(zip(fields, row[:10], strict=True)), "samples": list(row[10:15])}
             for row in rows
         ]
 

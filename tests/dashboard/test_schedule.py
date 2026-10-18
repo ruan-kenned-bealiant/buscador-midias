@@ -221,3 +221,14 @@ def test_horario_diario_anterior_a_primeira_rodada_do_estado_nao_vira_atrasado(t
         "2026-10-16T16:00",
     ]
     assert jobs[0]["state"] == "overdue"  # 12:00 de hoje já passou sem rodada
+
+
+def test_agenda_desativada_nao_estima_execucao_pelo_historico(tmp_path: Path):
+    path = tmp_path / "schedule.json"
+    path.write_text(json.dumps({"enabled": False, "daily": ["06:00"]}))
+    runs = [run(n, NOW - timedelta(hours=6 - n * 2)) for n in range(3)]
+    assert load_schedule(path, now=NOW) == []
+    assert build_schedule(path=path, discovery_runs=runs, now=NOW) == {
+        "source": "arquivo",
+        "jobs": [],
+    }

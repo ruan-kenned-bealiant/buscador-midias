@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import logging
 import threading
@@ -14,10 +16,12 @@ from urllib.parse import parse_qs, urlsplit
 
 import psycopg
 
-from buscador_midias.dashboard.mapping import mapping_catalog, mapping_sections
+from buscador_midias.dashboard.mapping import mapping_catalog, mapping_mechanisms, mapping_sections
 from buscador_midias.dashboard.snapshot import DEFAULT_HOURS, DEFAULT_RECENT, build_snapshot
 from buscador_midias.sites.loader import load_sites
 from buscador_midias.state.store import StateConfigError, StateSchemaError, StateStore
+from buscador_midias.strategy.manual import load_manual_rules
+from buscador_midias.strategy.mechanism_inventory import MechanismIndex
 
 DEFAULT_CACHE_SECONDS = 4.0
 _MAX_HOURS = 168
@@ -66,6 +70,8 @@ def make_server(
     sites = {s.key: s for s in catalog.sites}
     map_cache: tuple[datetime, bytes] | None = None
     map_lock = threading.Lock()
+    rules = load_manual_rules(Path(__file__).resolve().parents[3] / "data/estrategias_manuais.csv")
+    indexes: dict[str, tuple[datetime, MechanismIndex]] = {}
 
     class Handler(BaseHTTPRequestHandler):
         """Atende o mapa, suas consultas e as rotas do painel operacional anterior."""
@@ -79,7 +85,12 @@ def make_server(
                 self._send(200, "text/html; charset=utf-8", map_page)
             elif parts.path == "/fluxo":
                 self._send(200, "text/html; charset=utf-8", page)
-            elif parts.path in ("/api/mapa/fontes", "/api/mapa/secoes"):
+            elif parts.path in (
+                "/api/mapa/fontes",
+                "/api/mapa/secoes",
+                "/api/mapa/mecanismos",
+                "/api/mapa/mecanismos.csv",
+            ):
                 self._mapping(parts.path, parse_qs(parts.query))
             elif parts.path == "/api/snapshot":
                 self._snapshot(parse_qs(parts.query))
@@ -98,26 +109,111 @@ def make_server(
                 if mode not in ("examples", "read", "gaps", "all"):
                     self._json(400, {"error": "filtro de seções inválido"})
                     return
+            mechanisms = path.endswith(("/mecanismos", "/mecanismos.csv"))
+            if mechanisms:
+                if key and key not in sites:
+                    self._json(404, {"error": "fonte não encontrada"})
+                    return
+                mode = query.get("mode", ["recent"])[0]
+                if mode not in ("recent", "supplement", "review", "all"):
+                    self._json(400, {"error": "filtro de mecanismos inválido"})
+                    return
             with map_lock:
                 now = now_fn()
-                if (path.endswith("/fontes") and map_cache is not None
-                        and (now - map_cache[0]).total_seconds() < 30):
+                if (
+                    path.endswith("/fontes")
+                    and map_cache is not None
+                    and (now - map_cache[0]).total_seconds() < 30
+                ):
                     self._send(200, "application/json; charset=utf-8", map_cache[1])
                     return
                 try:
                     store = open_state()
                     try:
                         if path.endswith("/fontes"):
-                            data = mapping_catalog(store, catalog)
+                            data = mapping_catalog(store, catalog, rules)
+                        elif mechanisms:
+                            records = mapping_mechanisms(
+                                store,
+                                [sites[key]] if key else catalog.sites,
+                                rules=rules,
+                                mode=mode,
+                                search=query.get("q", [""])[0][:200],
+                            )
+                            if path.endswith(".csv"):
+                                output = io.StringIO(newline="")
+                                writer = csv.writer(output)
+                                writer.writerow(
+                                    (
+                                        "dominio",
+                                        "news_sitemap_url",
+                                        "rss_url",
+                                        "sitemap_url",
+                                        "resultado",
+                                        "validado_em",
+                                        "leitura_parcial",
+                                        "grupo",
+                                    )
+                                )
+                                for record in records:
+                                    columns = [record["site_key"], "", "", ""]
+                                    columns[
+                                        {"news_sitemap": 1, "feed": 2, "sitemap": 3}[record["kind"]]
+                                    ] = record["url"]
+                                    writer.writerow(
+                                        columns
+                                        + [
+                                            record["verdict"],
+                                            record["checked_at"],
+                                            record["partial"],
+                                            record["group"],
+                                        ]
+                                    )
+                                self._send(
+                                    200,
+                                    "text/csv; charset=utf-8",
+                                    output.getvalue().encode("utf-8-sig"),
+                                )
+                                return
+                            try:
+                                offset = max(0, int(query.get("offset", ["0"])[0]))
+                            except ValueError:
+                                offset = 0
+                            limit = _bounded(query, "limit", 50, 200)
+                            data = {
+                                "total": len(records),
+                                "offset": offset,
+                                "mechanisms": records[offset : offset + limit],
+                            }
                         else:
+                            cached_index = indexes.get(key)
+                            if (
+                                cached_index is None
+                                or (now - cached_index[0]).total_seconds() >= 60
+                            ):
+                                if len(indexes) >= 3:
+                                    indexes.pop(next(iter(indexes)))
+                                cached_index = (
+                                    now,
+                                    MechanismIndex(
+                                        sites[key],
+                                        store.mapping_sources(key),
+                                        rules.for_site(sites[key]).exclude,
+                                    ),
+                                )
+                                indexes[key] = cached_index
                             try:
                                 offset = min(1_000_000, max(0, int(query.get("offset", ["0"])[0])))
                             except ValueError:
                                 offset = 0
                             data = mapping_sections(
-                                store, sites[key], mode=mode,
-                                search=query.get("q", [""])[0][:200], offset=offset,
+                                store,
+                                sites[key],
+                                mode=mode,
+                                search=query.get("q", [""])[0][:200],
+                                offset=offset,
                                 limit=_bounded(query, "limit", 50, 200),
+                                index=cached_index[1],
                             )
                     finally:
                         store.close()
