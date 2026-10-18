@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import logging
@@ -93,8 +94,12 @@ def make_server(
                 self._send(200, "text/html; charset=utf-8", page)
             elif parts.path == "/api/mapa/acesso":
                 self._access(parse_qs(parts.query))
+            elif parts.path == "/api/mapa/revisao-web":
+                self._web_review(parse_qs(parts.query))
             elif parts.path == "/api/mapa/auditoria.xlsx":
-                report = audit.directory / "exploracao-pendentes-final/resultado.xlsx"
+                report = audit.directory / "revisao-web-fontes/resultado.xlsx"
+                if not report.is_file():
+                    report = audit.directory / "exploracao-pendentes-final/resultado.xlsx"
                 if not report.is_file():
                     report = audit.directory / "auditoria-acesso-rss/resultado.xlsx"
                 if report.is_file():
@@ -297,6 +302,21 @@ def make_server(
                     _LOG.exception("falha ao ler relatórios de acesso")
                     self._json(503, {"error": "relatórios de auditoria indisponíveis"})
                     return
+            self._json(200, data)
+
+        def _web_review(self, query: dict[str, list[str]]) -> None:
+            """Lê a revisão web da fonte sem fazer consultas externas."""
+            key = query.get("site", [""])[0]
+            if key not in sites:
+                self._json(404, {"error": "fonte não encontrada"})
+                return
+            identity = hashlib.sha256(key.encode()).hexdigest()
+            report = audit.directory / "revisao-web-fontes/detalhes" / f"{identity}.json"
+            try:
+                data = json.loads(report.read_text()) if report.is_file() else {"available": False}
+            except (OSError, ValueError):
+                self._json(503, {"error": "revisão web indisponível"})
+                return
             self._json(200, data)
 
         def _snapshot(self, query: dict[str, list[str]]) -> None:

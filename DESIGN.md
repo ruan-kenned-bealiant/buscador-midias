@@ -19,13 +19,14 @@ scripts/bm.sh dashboard
 
 A tela mostra os **1299 registros do catálogo**: 1294 fontes únicas e cinco duplicatas
 identificadas. A visão inicial **Acesso às notícias** mostra o resultado da auditoria sem
-filtro de data: **824 fontes** com página de notícia acessível e **790** com texto legível,
-com **658** confirmadas por RSS e **665** por sitemap (há sobreposição entre esses grupos).
+filtro de data: **838 fontes** com página de notícia acessível e **804** com texto legível,
+com **702** confirmadas por RSS e **670** por sitemap (há sobreposição entre esses grupos).
 Ao selecionar uma fonte, aparecem os mecanismos, links de notícias testadas, resultado HTTP,
 evidências de extração, limites e motivos de falha. Não testados aparecem explicitamente,
 sem serem classificados como falhas. Há busca, filtros por país, situação da fonte, tipo
 RSS/sitemap e resultado da auditoria, além de paginação e download da planilha completa.
-As abas **RSS e sitemaps** e **Associação às seções** preservam o inventário funcional e
+A aba **Descoberta na web** apresenta as consultas, páginas oficiais e comparação de
+editorias. As abas **RSS e sitemaps** e **Associação às seções** preservam o inventário funcional e
 as associações observadas. Fontes sem mecanismos continuam visíveis.
 
 As rotas `/` e `/mapa` servem esta tela; `/fluxo` preserva o painel operacional anterior.
@@ -37,6 +38,61 @@ e `var/auditoria-acesso-rss`, com `kind=all|feed|sitemap`,
 `/api/mapa/auditoria.xlsx` baixa a planilha consolidada. A API de acesso não abre o banco
 nem faz requisições aos veículos. Sem os arquivos locais, informa que a auditoria está
 indisponível; os arquivos não são gerados ao abrir a tela.
+
+## Revisão web limitada de todas as fontes
+
+Rodada concluída em **18/10/2026** para as **1.294 fontes únicas**, agrupadas em
+**1.264 domínios**. Foram enviadas **2.528 consultas planejadas**, duas por domínio,
+para localizar diretórios oficiais e mecanismos. Páginas que publicam listas de RSS
+como artigos também foram consideradas. Além da rodada, houve seis consultas iniciais
+de diagnóstico da ferramenta e duas solicitações de diagnóstico que falharam na conexão.
+
+Resultado: **1.038 novas associações fonte–mecanismo em 217 fontes**, abrangendo **994
+endereços distintos**, dos quais **989 eram inéditos no inventário global**. Os demais
+cinco endereços já eram conhecidos em outro escopo do catálogo. Aliases foram resolvidos
+antes de persistir os destinos; a comparação por fonte usa chave e escopo do catálogo.
+
+| Evidência atual, somando as rodadas sem duplicar fontes | Fontes |
+|---|---:|
+| XML funcional no inventário reutilizável | **1.039** |
+| Pelo menos uma notícia acessível comprovada | **838** |
+| Também com texto legível | **804** |
+
+A revisão ampliou mecanismos de fontes já acessíveis, além de confirmar XML em nove
+fontes que antes não tinham mecanismo funcional. Ainda há **255 fontes únicas sem XML
+funcional confirmado**. Isso não demonstra inexistência de mecanismos nem impossibilidade
+de acesso. Não se mede cobertura integral por esses totais.
+
+Foram lidas **1.157 páginas HTML oficiais distintas**, com leitura de alguma página HTML
+em **981 fontes**. Houve **22.392 associações de editorias observadas nos menus**
+(22.327 URLs distintas), das quais **2.272** tiveram correspondência amostral com URLs
+listadas em mecanismos ou exemplos do inventário. Ausência de correspondência permanece
+inconclusiva: mecanismos conhecidos podem ter apenas exemplos armazenados, menus podem
+ser dinâmicos e as páginas acessíveis não representam necessariamente todas as editorias.
+
+Seis domínios ficaram sem resultado retornado pelo serviço de busca por erro HTTP 500:
+`newvision.co.ug`, `observer.ug`, `newtimes.co.rw`, `chronicles.rw`, `igihe.com` e
+`m28investigates.com`. As 12 consultas correspondentes estão registradas como falhas de
+pesquisa, sem classificá-las como ausência de RSS/sitemap. A validação interna dos
+1.264 domínios terminou sem exceções; os bloqueios e limites observados permanecem nos
+relatórios. Sete páginas HTTP 200 foram reclassificadas como desafio/erro, usando somente
+o HTML salvo, e não contam como páginas oficiais lidas.
+
+Limites: até três páginas oficiais, 16 XML, dois links de notícia e 32 chamadas por
+domínio, até dez níveis de índices, 90 segundos para iniciar novas requisições por domínio,
+sem corte de data e com robots.txt respeitado. Foram **6.650 chamadas HTTP na validação
+direta**; não inclui as operações internas do serviço de busca. Feeds declarados para
+hosts externos foram registrados para revisão, sem ampliar automaticamente o escopo.
+Não houve serviços pagos, escrita de notícias no corpus ou novos agendamentos.
+
+A tela ganhou a aba **Descoberta na web**: consultas enviadas, páginas de origem,
+links declarados, resultado da validação e comparação amostral com editorias do menu.
+Os filtros **Web: novos mecanismos** e **Web: falha na pesquisa** ajudam a revisar os
+resultados. `/api/mapa/revisao-web?site=CHAVE` lê os detalhes locais, sem buscar na internet.
+O download atualizado está em [`var/revisao-web-fontes/resultado.xlsx`](var/revisao-web-fontes/resultado.xlsx),
+com as auditorias anteriores preservadas em abas separadas. CSVs, JSONs, backups,
+consultas por domínio e verificações da tela estão na mesma pasta. A rodada está
+encerrada, sem continuação automática; abrir a tela não dispara processamento.
 
 ## Rodada exploratória final das fontes sem confirmação
 
@@ -104,7 +160,8 @@ Uma próxima melhoria de método deve avaliar também as fontes já confirmadas:
 limitada por domínio por páginas oficiais de RSS/sitemaps, extração dos diretórios de
 editorias e comparação com as seções publicadas. Esse processo precisa de limites de
 consultas/páginas por fonte e resultado explícito, sem descoberta recursiva indefinida.
-**Essa busca web sistemática não foi executada nesta rodada**, nem foi agendada.
+**Naquela rodada, a busca web sistemática ainda não havia sido executada.** Ela foi
+realizada depois, na revisão limitada documentada acima, e não foi agendada para repetição.
 
 ## RSS/sitemaps funcionais para buscas
 

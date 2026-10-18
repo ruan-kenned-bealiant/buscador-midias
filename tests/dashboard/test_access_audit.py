@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import json
 import threading
 
@@ -189,6 +190,19 @@ def test_endpoint_de_auditoria_nao_abre_banco_e_valida_parametros(tmp_path):
         status, _, body = get(base + "/api/mapa/acesso?site=a.test&mode=readable&limit=1")
         assert status == 200 and json.loads(body)["total"] == 1
         assert get(base + "/api/mapa/acesso?site=outro")[0] == 404
+        assert json.loads(get(base + "/api/mapa/revisao-web?site=a.test")[2]) == {
+            "available": False
+        }
+        web_dir = tmp_path / "revisao-web-fontes/detalhes"
+        web_dir.mkdir(parents=True)
+        report_id = hashlib.sha256(b"a.test").hexdigest()
+        (web_dir / f"{report_id}.json").write_text(
+            json.dumps({"available": True, "queries": ["site:a.test RSS"]})
+        )
+        assert json.loads(get(base + "/api/mapa/revisao-web?site=a.test")[2])["queries"] == [
+            "site:a.test RSS"
+        ]
+        assert get(base + "/api/mapa/revisao-web?site=../../etc/passwd")[0] == 404
         assert get(base + "/api/mapa/acesso?site=a.test&kind=invalido")[0] == 400
         assert get(base + "/api/mapa/acesso?site=a.test&mode=invalido")[0] == 400
         assert get(base + "/api/mapa/auditoria.xlsx")[0] == 404
@@ -284,3 +298,45 @@ def test_nova_leitura_de_xml_nao_apaga_noticia_ja_confirmada(tmp_path):
     page = audit.page("a.test", kind="feed", mode="all", search="", offset=0, limit=10)
     assert page["total"] == 1 and page["records"][0]["accessible"]
     assert page["records"][0]["example_url"] == "https://a.test/noticia"
+
+
+def test_revisao_web_integra_novos_mecanismos_e_preserva_origem_oficial(tmp_path):
+    reports(tmp_path)
+    write_csv(
+        tmp_path / "revisao-web-fontes/acesso.csv",
+        [
+            {
+                "site_key": "b.test",
+                "root": "https://b.test/politica/feed",
+                "kind": "feed",
+                "attempted": "True",
+                "xml_readable": "True",
+                "accessible": "True",
+                "readable": "True",
+                "status": "readable_news",
+                "example_url": "https://b.test/politica/noticia",
+                "basis": "official_directory",
+                "found_on": "https://b.test/siga-por-rss.html",
+            }
+        ],
+    )
+    write_csv(
+        tmp_path / "revisao-web-fontes/fontes.csv",
+        [
+            {
+                "site_key": "b.test",
+                "status": "new_xml",
+                "queries": "2",
+                "pages_read": "2",
+                "new_xml": "1",
+            }
+        ],
+    )
+    audit = index(tmp_path)
+    audit.refresh()
+    assert audit.summary["sources_accessible"] == 2
+    assert audit.sources["b.test"]["web_review"]["status"] == "new_xml"
+    row = audit.page("b.test", kind="feed", mode="readable", search="", offset=0, limit=10)[
+        "records"
+    ][0]
+    assert row["found_on"] == "https://b.test/siga-por-rss.html"

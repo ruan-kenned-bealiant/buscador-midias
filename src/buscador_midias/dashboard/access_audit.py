@@ -32,6 +32,7 @@ class AccessAudit:
         sm = self.directory / "auditoria-acesso-sitemaps"
         rss = self.directory / "auditoria-acesso-rss"
         extra = self.directory / "exploracao-pendentes-final"
+        web = self.directory / "revisao-web-fontes"
         paths = [
             sm / "referencias.csv",
             rss / "feeds.csv",
@@ -41,6 +42,9 @@ class AccessAudit:
             extra / "acesso.csv",
             extra / "fontes.csv",
             extra / "resumo.json",
+            web / "acesso.csv",
+            web / "fontes.csv",
+            web / "resumo.json",
         ]
         signature = tuple(
             (p.stat().st_mtime_ns, p.stat().st_size) if p.is_file() else None for p in paths
@@ -61,6 +65,8 @@ class AccessAudit:
                 self._add(records, row, "feed", row.get("tentado") == "True")
         for row in _csv(paths[5]):
             self._add(records, row, row["kind"], row.get("attempted") == "True")
+        for row in _csv(paths[8]):
+            self._add(records, row, row["kind"], row.get("attempted") == "True")
         for source_key, rows in records.items():
             unique: dict[tuple[str, str], dict[str, Any]] = {}
             for row in rows:
@@ -71,6 +77,7 @@ class AccessAudit:
                     unique[identity] = row
             records[source_key] = list(unique.values())
         exploration = {row["site_key"]: row for row in _csv(paths[6])}
+        web_sources = {row["site_key"]: row for row in _csv(paths[9])}
         sources = {}
         for site in self.sites.values():
             rows = records.get(site.key, [])
@@ -87,10 +94,11 @@ class AccessAudit:
                 "explored": site.key in exploration,
                 "exploration_status": exploration.get(site.key, {}).get("status"),
                 "exploration_detail": exploration.get(site.key, {}).get("detail"),
+                "web_review": web_sources.get(site.key),
             }
         summaries = [_json(paths[3]), _json(paths[4])]
         self.summary = {
-            "available": any(paths[i].is_file() for i in (0, 1, 2, 5, 6)),
+            "available": any(paths[i].is_file() for i in (0, 1, 2, 5, 6, 8, 9)),
             "sources_accessible": sum(s["accessible"] for s in sources.values()),
             "sources_readable": sum(s["readable"] for s in sources.values()),
             "sources_audited": sum(s["audited"] for s in sources.values()),
@@ -109,9 +117,10 @@ class AccessAudit:
             "rss_feeds_per_source": summaries[1].get("limits", {}).get("feeds_per_source"),
             "sitemap_max_depth": summaries[0].get("limits", {}).get("max_depth"),
             "download_available": any(
-                (folder / "resultado.xlsx").is_file() for folder in (rss, extra)
+                (folder / "resultado.xlsx").is_file() for folder in (rss, extra, web)
             ),
             "exploration": _json(paths[7]),
+            "web_review": _json(paths[10]),
         }
         self.records, self.sources, self.signature = dict(records), sources, signature
 
@@ -155,6 +164,11 @@ class AccessAudit:
                 "partial": row.get("traversal_partial") == "True",
                 "xml_http": row.get("http_status"),
                 "basis": row.get("basis"),
+                "found_on": (
+                    row.get("found_on")
+                    if safe_mechanism_url(site, row.get("found_on") or "")
+                    else None
+                ),
             }
         )
 
