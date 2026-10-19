@@ -342,7 +342,9 @@ def cascade_for(
             free, max_requests=max_source_requests, seconds=source_timeout,
             allowed=lambda url: site.owns_host(url) and not is_excluded(url, exclude),
         )
-        free = MappingFetcher(budget, site, user_agent, max_source_requests * 2 + 1)
+        free = MappingFetcher(
+            budget, site, user_agent, max_source_requests * 2 + 1 if max_source_requests else 0,
+        )
         if paid is not None:
             paid = FilteredFetcher(
                 paid, lambda url: site.owns_host(url) and not is_excluded(url, exclude),

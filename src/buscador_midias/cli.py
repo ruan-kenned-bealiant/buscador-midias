@@ -177,7 +177,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-sitemap-fetches",
         type=int,
         default=DEFAULT_MAX_SITEMAP_FETCHES,
-        help="Sitemaps requisitados por site em cada rodada.",
+        help="Sitemaps requisitados por mecanismo em cada rodada; zero desliga o teto.",
     )
     discover.add_argument(
         "--skip-off-topic",
@@ -545,9 +545,9 @@ def _add_discovery_plan_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-complements", type=int, default=3,
                         help="Complementos por fonte; zero mantém a cascata sem união.")
     parser.add_argument("--max-source-requests", type=int, default=40,
-                        help="Teto de chamadas gratuitas do conjunto e fallback por fonte.")
+                        help="Teto de chamadas gratuitas por fonte; zero desliga o teto.")
     parser.add_argument("--source-timeout", type=float, default=120,
-                        help="Prazo para novas chamadas gratuitas do conjunto por fonte.")
+                        help="Prazo em segundos por fonte; zero desliga o prazo total.")
     parser.add_argument("--manual", type=Path, default=DEFAULT_MANUAL_RULES,
                         help="Regras manuais; exclusões são aplicadas durante a leitura.")
 
@@ -1159,8 +1159,9 @@ def _discovery_configuration(
     args: argparse.Namespace, sites: Sequence[Site],
 ) -> tuple[ManualRulesBook, dict[str, list[CandidateReport]]]:
     """Valida limites, plano e regras antes de iniciar HTTP ou demais etapas do run."""
-    if (args.max_complements < 0 or args.max_source_requests < 1
-            or not 0 < args.source_timeout < float("inf")
+    if (args.max_complements < 0 or args.max_source_requests < 0
+            or args.max_sitemap_fetches < 0
+            or not 0 <= args.source_timeout < float("inf")
             or (args.discovery_plan is not None and args.no_strategy)):
         raise ValueError("limites inválidos ou --discovery-plan incompatível com --no-strategy")
     manual = load_manual_rules(args.manual)

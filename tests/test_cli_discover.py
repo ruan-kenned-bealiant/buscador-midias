@@ -393,6 +393,28 @@ def feed_xml(*links: str) -> bytes:
     return f'<rss version="2.0"><channel>{items}</channel></rss>'.encode()
 
 
+def test_plano_sem_tetos_le_todos_os_mecanismos(workspace):
+    from tests.strategy.helpers import FakeFetcher
+
+    path = workspace['dir'] / 'plano-todos.json'
+    urls = [f'https://a.com/feed-{n}' for n in range(45)]
+    path.write_text(json.dumps([{'chave': 'a.com', 'mecanismos': [
+        {'url': url, 'kind': 'feed'} for url in urls]}]))
+    fetcher = FakeFetcher({'https://a.com/robots.txt': b'', **{
+        url: feed_xml(f'https://a.com/noticia-{n}') for n, url in enumerate(urls)}})
+    assert discover(workspace, '--only', 'a.com', '--discovery-plan', str(path),
+                    '--max-complements', '44', '--max-source-requests', '0',
+                    '--source-timeout', '0', '--max-sitemap-fetches', '0', fetcher=fetcher) == 0
+    assert set(urls) <= set(fetcher.calls)
+    store = StateStore()
+    try:
+        record = store.site_runs(1)[0]
+        assert record.baseline_urls == 45
+        assert record.sitemaps_failed == 0
+    finally:
+        store.close()
+
+
 def test_cli_une_complementos_persistidos_e_registra_novidade_uma_vez(workspace, capsys):
     from tests.discovery.test_sources import strategy
     from tests.strategy.helpers import FakeFetcher

@@ -36,12 +36,12 @@ class BudgetFetcher:
         self, inner: Fetcher, *, max_requests: int, seconds: float,
         allowed: Callable[[str], bool], clock: Callable[[], float] = monotonic,
     ) -> None:
-        """Define saldo, prazo e filtro dos endereços autorizados para a fonte."""
-        if max_requests < 1 or not 0 < seconds < float("inf"):
-            raise ValueError("orçamentos de descoberta precisam ser positivos e finitos")
+        """Define saldo, prazo e escopo; zero desliga o teto correspondente."""
+        if max_requests < 0 or not 0 <= seconds < float("inf"):
+            raise ValueError("orçamentos de descoberta precisam ser não negativos e finitos")
         self.inner = FilteredFetcher(inner, allowed)
         self.max_requests = max_requests
-        self.deadline = clock() + seconds
+        self.deadline = clock() + seconds if seconds else float("inf")
         self.clock = clock
         self.allowed = allowed
         self.requests = 0
@@ -55,7 +55,8 @@ class BudgetFetcher:
             permitted = False
         if not permitted:
             return FetchResult(url, None, b"", "endereço fora do escopo ou excluído manualmente")
-        if self.requests >= self.max_requests or self.clock() >= self.deadline:
+        if (self.max_requests and self.requests >= self.max_requests
+                or self.clock() >= self.deadline):
             self.exhausted = True
             return FetchResult(
                 url, None, b"", "limite total de descoberta atingido; leitura parcial"

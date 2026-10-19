@@ -130,7 +130,7 @@ def explore_site(
         site: Fonte a explorar.
         fetcher: Porta HTTP (use a versão com intervalo por host em produção).
         user_agent: Nome do nosso agente, usado nas regras do robots.txt.
-        max_sitemap_fetches: Orçamento de sitemaps requisitados.
+        max_sitemap_fetches: Orçamento de sitemaps requisitados; zero lê todos os alcançáveis.
         skip_child: Se informado, é consultado para cada filho da janela do orçamento de um índice
             de entrada; ``True`` dispensa o filho sem requisição (ex.: ``lastmod`` inalterado),
             mas ele continua ocupando um lugar na janela, então nunca se avança para filhos
@@ -144,6 +144,8 @@ def explore_site(
     Returns:
         A exploração; nunca levanta por causa do conteúdo ou da rede do site.
     """
+    if max_sitemap_fetches < 0:
+        raise ValueError("max_sitemap_fetches não pode ser negativo")
     if max_sitemap_depth < 0:
         raise ValueError("max_sitemap_depth não pode ser negativo")
     origin = _origin(site.url)
@@ -247,7 +249,7 @@ def _walk(
     depths = dict.fromkeys(entry_points, 0)
     visited: set[str] = set()
 
-    while queue and fetched < budget:
+    while queue and (budget == 0 or fetched < budget):
         url = queue.popleft()
         identity = url.split("#", 1)[0]
         if identity in visited:
@@ -280,7 +282,9 @@ def _walk(
             # O orçamento é uma janela dos filhos mais recentes: pular um filho inalterado
             # consome a janela em vez de avançar para arquivos mais antigos que nunca lemos.
             ranked = prioritize_children(sitemap.children, terms)
-            candidates = [child for child in ranked if not is_taxonomy_sitemap(child.loc)] or ranked
+            candidates = ranked if budget == 0 else (
+                [child for child in ranked if not is_taxonomy_sitemap(child.loc)] or ranked
+            )
             # Os sitemaps declarados no robots.txt (ex.: o de notícias) têm vez antes dos filhos.
             reserved = sum(1 for u in queue if u in is_entry and policy.allows(u, user_agent))
             candidates = [
@@ -288,7 +292,9 @@ def _walk(
                 for child in candidates
                 if child.loc.split("#", 1)[0] not in visited and child.loc not in queue
             ]
-            window = candidates[: max(budget - fetched - reserved, 0)]
+            window = (
+                candidates if budget == 0 else candidates[: max(budget - fetched - reserved, 0)]
+            )
             for child in window:
                 if child.loc.split("#", 1)[0] in visited or child.loc in queue:
                     continue

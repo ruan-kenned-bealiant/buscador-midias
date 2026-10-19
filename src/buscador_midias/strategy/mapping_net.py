@@ -26,7 +26,7 @@ class MappingFetcher:
     """
 
     def __init__(self, inner: Fetcher, site: Site, user_agent: str, max_requests: int) -> None:
-        """Configura o orçamento e a fonte cujos hosts podem ser consultados."""
+        """Configura o orçamento (zero sem teto) e os hosts que podem ser consultados."""
         self.inner = inner
         self.site = site
         self.user_agent = user_agent
@@ -42,7 +42,7 @@ class MappingFetcher:
 
     def _request(self, url: str) -> FetchResult:
         """Repassa uma requisição quando ainda há saldo."""
-        if self.requests >= self.max_requests:
+        if self.max_requests and self.requests >= self.max_requests:
             self.exhausted = True
             return FetchResult(url, None, b"", "orçamento de mapeamento esgotado")
         self.requests += 1

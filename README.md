@@ -1151,6 +1151,14 @@ Esgotar o orçamento ou omitir complementos pelo teto deixa leitura parcial expl
 inicia outra exploração de seções. O fallback pago mantém seu teto separado de custo.
 Antes de iniciar uma rodada com complementos, o comando exige a migração SQL 007.
 
+Para uma rodada que tente todos os mecanismos de um plano explícito, use
+`--max-source-requests 0 --source-timeout 0 --max-sitemap-fetches 0` e configure
+`--max-complements` para comportar todos os mecanismos de cada fonte. Zero desliga esses
+três tetos: os índices incluem também filhos de taxonomias, sem a janela de arquivos
+recentes do modo limitado. Permanecem a profundidade máxima de 10, a deduplicação de
+ciclos, robots, exclusões manuais, checkpoints inalterados e timeouts de cada conexão.
+Essas opções não criam agendamentos nem novas rodadas automáticas.
+
 ```bash
 scripts/bm.sh discover --only lastampa.it mediapart.fr --max-complements 2 \
     --max-source-requests 20 --source-timeout 60

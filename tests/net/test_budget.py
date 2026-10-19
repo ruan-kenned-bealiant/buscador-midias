@@ -25,3 +25,16 @@ def test_prazo_e_exclusao_impedem_nova_chamada():
     elapsed[0] = 10
     assert not b.get(HOME).ok
     assert f.calls == [HOME] and b.exhausted
+
+
+def test_zero_remove_tetos_mas_preserva_exclusoes():
+    f = FakeFetcher()
+    elapsed = [0]
+    b = BudgetFetcher(f, max_requests=0, seconds=0, allowed=lambda u: u == HOME,
+                      clock=lambda: elapsed[0])
+    for number in range(100):
+        elapsed[0] = number * 10000
+        b.get(HOME)
+    b.get(HOME + '/excluido')
+    assert len(f.calls) == b.requests == 100
+    assert not b.exhausted

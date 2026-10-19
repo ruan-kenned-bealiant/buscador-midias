@@ -14,6 +14,21 @@ def collect(fetcher, reports, **kwargs):
     ))
 
 
+def test_sem_tetos_le_todos_os_complementos_alem_do_orcamento_padrao():
+    urls = [HOME + f'/feed-{n}' for n in range(45)]
+    reports = [strategy(url, StrategyKind.FEED,
+                        Role.PRIMARY if n == 0 else Role.COMPLEMENT)
+               for n, url in enumerate(urls)]
+    f = FakeFetcher({HOME + '/robots.txt': b'', **{
+        url: rss((f'materia-{n}', 1)) for n, url in enumerate(urls)}})
+    result = collect(f, reports, max_complements=len(urls),
+                     max_source_requests=0, source_timeout=0, max_sitemap_fetches=0)
+    assert result.chosen is not None
+    assert len(result.chosen.urls) == len(urls)
+    assert result.chosen.failed == 0
+    assert set(urls) <= set(f.calls)
+
+
 def test_principal_e_complemento_sao_unidos_sem_ler_reserva_ou_fallback():
     reports = [strategy(HOME + "/main.xml", StrategyKind.SITEMAP, Role.PRIMARY),
                strategy(HOME + "/backup", StrategyKind.FEED, Role.BACKUP),

@@ -65,6 +65,22 @@ def explore(fetcher: FakeFetcher, **kwargs):
     return explore_site(make_site(), fetcher, user_agent=UA, max_sitemap_fetches=6, **kwargs)
 
 
+def test_sem_teto_le_todos_os_filhos_inclusive_taxonomias_e_encerra_ciclo():
+    home = 'https://exemplo.com'
+    children = [f'{home}/arquivo-{n}.xml' for n in range(50)]
+    children += [f'{home}/author-sitemap.xml', f'{home}/index.xml']
+    pages = {f'{home}/robots.txt': ROBOTS,
+             f'{home}/index.xml': index(*[(url, None) for url in children])}
+    pages.update({url: urlset(f'{home}/noticia-{n}')
+                  for n, url in enumerate(children[:-1])})
+    fetcher = FakeFetcher(pages)
+    result = explore_site(make_site(), fetcher, user_agent=UA, max_sitemap_fetches=0)
+    assert result.status is ProbeStatus.OK
+    assert result.fetched == 52
+    assert set(children) <= set(fetcher.calls)
+    assert fetcher.calls.count(f'{home}/index.xml') == 1
+
+
 def test_sem_gancho_le_todos_os_filhos_e_registra_o_lastmod_declarado():
     fetcher = FakeFetcher(responses())
 
