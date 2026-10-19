@@ -101,6 +101,18 @@ def sitemap_only(site: Site, fetcher: FakeFetcher, **kwargs):
     )
 
 
+def test_xml_acessivel_so_com_noticias_antigas_e_sucesso_sem_recentes():
+    store = StateStore()
+    run_id = store.start_run(NOW)
+    fetcher = simple(('https://exemplo.com/antiga', '2026-10-01T12:00:00Z'))
+    sources = sitemap_only(make_site(), fetcher, since=NOW - timedelta(days=2))
+    result = discover_site(make_site(), sources, store, run_id=run_id, now=NOW, fresh_days=2)
+    assert result.record.status == 'ok'
+    assert result.record.new_urls == result.record.baseline_urls == 0
+    assert 'sem notícias recentes' in result.record.detail
+    store.close()
+
+
 def test_publicacao_do_complemento_prevalece_sobre_lastmod_antigo():
     from tests.discovery.test_sources import strategy
 

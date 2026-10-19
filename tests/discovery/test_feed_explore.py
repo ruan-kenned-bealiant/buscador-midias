@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from buscador_midias.discovery.explore import ProbeStatus
 from buscador_midias.discovery.feed_explore import explore_feed
 from buscador_midias.domain.site import Site
@@ -48,6 +50,20 @@ def rss(*urls: str) -> bytes:
 
 def blocked(url: str, status: int = 403) -> FetchResult:
     return FetchResult(url=url, status=status, content=b"", error=None)
+
+
+def test_feed_antigo_e_feed_vazio_sao_acessiveis_sem_resultados_recentes():
+    since = datetime(2026, 10, 17, tzinfo=UTC)
+    old = (f'<rss><channel><item><link>{HOME}/antiga</link>'
+           '<pubDate>Thu, 01 Oct 2026 12:00:00 GMT</pubDate></item></channel></rss>').encode()
+    for body in (old, rss()):
+        fetcher = FakeFetcher({f'{HOME}/feed/': body})
+        result = explore_feed(make_site(), fetcher, user_agent=UA,
+                              feed_urls=[f'{HOME}/feed/'], since=since)
+        assert result.status is ProbeStatus.OK and result.entries == ()
+    invalid = explore_feed(make_site(), FakeFetcher({f'{HOME}/feed/': b'<html>ok</html>'}),
+                           user_agent=UA, feed_urls=[f'{HOME}/feed/'], since=since)
+    assert invalid.status is not ProbeStatus.OK
 
 
 def test_le_o_feed_declarado_na_home():

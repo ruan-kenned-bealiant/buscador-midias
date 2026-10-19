@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,7 @@ def build_snapshot(
     recent: int = DEFAULT_RECENT,
     max_sites: int = DEFAULT_MAX_SITES,
     schedule_path: Path | None = None,
+    progress_path: Path | None = None,
 ) -> dict[str, Any]:
     """Reúne tudo o que o painel mostra a partir do estado persistido.
 
@@ -55,6 +57,7 @@ def build_snapshot(
         recent: Quantas URLs novas aparecem no feed.
         max_sites: Limite de fontes listadas, com as que têm problema primeiro.
         schedule_path: JSON com as execuções previstas (opcional; veja ``schedule``).
+        progress_path: Progresso e heartbeat da busca ativa, quando disponíveis.
 
     Returns:
         O retrato, com chaves ``status``, ``totals``, ``funnel``, ``runs``, ``hourly``, ``sites``,
@@ -69,7 +72,7 @@ def build_snapshot(
     sites, sites_total = _sites(store, max_sites)
     return {
         "generated_at": now.isoformat(),
-        "status": _status(store, report.runs, now),
+        "status": _status(store, report.runs, now, progress_path=progress_path),
         "totals": {
             "urls": sum(by_kind.values()),
             "by_kind": by_kind,
@@ -104,7 +107,28 @@ def build_snapshot(
     }
 
 
-def _status(store: StateStore, runs: tuple[RunSummary, ...], now: datetime) -> dict[str, Any]:
+def _live_progress(path: Path | None, run_id: int, now: datetime) -> dict[str, Any]:
+    """Aceita somente heartbeat recente da mesma rodada, sem confiar em estado antigo."""
+    if path is None:
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return {}
+        age = (now - datetime.fromisoformat(data["updated_at"])).total_seconds()
+        if (data.get("run_id") == run_id and data.get("status") == "running"
+                and 0 <= age <= 60 and type(data.get("sites_expected")) is int
+                and data["sites_expected"] > 0):
+            return data
+    except (OSError, ValueError, TypeError, KeyError):
+        pass
+    return {}
+
+
+def _status(
+    store: StateStore, runs: tuple[RunSummary, ...], now: datetime,
+    *, progress_path: Path | None = None,
+) -> dict[str, Any]:
     """Situação da descoberta e do enriquecimento: rodando, ociosa, interrompida ou nunca."""
     discovery: dict[str, Any] = {"state": "never"}
     last_finished: datetime | None = None
@@ -118,12 +142,16 @@ def _status(store: StateStore, runs: tuple[RunSummary, ...], now: datetime) -> d
         else:
             elapsed = now - last.started_at
             expected = runs[-2].sites if len(runs) >= 2 else None
+            live = _live_progress(progress_path, last.id, now)
+            if live:
+                expected = live["sites_expected"]
             discovery = {
-                "state": "stale" if elapsed > STALE_AFTER else "running",
+                "state": "stale" if elapsed > STALE_AFTER and not live else "running",
                 "run_id": last.id,
                 "started_at": last.started_at.isoformat(),
                 "sites_done": store.sites_done(last.id),
                 "sites_expected": expected,
+                "sites_expected_exact": bool(live),
                 "elapsed_seconds": int(elapsed.total_seconds()),
             }
 

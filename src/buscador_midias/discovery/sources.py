@@ -113,6 +113,7 @@ class SitemapSource:
         max_sitemap_fetches: int = DEFAULT_MAX_SITEMAP_FETCHES,
         force: bool = False,
         entry_points: Sequence[str] = (),
+        since: datetime | None = None,
     ) -> None:
         """Cria a fonte.
 
@@ -124,6 +125,7 @@ class SitemapSource:
             force: Para a fonte paga, tenta mesmo sem bloqueio anterior na cascata.
             entry_points: Sitemaps por onde começar, no lugar dos declarados no robots.txt (a
                 estratégia escolhida para a fonte); vazio explora a partir do robots.txt.
+            since: Janela opcional de notícias; não exclui documentos sem data.
         """
         self.kind = kind
         self._fetcher = fetcher
@@ -131,6 +133,7 @@ class SitemapSource:
         self._budget = max_sitemap_fetches
         self._force = force
         self._entry_points = tuple(entry_points)
+        self._since = since
 
     def applies(self, previous: Sequence[SourceFind]) -> bool:
         """A gratuita sempre; a paga só após bloqueio do sitemap gratuito (ou se forçada)."""
@@ -150,6 +153,7 @@ class SitemapSource:
             max_sitemap_fetches=self._budget,
             skip_child=skip_child,
             entry_points=self._entry_points,
+            since=self._since,
         )
         if exploration.status is not ProbeStatus.OK:
             return SourceFind(
@@ -178,7 +182,10 @@ class FeedSource:
 
     kind = SourceKind.FEED
 
-    def __init__(self, fetcher: Fetcher, *, user_agent: str, feed_urls: Sequence[str] = ()) -> None:
+    def __init__(
+        self, fetcher: Fetcher, *, user_agent: str, feed_urls: Sequence[str] = (),
+        since: datetime | None = None,
+    ) -> None:
         """Cria a fonte.
 
         Args:
@@ -186,10 +193,12 @@ class FeedSource:
             user_agent: Nome do nosso agente (regras do robots.txt).
             feed_urls: Feeds escolhidos para a fonte (a estratégia): lidos direto; vazio deixa a
                 home declarar os feeds ou adivinha os caminhos usuais.
+            since: Janela opcional de notícias; itens sem data continuam para conferência.
         """
         self._fetcher = fetcher
         self._user_agent = user_agent
         self._feed_urls = tuple(feed_urls)
+        self._since = since
 
     def applies(self, previous: Sequence[SourceFind]) -> bool:
         """O feed é tentado sempre que a cascata chega até ele."""
@@ -198,7 +207,8 @@ class FeedSource:
     def find(self, site: Site, *, skip_child: SkipChild | None = None) -> SourceFind:
         """Lê os feeds do site e transforma os itens em URLs descobertas."""
         exploration = explore_feed(
-            site, self._fetcher, user_agent=self._user_agent, feed_urls=self._feed_urls
+            site, self._fetcher, user_agent=self._user_agent, feed_urls=self._feed_urls,
+            since=self._since,
         )
         if exploration.status is not ProbeStatus.OK:
             return SourceFind(
@@ -266,9 +276,11 @@ def run_cascade(
             continue
         find = source.find(site, skip_child=skip_child)
         attempts.append(find)
-        if find.ok:
+        if find.ok and find.urls:
             return CascadeResult(find, tuple(attempts))
-    return CascadeResult(None, tuple(attempts))
+    # XML válido vazio não é falha, mas permite que outra fonte forneça notícias.
+    empty_accessible = next((attempt for attempt in attempts if attempt.ok), None)
+    return CascadeResult(empty_accessible, tuple(attempts))
 
 
 def cascade_for(
@@ -286,6 +298,7 @@ def cascade_for(
     max_source_requests: int = 40,
     source_timeout: float = 120,
     exclude: Sequence[str] = (),
+    since: datetime | None = None,
 ) -> list[DiscoverySource]:
     """Monta a cascata de um site.
 
@@ -311,6 +324,7 @@ def cascade_for(
         max_source_requests: Teto de chamadas gratuitas compartilhado pelo conjunto e fallback.
         source_timeout: Tempo para iniciar chamadas gratuitas do conjunto, em segundos.
         exclude: Endereços/prefixos excluídos pelas regras manuais.
+        since: Início opcional da janela; datas antigas são excluídas durante a leitura.
 
     Returns:
         As fontes, na ordem em que serão tentadas.
@@ -363,6 +377,7 @@ def cascade_for(
                         free,
                         user_agent=user_agent,
                         feed_urls=render_window(chosen.url, moment),
+                        since=since,
                     )
                 )
         elif chosen.kind is StrategyKind.LISTING:
@@ -375,6 +390,7 @@ def cascade_for(
                     user_agent=user_agent,
                     max_sitemap_fetches=max_sitemap_fetches,
                     entry_points=render_window(chosen.url, moment),
+                    since=since,
                 )
             )
     if bundled and budget is not None:
@@ -392,10 +408,11 @@ def cascade_for(
                 free,
                 user_agent=user_agent,
                 max_sitemap_fetches=max_sitemap_fetches,
+                since=since,
             )
         )
     if use_feed:
-        sources.append(FeedSource(free, user_agent=user_agent))
+        sources.append(FeedSource(free, user_agent=user_agent, since=since))
     if paid is not None:
         sources.append(
             SitemapSource(
@@ -404,6 +421,7 @@ def cascade_for(
                 user_agent=user_agent,
                 max_sitemap_fetches=max_sitemap_fetches,
                 force=known_blocked,
+                since=since,
             )
         )
     return sources

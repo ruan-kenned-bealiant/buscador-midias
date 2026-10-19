@@ -399,6 +399,8 @@ def make_server(
                     hours=hours,
                     recent=recent,
                     schedule_path=schedule_path,
+                    progress_path=Path(__file__).resolve().parents[3]
+                    / "var/progresso-descoberta.json",
                 )
             except psycopg.Error:
                 _LOG.exception("falha ao ler o estado")

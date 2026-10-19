@@ -65,6 +65,21 @@ def explore(fetcher: FakeFetcher, **kwargs):
     return explore_site(make_site(), fetcher, user_agent=UA, max_sitemap_fetches=6, **kwargs)
 
 
+def test_janela_ignora_arquivo_antigo_e_preserva_filho_sem_data():
+    since = datetime(2026, 10, 17, tzinfo=UTC)
+    fetcher = FakeFetcher(responses())
+    result = explore(fetcher, since=since)
+    assert result.status is ProbeStatus.OK
+    assert 'https://exemplo.com/velho.xml' not in fetcher.calls
+    assert result.skipped == 2
+    assert result.fetched == 1
+    fetcher.responses['https://exemplo.com/index.xml'] = index(
+        ('https://exemplo.com/novo.xml', None))
+    result = explore(fetcher, since=since)
+    assert result.fetched == 2
+    assert result.sitemaps[-1].sitemap.entries
+
+
 def test_sem_teto_le_todos_os_filhos_inclusive_taxonomias_e_encerra_ciclo():
     home = 'https://exemplo.com'
     children = [f'{home}/arquivo-{n}.xml' for n in range(50)]

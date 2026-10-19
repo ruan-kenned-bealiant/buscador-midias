@@ -183,7 +183,10 @@ const safeHref = (url) => (/^https?:\/\//i.test(url) ? url : null);
 const empty = (text) => h("div", { class: "empty" }, text);
 
 const STATUS_LABEL = { ok: "ok", blocked: "bloqueado", error: "erro", no_sitemap: "sem sitemap", robots_disallowed: "robots" };
-function statusBadge(status) {
+function statusBadge(status, detail = "") {
+  if (status === "ok" && (detail.includes("sem notícias recentes") || detail.includes("sem notícias novas"))) {
+    return h("span", { class: "badge b-ok" }, "acessível, sem notícias novas");
+  }
   const cls = status === "ok" ? "b-ok" : status === "blocked" || status === "error" ? "b-bad" : "b-warn";
   return h("span", { class: `badge ${cls}` }, STATUS_LABEL[status] || status);
 }
@@ -210,11 +213,13 @@ function renderCards(d, now) {
   const pct = disc.sites_expected ? Math.min(100, Math.round((disc.sites_done / disc.sites_expected) * 100)) : null;
   const lastRun = d.runs.length ? d.runs[d.runs.length - 1] : null;
   const running = disc.state === "running" || disc.state === "stale";
+  const expectedLabel = disc.sites_expected
+    ? ` de ${disc.sites_expected_exact ? "" : "~"}${num(disc.sites_expected)}` : "";
   const cards = [
     h("div", { class: "panel" }, h("h2", {}, "Descoberta"),
       h("div", { class: "big" }, stateBadge(disc.state)),
       running
-        ? [h("div", { class: "sub" }, `Rodada ${disc.run_id}: ${num(disc.sites_done)}${disc.sites_expected ? ` de ~${num(disc.sites_expected)}` : ""} fontes · ${duration(disc.elapsed_seconds)}`),
+        ? [h("div", { class: "sub" }, `Rodada ${disc.run_id}: ${num(disc.sites_done)}${expectedLabel} fontes · ${duration(disc.elapsed_seconds)}`),
            pct !== null ? h("div", { class: "progress", role: "progressbar", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, h("span", { style: `width:${pct}%` })) : null]
         : h("div", { class: "sub" }, `Última concluída ${ago(d.status.last_discovery_finished_at, now)}`),
       lastRun ? h("div", { class: "sub" }, `última rodada: sitemap ${num(lastRun.via_sitemap)} · feed ${num(lastRun.via_feed)} · conjunto ${num(lastRun.via_combined)} · sitemap BD ${num(lastRun.via_paid)}`) : null),
@@ -344,7 +349,7 @@ function renderSites(d, now) {
   const head = ["Fonte", "Último desfecho", "Via", "Novas", "Vistas", "Filtradas", "Backlog", "Última nova", "Detalhe"];
   const rows = list.map((x) => h("tr", {},
     h("td", {}, x.site, x.fallback ? h("span", { class: "chip", style: "margin-left:6px", title: "acessada via Bright Data" }, "BD") : null),
-    h("td", {}, statusBadge(x.status), x.partial_failed ? h("span", { class: "badge b-warn", style: "margin-left:6px", title: "alguns sitemaps falharam" }, `parcial ${x.partial_failed}`) : null),
+    h("td", {}, statusBadge(x.status, x.detail), x.partial_failed ? h("span", { class: "badge b-warn", style: "margin-left:6px", title: "alguns sitemaps falharam" }, `parcial ${x.partial_failed}`) : null),
     h("td", {}, x.source ? (SOURCE_LABEL[x.source] || x.source) : "–"),
     h("td", { class: "n" }, num(x.new)),
     h("td", { class: "n" }, num(Object.values(x.urls).reduce((a, b) => a + b, 0))),

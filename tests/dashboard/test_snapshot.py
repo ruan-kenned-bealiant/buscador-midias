@@ -113,6 +113,29 @@ def test_rodada_sem_fim_e_muito_antiga_fica_marcada_como_interrompida():
     assert build_snapshot(store, now=NOW)["status"]["discovery"]["state"] == "stale"
 
 
+def test_heartbeat_da_rodada_retomada_traz_total_real_sem_falso_alerta(tmp_path):
+    store = seeded()
+    run_id = store.start_run(NOW - timedelta(hours=10))
+    store.record_site_run(run_id, site_run('a.com'))
+    path = tmp_path / 'progresso.json'
+    data = {'run_id': run_id, 'status': 'running', 'updated_at': NOW.isoformat(),
+            'sites_expected': 1294}
+    path.write_text(json.dumps(data))
+    discovery = build_snapshot(store, now=NOW, progress_path=path)['status']['discovery']
+    assert discovery['state'] == 'running'
+    assert discovery['sites_done'] == 1
+    assert discovery['sites_expected'] == 1294
+    assert discovery['sites_expected_exact'] is True
+    data['updated_at'] = (NOW - timedelta(minutes=2)).isoformat()
+    path.write_text(json.dumps(data))
+    stale = build_snapshot(store, now=NOW, progress_path=path)['status']['discovery']
+    assert stale['state'] == 'stale' and stale['sites_expected'] == 3
+    data.update(updated_at=NOW.isoformat(), run_id=run_id + 1)
+    path.write_text(json.dumps(data))
+    unrelated = build_snapshot(store, now=NOW, progress_path=path)['status']['discovery']
+    assert unrelated['state'] == 'stale' and unrelated['sites_expected_exact'] is False
+
+
 def test_sem_nenhuma_rodada_o_estado_e_never():
     snapshot = build_snapshot(StateStore(), now=NOW)
 

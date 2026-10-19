@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections import deque
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import StrEnum
 from urllib.parse import urlsplit
@@ -116,6 +116,7 @@ def explore_site(
     skip_child: Callable[[SitemapRef], bool] | None = None,
     entry_points: Sequence[str] = (),
     max_sitemap_depth: int = DEFAULT_MAX_SITEMAP_DEPTH,
+    since: datetime | None = None,
 ) -> Exploration:
     """Lê o robots.txt e percorre os sitemaps do site dentro de um orçamento de leituras.
 
@@ -140,6 +141,8 @@ def explore_site(
         entry_points: Sitemaps por onde começar, no lugar dos declarados no robots.txt (ex.: o
             endereço escolhido pela estratégia da fonte). O robots.txt continua valendo: é lido
             e o que ele proíbe não é baixado.
+        since: Janela opcional: ignora filhos modificados antes dela e entradas datadas antigas.
+            Endereços sem data continuam sendo lidos; não são prova de publicação recente.
 
     Returns:
         A exploração; nunca levanta por causa do conteúdo ou da rede do site.
@@ -170,6 +173,7 @@ def explore_site(
         max_sitemap_fetches,
         skip_child,
         max_sitemap_depth,
+        since,
     )
 
 
@@ -237,6 +241,7 @@ def _walk(
     budget: int,
     skip_child: Callable[[SitemapRef], bool] | None,
     max_sitemap_depth: int,
+    since: datetime | None,
 ) -> Exploration:
     """Percorre os sitemaps de entrada e filhos de índice dentro do orçamento de leituras."""
     queue: deque[str] = deque(entry_points)
@@ -269,6 +274,11 @@ def _walk(
         except SitemapParseError as error:
             failures.append((ProbeStatus.ERROR, f"{url}: sitemap inválido: {error}"))
             continue
+        if since is not None:
+            sitemap = replace(sitemap, entries=tuple(
+                entry for entry in sitemap.entries
+                if entry.timestamp is None or entry.timestamp >= since
+            ))
         explored.append(
             ExploredSitemap(
                 url=url,
@@ -298,6 +308,9 @@ def _walk(
             for child in window:
                 if child.loc.split("#", 1)[0] in visited or child.loc in queue:
                     continue
+                if since is not None and child.lastmod is not None and child.lastmod < since:
+                    skipped += 1
+                    continue
                 if skip_child is not None and skip_child(child):
                     skipped += 1
                     continue
@@ -312,7 +325,7 @@ def _walk(
                 siblings = [u for u in queue if u not in is_entry]
                 queue = deque(entries + kept + siblings)
 
-    return _conclude(explored, failures, fetched, skipped)
+    return _conclude(explored, failures, fetched, skipped, accessible_empty_ok=since is not None)
 
 
 def _conclude(
@@ -320,6 +333,7 @@ def _conclude(
     failures: list[tuple[ProbeStatus, str]],
     fetched: int,
     skipped: int,
+    *, accessible_empty_ok: bool = False,
 ) -> Exploration:
     """Decide o desfecho: ``OK`` só se houve sitemap lido e, havendo falhas, ao menos uma URL."""
     if not explored:
@@ -329,7 +343,7 @@ def _conclude(
         return _failed(status, detail, fetched=fetched, skipped=skipped)
 
     has_urls = any(item.sitemap.entries for item in explored)
-    if not has_urls and failures:
+    if not has_urls and failures and not accessible_empty_ok:
         status, detail = _worst_failure(failures)
         return _failed(
             status,
