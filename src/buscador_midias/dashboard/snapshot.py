@@ -154,6 +154,10 @@ def _status(
                 "sites_expected_exact": bool(live),
                 "window_since": live.get("window_since"),
                 "window_until": live.get("window_until"),
+                "documents_completed": live.get("documents_completed"),
+                "documents_queued": live.get("documents_queued"),
+                "mechanisms_completed": live.get("mechanisms_completed"),
+                "mechanisms_total": live.get("mechanisms_total"),
                 "elapsed_seconds": int(elapsed.total_seconds()),
             }
 

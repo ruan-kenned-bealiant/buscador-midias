@@ -8,6 +8,34 @@ complementares, históricos e lacunas; páginas HTML não substituem essa entreg
 O inventário termina com seus arquivos reutilizáveis e limitações, sem coleta contínua
 ou retomada automática.
 
+## Seleção após a rodada 12
+
+Na continuação da busca, usar fila durável por documento com alternância entre fontes,
+uma leitura por host em paralelo e 16 workers. Um índice enfileira seus filhos e libera o
+worker; não percorre um site inteiro dentro de uma tarefa. Confirmar resultados e filhos
+em checkpoint SQLite, com deduplicação por mecanismo e URL, profundidade máxima de 10 e
+janela fixa de 48 horas. Gravar as URLs recentes no estado durante a leitura e reutilizar
+as respostas HTTP em cache persistente dentro desta mesma rodada. XMLs sem data permanecem
+no cache, com contagens e amostras, sem alimentar a fila de notícias recentes como se fossem
+novos. O painel mostra documentos verificados e mecanismos concluídos além das fontes.
+O procedimento desta rodada fica em `var/ciclo-busca-20261019T005450Z/executar_fila.py`,
+com checkpoint `fila-documentos.sqlite` e evidências por mecanismo; não cria agendamento.
+
+Após o encerramento da rodada 12, analisar os resultados da janela de 48 horas para
+selecionar os RSS/sitemaps que efetivamente conduzem a notícias textuais úteis. Conferir
+amostras das páginas de notícia: XML válido ou links listados, isoladamente, não comprovam
+utilidade. Registrar a evidência e o motivo de manter, excluir ou deixar pendente cada mecanismo.
+
+Excluir mecanismos dedicados a áudio/podcasts, como o exemplo da Bloomberg relatado pelo usuário.
+Em mecanismos mistos, separar as matérias textuais dos conteúdos de áudio; a presença de áudio
+em um endpoint não exclui automaticamente os demais mecanismos ou a fonte inteira. Manter
+complementos que acrescentem notícias úteis após a deduplicação.
+
+Fonte acessível sem notícia nova na janela permanece como acesso bem-sucedido, sem erro;
+essa ausência isolada não justifica exclusão permanente. Distinguir conteúdo inadequado,
+falta de data, bloqueio e falha técnica. Preservar o inventário original e produzir um plano
+selecionado separado. Esta seleção começa após o término da rodada, sem alterar a busca em curso.
+
 ## Consulta do mapa
 
 O painel abre a tela de mapeamento em `http://127.0.0.1:8765`:

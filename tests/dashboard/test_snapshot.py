@@ -119,13 +119,16 @@ def test_heartbeat_da_rodada_retomada_traz_total_real_sem_falso_alerta(tmp_path)
     store.record_site_run(run_id, site_run('a.com'))
     path = tmp_path / 'progresso.json'
     data = {'run_id': run_id, 'status': 'running', 'updated_at': NOW.isoformat(),
-            'sites_expected': 1294}
+            'sites_expected': 1294, 'documents_completed': 42, 'documents_queued': 100,
+            'mechanisms_completed': 7, 'mechanisms_total': 80}
     path.write_text(json.dumps(data))
     discovery = build_snapshot(store, now=NOW, progress_path=path)['status']['discovery']
     assert discovery['state'] == 'running'
     assert discovery['sites_done'] == 1
     assert discovery['sites_expected'] == 1294
     assert discovery['sites_expected_exact'] is True
+    assert discovery['documents_completed'] == 42 and discovery['documents_queued'] == 100
+    assert discovery['mechanisms_completed'] == 7 and discovery['mechanisms_total'] == 80
     data['updated_at'] = (NOW - timedelta(minutes=2)).isoformat()
     path.write_text(json.dumps(data))
     stale = build_snapshot(store, now=NOW, progress_path=path)['status']['discovery']

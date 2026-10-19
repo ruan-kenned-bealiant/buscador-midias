@@ -223,7 +223,9 @@ function renderCards(d, now) {
            pct !== null ? h("div", { class: "progress", role: "progressbar", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, h("span", { style: `width:${pct}%` })) : null]
         : h("div", { class: "sub" }, `Última concluída ${ago(d.status.last_discovery_finished_at, now)}`),
       lastRun ? h("div", { class: "sub" }, `última rodada: sitemap ${num(lastRun.via_sitemap)} · feed ${num(lastRun.via_feed)} · conjunto ${num(lastRun.via_combined)} · sitemap BD ${num(lastRun.via_paid)}`) : null,
-      disc.window_since ? h("div", { class: "sub" }, `Janela: ${when(disc.window_since)} até ${when(disc.window_until)}`) : null),
+      disc.window_since ? h("div", { class: "sub" }, `Janela: ${when(disc.window_since)} até ${when(disc.window_until)}`) : null,
+      disc.documents_completed != null ? h("div", { class: "sub" }, `${num(disc.documents_completed)} documentos verificados · ${num(disc.documents_queued)} na fila`) : null,
+      disc.mechanisms_total != null ? h("div", { class: "sub" }, `Mecanismos desta retomada: ${num(disc.mechanisms_completed)} de ${num(disc.mechanisms_total)} finalizados`) : null),
     h("div", { class: "panel" }, h("h2", {}, "Novas nas últimas 24 h"),
       h("div", { class: "big" }, num(last24)),
       h("div", { class: "sub" }, `${num(d.totals.by_kind.new || 0)} no total · ${num(d.totals.urls)} URLs vistas`)),
