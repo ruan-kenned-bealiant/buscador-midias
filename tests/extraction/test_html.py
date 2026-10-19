@@ -322,3 +322,16 @@ def test_proporcao_de_caracteres_cjk():
     assert cjk_ratio("only latin text") == 0.0
     assert cjk_ratio("これは日本語の文章です") > 0.8
     assert 0.3 < cjk_ratio("abc 日本語 def 日本語") < 0.7
+
+
+def test_data_que_transborda_utc_nao_interrompe_extracao_da_noticia():
+    for value in ("0001-01-01T00:00:00+04:00", "9999-12-31T23:59:59-04:00"):
+        source = page(
+            '<meta property="og:type" content="article">'
+            f'<meta property="article:published_time" content="{value}">',
+            article_body(),
+        )
+        content = extract_article(source, now=NOW)
+        assert content.title == "PF prende empresário"
+        assert content.text_chars > 300 and content.is_article
+        assert content.published_at is None

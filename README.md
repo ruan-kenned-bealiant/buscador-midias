@@ -14,8 +14,8 @@ scripts/bm.sh dashboard
 
 A tela mostra os **1299 registros do catálogo**: 1294 fontes únicas e cinco duplicatas
 identificadas. A visão inicial **Acesso às notícias** mostra o resultado da auditoria sem
-filtro de data: **838 fontes** com página de notícia acessível e **804** com texto legível,
-com **702** confirmadas por RSS e **670** por sitemap (há sobreposição entre esses grupos).
+filtro de data: **858 fontes** com página de notícia acessível e **830** com texto legível,
+com **717** confirmadas por RSS e **699** por sitemap (há sobreposição entre esses grupos).
 Ao selecionar uma fonte, aparecem os mecanismos, links de notícias testadas, resultado HTTP,
 evidências de extração, limites e motivos de falha. Não testados aparecem explicitamente,
 sem serem classificados como falhas. Há busca, filtros por país, situação da fonte, tipo
@@ -27,12 +27,102 @@ as associações observadas. Fontes sem mecanismos continuam visíveis.
 As rotas `/` e `/mapa` servem esta tela; `/fluxo` preserva o painel operacional anterior.
 `/api/mapa/fontes` consulta o catálogo e `/api/mapa/secoes?site=CHAVE` fornece as seções paginadas.
 Essas consultas abrem o estado somente leitura e não disparam buscas nos sites.
-`/api/mapa/acesso?site=CHAVE` lê os relatórios locais de `var/auditoria-acesso-sitemaps`
-e `var/auditoria-acesso-rss`, com `kind=all|feed|sitemap`,
-`mode=all|accessible|readable|unconfirmed|untested`, busca `q` e paginação `offset`/`limit`.
+`/api/mapa/acesso?site=CHAVE` prioriza os relatórios locais de `var/validacao-final` após o fechamento,
+com as auditorias anteriores preservadas em suas pastas, com `kind=all|feed|sitemap`,
+`mode=all|accessible|readable|unconfirmed|untested|partial`, busca `q` e paginação `offset`/`limit`.
 `/api/mapa/auditoria.xlsx` baixa a planilha consolidada. A API de acesso não abre o banco
 nem faz requisições aos veículos. Sem os arquivos locais, informa que a auditoria está
 indisponível; os arquivos não são gerados ao abrir a tela.
+
+## Validação final de ponta a ponta
+
+Rodada fechada em `2026-10-19T00:34:21.202342+00:00`, sem continuação automática. O catálogo foi
+congelado em **1.294 fontes únicas**. As **38.849 linhas** do
+inventário correspondem a **38.501 mecanismos por fonte**, após deduplicação de
+URLs canônicas e unificação de sitemap/news sitemap no mesmo endereço. Inclui mecanismos
+anteriormente bloqueados; não limita a execução aos XMLs já classificados como funcionais.
+
+| Evidência desta rodada, sem somar resultados antigos | Total |
+|---|---:|
+| Mecanismos com verificação direta ou XML observado na expansão | 7.132 de 38.501 |
+| Mecanismos com XML interpretado | 5.814 |
+| Mecanismos que levaram a notícia acessível | 4.588 |
+| Mecanismos com texto extraído | 4.351 |
+| Fontes com notícia acessível | **858** |
+| Fontes com texto extraído | **830** |
+| Fontes com XML interpretado | 1.035 |
+| Fontes sem mecanismo no inventário | 138 |
+| Mecanismos não iniciados no prazo | 31.369 |
+| Percursos tentados, mas incompletos | 757 |
+
+Das entradas verificadas, **7.055** tiveram
+execução própria e **77** já tinham XML interpretado
+como filho de índice nesta mesma rodada. Estas últimas foram creditadas sem novas
+requisições e sem inferir acesso a notícias; permanecem com percurso individual incompleto.
+
+RSS confirmou acesso em **717 fontes**, sitemap em
+**699**; os grupos se sobrepõem. Foram testadas
+**14.037 URLs de notícia normalizadas por fonte**, das quais
+**11.683** acessíveis e **10.538** com texto.
+O mesmo endereço pode atender mais de um mecanismo e não é contado como notícia distinta
+na mesma fonte. **2.088 seções não gerais** tiveram notícia
+acessível na comparação por caminho da URL, entre as seções previamente identificadas
+por menu/metadados. Isso não representa cobertura integral de editorias.
+
+A fila foi reorganizada durante a execução, sem alterar as entradas nem o prazo original,
+para priorizar mecanismos com exemplos conhecidos e alternar escopos do mesmo domínio.
+As evidências obtidas antes da reorganização foram preservadas.
+
+Método: RSS/Atom/RDF e sitemaps interpretados; índices percorridos até nível **10**
+(entrada no nível zero); até **três notícias por mecanismo em cada passagem**, distribuídas entre primeira,
+intermediária e última candidata retida. Sem filtro por data de publicação ou palavra-chave.
+Notícia acessível exige identificação e ausência de erro/desafio; texto exige os critérios
+existentes de extração e confiabilidade. HTTP 200 sozinho não confirma notícia.
+
+Limites: **45 minutos globais**, até 32 domínios simultâneos no fluxo principal, uma correção isolada e intervalo de um segundo por
+host, 16 documentos XML/entrada, 64 chamadas HTTP/entrada, 90 segundos para iniciar
+requisições por entrada, 8 MiB por resposta e até 5.000 candidatas retidas por mecanismo em cada passagem.
+O limite de chamadas global foi 150.000. Apenas filhos declarados por índices são seguidos;
+menus HTML e pesquisa web não ampliam este inventário. Robots, exclusões e escopo são
+respeitados. Um mecanismo pode ter notícia comprovada e percurso incompleto simultaneamente.
+
+O contador registra um teto conservador de **33.104 chamadas HTTP**, incluindo uma reserva de 64 chamadas para a entrada que gerou exceção antes da reorganização. A contagem exata dessa entrada não foi preservada. Foram **2701.0 segundos** de
+execução de rede; a consolidação local ocorre depois. Foram repetidas
+**572 entradas** com erro transitório, de
+**574 elegíveis**, uma vez dentro do prazo global. Evidências das duas
+passagens ficam preservadas; a comprovação mais forte dentro desta rodada é mantida.
+Não há coleta contínua, análise por IA, gravação de notícias no corpus ou agendamento.
+
+Foi corrigida uma exceção de data fora do intervalo na normalização UTC. XMLs e páginas
+com esse metadado preservam URLs e texto, descartando somente a data inválida. Os testes
+de regressão de RSS, sitemap e HTML passaram; a entrada da WAM foi verificada novamente
+e confirmou notícia com texto, ainda no prazo original.
+
+**Fechamento:** entradas não iniciadas e percursos limitados continuam inconclusivos e
+não são promovidos a falhas nem a cobertura confirmada. Fontes sem RSS/sitemap conhecido
+continuam no relatório; esta rodada não pesquisa mecanismos para elas. Resultado positivo
+comprova um caminho observado, sem garantir completude, atualização futura ou acesso permanente.
+Os totais de 838/804 da revisão web abaixo são históricos; esta rodada é um retrato separado.
+
+A tela **Acesso às notícias** passa a mostrar esta rodada após a consolidação, com até
+três amostras por mecanismo, HTTP, extração e filtro **Verificações incompletas**. A aba
+**Validação por seção** mostra correspondências e exemplos atuais. Os filtros do catálogo
+incluem **Validação final: incompletas** e **Sem RSS/sitemap no inventário**.
+`/api/mapa/validacao-secoes?site=CHAVE` aceita `mode=all|confirmed|unconfirmed`, `q`,
+`offset` e `limit`; lê somente arquivos locais. As abas de inventário e descoberta
+preservam o contexto das rodadas anteriores.
+
+Entrega: [`var/validacao-final/resultado.xlsx`](var/validacao-final/resultado.xlsx), com
+abas Fontes, Mecanismos, Notícias testadas, Documentos XML, Seções e Critérios e resumo.
+CSVs, notícias listadas comprimidas, plano congelado, hashes de entrada, resultados por
+mecanismo e evidências da primeira passagem estão na mesma pasta. Os planos reutilizáveis
+[`plano-xml-validado.json`](var/validacao-final/plano-xml-validado.json) e
+[`plano-com-noticias.json`](var/validacao-final/plano-com-noticias.json) distinguem XML
+interpretado do subconjunto que levou a notícias; podem ser fornecidos explicitamente a
+`discover --discovery-plan CAMINHO`, com os limites e filtros próprios daquela busca.
+O botão **Baixar plano com notícias** serve o segundo plano em
+`/api/mapa/plano-validado.json?mode=news`; `mode=xml` fornece o plano de XMLs interpretados.
+Nenhuma estratégia do banco foi substituída.
 
 ## Revisão web limitada de todas as fontes
 
@@ -47,7 +137,7 @@ endereços distintos**, dos quais **989 eram inéditos no inventário global**. 
 cinco endereços já eram conhecidos em outro escopo do catálogo. Aliases foram resolvidos
 antes de persistir os destinos; a comparação por fonte usa chave e escopo do catálogo.
 
-| Evidência atual, somando as rodadas sem duplicar fontes | Fontes |
+| Histórico após a revisão web, antes da validação final | Fontes |
 |---|---:|
 | XML funcional no inventário reutilizável | **1.039** |
 | Pelo menos uma notícia acessível comprovada | **838** |

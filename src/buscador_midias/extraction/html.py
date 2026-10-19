@@ -338,7 +338,10 @@ def _parse_date(value: str, now: datetime) -> datetime | None:
             return None
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=UTC)
-    parsed = parsed.astimezone(UTC)
+    try:
+        parsed = parsed.astimezone(UTC)
+    except (OverflowError, ValueError):
+        return None
     if parsed.year < _MIN_YEAR or parsed > now:
         return None
     return parsed

@@ -173,3 +173,15 @@ def test_item_com_esquema_estranho_e_ignorado():
     )
 
     assert [e.url for e in parse_feed_entries(xml, BASE)] == ["https://exemplo.com/ok-materia"]
+
+
+@pytest.mark.parametrize("date", ["0001-01-01T00:00:00+04:00", "9999-12-31T23:59:59-04:00"])
+def test_data_que_transborda_utc_nao_descarta_item_do_feed(date):
+    xml = (
+        '<rss><channel><item><title>Notícia</title><link>https://exemplo.com/reportagem</link>'
+        f'<pubDate>{date}</pubDate></item></channel></rss>'
+    ).encode()
+    assert parse_feed(xml) == FeedSummary("rss", 1, None)
+    entries = parse_feed_entries(xml, BASE)
+    assert len(entries) == 1 and entries[0].url == "https://exemplo.com/reportagem"
+    assert entries[0].published is None

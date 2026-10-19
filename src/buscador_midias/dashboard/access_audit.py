@@ -26,6 +26,7 @@ class AccessAudit:
         self.records: dict[str, list[dict[str, Any]]] = {}
         self.sources: dict[str, dict[str, Any]] = {}
         self.summary: dict[str, Any] = {}
+        self.sections: dict[str, list[dict[str, str]]] = {}
 
     def refresh(self) -> None:
         """Relê somente se os arquivos de entrada tiverem mudado."""
@@ -33,6 +34,7 @@ class AccessAudit:
         rss = self.directory / "auditoria-acesso-rss"
         extra = self.directory / "exploracao-pendentes-final"
         web = self.directory / "revisao-web-fontes"
+        final = self.directory / "validacao-final"
         paths = [
             sm / "referencias.csv",
             rss / "feeds.csv",
@@ -45,6 +47,10 @@ class AccessAudit:
             web / "acesso.csv",
             web / "fontes.csv",
             web / "resumo.json",
+            final / "acesso.csv",
+            final / "fontes.csv",
+            final / "resumo.json",
+            final / "secoes.csv",
         ]
         signature = tuple(
             (p.stat().st_mtime_ns, p.stat().st_size) if p.is_file() else None for p in paths
@@ -67,6 +73,21 @@ class AccessAudit:
             self._add(records, row, row["kind"], row.get("attempted") == "True")
         for row in _csv(paths[8]):
             self._add(records, row, row["kind"], row.get("attempted") == "True")
+        validation = _json(paths[13])
+        final_sources = {row["site_key"]: row for row in _csv(paths[12])}
+        sections: dict[str, list[dict[str, str]]] = defaultdict(list)
+        for section in _csv(paths[14]):
+            site = self.sites.get(section["site_key"])
+            if site is not None and safe_site_url(site, section.get("url")):
+                section["example_url"] = safe_site_url(site, section.get("example_url")) or ""
+                sections[site.key].append(section)
+        self.sections = dict(sections)
+        if validation.get("closed") and paths[11].is_file():
+            # Retrato atual completo, inclusive pendências: não mascarar falhas novas
+            # com uma amostra bem-sucedida de uma rodada anterior.
+            records = defaultdict(list)
+            for row in _csv(paths[11]):
+                self._add(records, row, row["kind"], row.get("attempted") == "True")
         for source_key, rows in records.items():
             unique: dict[tuple[str, str], dict[str, Any]] = {}
             for row in rows:
@@ -91,14 +112,16 @@ class AccessAudit:
                 "tested": sum(r["attempted"] for r in rows),
                 "untested": sum(not r["attempted"] for r in rows),
                 "accessible_mechanisms": sum(r["accessible"] for r in rows),
-                "explored": site.key in exploration,
+                "explored": site.key in exploration and not validation.get("closed"),
                 "exploration_status": exploration.get(site.key, {}).get("status"),
                 "exploration_detail": exploration.get(site.key, {}).get("detail"),
                 "web_review": web_sources.get(site.key),
+                "final_validation": final_sources.get(site.key),
             }
         summaries = [_json(paths[3]), _json(paths[4])]
         self.summary = {
-            "available": any(paths[i].is_file() for i in (0, 1, 2, 5, 6, 8, 9)),
+            "available": any(paths[i].is_file() for i in (0, 1, 2, 5, 6, 8, 9))
+            or (bool(validation.get("closed")) and paths[11].is_file()),
             "sources_accessible": sum(s["accessible"] for s in sources.values()),
             "sources_readable": sum(s["readable"] for s in sources.values()),
             "sources_audited": sum(s["audited"] for s in sources.values()),
@@ -117,10 +140,11 @@ class AccessAudit:
             "rss_feeds_per_source": summaries[1].get("limits", {}).get("feeds_per_source"),
             "sitemap_max_depth": summaries[0].get("limits", {}).get("max_depth"),
             "download_available": any(
-                (folder / "resultado.xlsx").is_file() for folder in (rss, extra, web)
+                (folder / "resultado.xlsx").is_file() for folder in (rss, extra, web, final)
             ),
             "exploration": _json(paths[7]),
             "web_review": _json(paths[10]),
+            "final_validation": validation,
         }
         self.records, self.sources, self.signature = dict(records), sources, signature
 
@@ -141,6 +165,22 @@ class AccessAudit:
         sample = safe_site_url(site, row.get("example_url") or row.get("exemplo"))
         if sample and is_excluded(sample, exclude):
             sample = None
+        samples = []
+        for observation in json.loads(row.get("samples") or "[]")[:3]:
+            candidate = safe_site_url(site, observation.get("url"))
+            if candidate and not is_excluded(candidate, exclude):
+                samples.append(
+                    {
+                        "url": candidate,
+                        "title": str(observation.get("title") or "Página testada")[:500],
+                        "http_status": observation.get("http_status"),
+                        "robots_http_status": observation.get("robots_http_status"),
+                        "accessible": observation.get("accessible") is True,
+                        "readable": observation.get("readable") is True,
+                        "reason": str(observation.get("reason") or "")[:500],
+                        "text_chars": observation.get("text_chars"),
+                    }
+                )
         accessible = attempted and bool(sample) and _true(row, "accessible", "noticia_acessivel")
         readable = accessible and _true(row, "readable", "texto_legivel")
         records[site.key].append(
@@ -162,6 +202,7 @@ class AccessAudit:
                 "xml_errors": row.get("xml_errors") or row.get("erro_feed") or "",
                 "depth_reached": row.get("depth_reached"),
                 "partial": row.get("traversal_partial") == "True",
+                "samples": samples,
                 "xml_http": row.get("http_status"),
                 "basis": row.get("basis"),
                 "found_on": (
@@ -192,6 +233,8 @@ class AccessAudit:
             rows = [r for r in rows if r["attempted"] and not r["accessible"]]
         elif mode == "untested":
             rows = [r for r in rows if not r["attempted"]]
+        elif mode == "partial":
+            rows = [r for r in rows if r["partial"] or not r["attempted"]]
         term = search.casefold()
         rows = [
             r
@@ -220,6 +263,25 @@ class AccessAudit:
             "records": rows[offset : offset + limit],
             "source": self.sources.get(key, {}),
             "summary": self.summary,
+        }
+
+    def sections_page(
+        self, key: str, *, mode: str, search: str, offset: int, limit: int
+    ) -> dict[str, Any]:
+        """Lista correspondências editoriais desta rodada, sem extrapolar a amostra."""
+        rows = self.sections.get(key, [])
+        if mode == "confirmed":
+            rows = [r for r in rows if r.get("accessible") == "True"]
+        elif mode == "unconfirmed":
+            rows = [r for r in rows if r.get("accessible") != "True"]
+        query = search.casefold()
+        rows = [r for r in rows if query in (r.get("title", "") + " " + r["url"]).casefold()]
+        return {
+            "total": len(rows),
+            "sections": rows[offset : offset + limit],
+            "offset": offset,
+            "limit": limit,
+            "summary": self.summary.get("final_validation", {}),
         }
 
 

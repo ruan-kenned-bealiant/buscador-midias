@@ -340,3 +340,150 @@ def test_revisao_web_integra_novos_mecanismos_e_preserva_origem_oficial(tmp_path
         "records"
     ][0]
     assert row["found_on"] == "https://b.test/siga-por-rss.html"
+
+
+def final_reports(directory):
+    write_csv(
+        directory / "validacao-final/acesso.csv",
+        [
+            {
+                "site_key": "a.test",
+                "root": "https://a.test/sitemap.xml",
+                "kind": "sitemap",
+                "attempted": "True",
+                "xml_readable": "False",
+                "accessible": "False",
+                "readable": "False",
+                "status": "mechanism_unreadable",
+                "example_url": "",
+                "traversal_partial": "False",
+                "samples": "[]",
+            },
+            {
+                "site_key": "b.test",
+                "root": "https://b.test/rss",
+                "kind": "feed",
+                "attempted": "True",
+                "xml_readable": "True",
+                "accessible": "True",
+                "readable": "True",
+                "status": "readable_news",
+                "example_url": "https://b.test/antiga",
+                "traversal_partial": "True",
+                "samples": json.dumps(
+                    [
+                        {"url": "https://b.test/antiga", "readable": True, "accessible": True},
+                        {"url": "javascript:alert(1)", "accessible": True},
+                        {"url": "https://outro.test/noticia", "accessible": True},
+                    ]
+                ),
+            },
+        ],
+    )
+    write_csv(
+        directory / "validacao-final/fontes.csv",
+        [{"site_key": "a.test", "tested": "1"}, {"site_key": "b.test", "tested": "1"}],
+    )
+    write_csv(
+        directory / "validacao-final/secoes.csv",
+        [
+            {
+                "site_key": "b.test",
+                "url": "https://b.test/politica",
+                "title": "Política",
+                "accessible": "True",
+                "example_url": "https://b.test/politica/antiga",
+            },
+            {
+                "site_key": "b.test",
+                "url": "https://b.test/cultura",
+                "title": "Cultura",
+                "accessible": "False",
+                "example_url": "https://outro.test/noticia",
+            },
+        ],
+    )
+    (directory / "validacao-final/resumo.json").write_text(json.dumps({"closed": True}))
+
+
+def test_validacao_final_substitui_retrato_antigo_e_preserva_limites(tmp_path):
+    reports(tmp_path)
+    final_reports(tmp_path)
+    audit = index(tmp_path)
+    audit.refresh()
+    assert not audit.sources["a.test"]["accessible"]  # antes havia evidência positiva
+    assert audit.sources["a.test"]["mechanisms"] == 1  # universo congelado desta rodada
+    assert audit.sources["b.test"]["readable"]
+    assert audit.summary["final_validation"]["closed"]
+    page = audit.page("b.test", kind="all", mode="partial", search="", offset=0, limit=10)
+    assert page["total"] == 1
+    assert page["records"][0]["partial"] and page["records"][0]["readable"]
+    assert len(page["records"][0]["samples"]) == 1  # descarta links inseguros/externos
+    assert audit.sections_page("b.test", mode="confirmed", search="pol", offset=0, limit=10)[
+        "total"
+    ] == 1
+    assert audit.sections_page("b.test", mode="unconfirmed", search="", offset=0, limit=10)[
+        "sections"
+    ][0]["example_url"] == ""
+
+
+def test_relatorio_final_em_preparacao_nao_apaga_evidencia_anterior(tmp_path):
+    reports(tmp_path)
+    final_reports(tmp_path)
+    path = tmp_path / "validacao-final/resumo.json"
+    path.write_text(json.dumps({"closed": False}))
+    audit = index(tmp_path)
+    audit.refresh()
+    assert audit.sources["a.test"]["readable"]
+    path.write_text(json.dumps({"closed": True}))
+    audit.refresh()
+    assert not audit.sources["a.test"]["readable"]
+
+
+def test_validacao_por_secao_e_download_final_sem_banco(tmp_path):
+    final_reports(tmp_path)
+    sites = tmp_path / "sites.csv"
+    write_csv(
+        sites,
+        [
+            {
+                "region": "",
+                "name": "B",
+                "url": "https://b.test",
+                "country": "Brasil",
+                "country_code": "BR",
+                "language": "pt",
+                "source_type": "portal",
+            }
+        ],
+    )
+
+    def forbidden_store():
+        raise AssertionError("validação final usa somente arquivos locais")
+
+    server = make_server(
+        forbidden_store, "127.0.0.1", 0, sites_path=sites, audit_directory=tmp_path
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        path = "/api/mapa/validacao-secoes?site=b.test"
+        status, _, body = get(base + path + "&mode=confirmed")
+        assert status == 200 and json.loads(body)["total"] == 1
+        assert json.loads(body)["sections"][0]["title"] == "Política"
+        assert get(base + path + "&mode=bad")[0] == 400
+        assert get(base + "/api/mapa/validacao-secoes?site=unknown")[0] == 404
+        status, _, body = get(base + "/api/mapa/acesso?site=b.test&mode=partial")
+        assert status == 200 and json.loads(body)["total"] == 1
+        assert json.loads(body)["summary"]["available"]
+        (tmp_path / "validacao-final/resultado.xlsx").write_bytes(b"final-local")
+        assert get(base + "/api/mapa/auditoria.xlsx")[2] == b"final-local"
+        assert get(base + "/api/mapa/plano-validado.json")[0] == 404
+        (tmp_path / "validacao-final/plano-com-noticias.json").write_text("[]")
+        assert get(base + "/api/mapa/plano-validado.json?path=/etc/passwd")[2] == b"[]"
+        assert get(base + "/api/mapa/plano-validado.json?mode=bad")[0] == 400
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)

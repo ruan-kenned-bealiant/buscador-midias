@@ -94,10 +94,25 @@ def make_server(
                 self._send(200, "text/html; charset=utf-8", page)
             elif parts.path == "/api/mapa/acesso":
                 self._access(parse_qs(parts.query))
+            elif parts.path == "/api/mapa/validacao-secoes":
+                self._validation_sections(parse_qs(parts.query))
             elif parts.path == "/api/mapa/revisao-web":
                 self._web_review(parse_qs(parts.query))
+            elif parts.path == "/api/mapa/plano-validado.json":
+                mode = parse_qs(parts.query).get("mode", ["news"])[0]
+                names = {"news": "plano-com-noticias.json", "xml": "plano-xml-validado.json"}
+                if mode not in names:
+                    self._json(400, {"error": "tipo de plano inválido"})
+                    return
+                report = audit.directory / "validacao-final" / names[mode]
+                if report.is_file():
+                    self._send(200, "application/json; charset=utf-8", report.read_bytes())
+                else:
+                    self._json(404, {"error": "plano validado ainda não disponível"})
             elif parts.path == "/api/mapa/auditoria.xlsx":
-                report = audit.directory / "revisao-web-fontes/resultado.xlsx"
+                report = audit.directory / "validacao-final/resultado.xlsx"
+                if not report.is_file():
+                    report = audit.directory / "revisao-web-fontes/resultado.xlsx"
                 if not report.is_file():
                     report = audit.directory / "exploracao-pendentes-final/resultado.xlsx"
                 if not report.is_file():
@@ -280,6 +295,7 @@ def make_server(
                 "readable",
                 "unconfirmed",
                 "untested",
+                "partial",
             ) or kind not in ("all", "feed", "sitemap"):
                 self._json(400, {"error": "filtro de auditoria inválido"})
                 return
@@ -301,6 +317,36 @@ def make_server(
                 except (OSError, ValueError, csv.Error):
                     _LOG.exception("falha ao ler relatórios de acesso")
                     self._json(503, {"error": "relatórios de auditoria indisponíveis"})
+                    return
+            self._json(200, data)
+
+        def _validation_sections(self, query: dict[str, list[str]]) -> None:
+            """Consulta as evidências editoriais locais da validação final."""
+            key = query.get("site", [""])[0]
+            if key not in sites:
+                self._json(404, {"error": "fonte não encontrada"})
+                return
+            mode = query.get("mode", ["all"])[0]
+            if mode not in ("all", "confirmed", "unconfirmed"):
+                self._json(400, {"error": "filtro de validação inválido"})
+                return
+            try:
+                offset = min(1_000_000, max(0, int(query.get("offset", ["0"])[0])))
+            except ValueError:
+                offset = 0
+            with map_lock:
+                try:
+                    audit.refresh()
+                    data = audit.sections_page(
+                        key,
+                        mode=mode,
+                        search=query.get("q", [""])[0][:200],
+                        offset=offset,
+                        limit=_bounded(query, "limit", 50, 200),
+                    )
+                except (OSError, ValueError, csv.Error):
+                    _LOG.exception("falha ao ler validação por seção")
+                    self._json(503, {"error": "validação por seção indisponível"})
                     return
             self._json(200, data)
 

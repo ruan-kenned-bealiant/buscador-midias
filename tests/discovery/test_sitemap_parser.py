@@ -208,3 +208,22 @@ def test_zip_corrompido_levanta_erro():
 def test_zip_vazio_levanta_erro():
     with pytest.raises(SitemapParseError, match="zip"):
         parse_sitemap(_zip())
+
+
+@pytest.mark.parametrize("date", ["0001-01-01T00:00:00+04:00", "9999-12-31T23:59:59-04:00"])
+def test_data_que_transborda_utc_nao_descarta_url_ou_indice(date):
+    xml = (
+        '<urlset xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">'
+        '<url><loc>https://exemplo.com/reportagem</loc>'
+        f'<lastmod>{date}</lastmod><news:news><news:publication_date>{date}'
+        '</news:publication_date></news:news></url></urlset>'
+    ).encode()
+    entry = parse_sitemap(xml).entries[0]
+    assert entry.loc == "https://exemplo.com/reportagem"
+    assert entry.lastmod is None and entry.publication_date is None
+    xml = (
+        '<sitemapindex><sitemap><loc>https://exemplo.com/filho.xml</loc>'
+        f'<lastmod>{date}</lastmod></sitemap></sitemapindex>'
+    ).encode()
+    child = parse_sitemap(xml).children[0]
+    assert child.loc == "https://exemplo.com/filho.xml" and child.lastmod is None
