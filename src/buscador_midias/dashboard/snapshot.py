@@ -152,6 +152,8 @@ def _status(
                 "sites_done": store.sites_done(last.id),
                 "sites_expected": expected,
                 "sites_expected_exact": bool(live),
+                "window_since": live.get("window_since"),
+                "window_until": live.get("window_until"),
                 "elapsed_seconds": int(elapsed.total_seconds()),
             }
 

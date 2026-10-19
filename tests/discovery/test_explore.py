@@ -80,6 +80,26 @@ def test_janela_ignora_arquivo_antigo_e_preserva_filho_sem_data():
     assert result.sitemaps[-1].sitemap.entries
 
 
+def test_janela_prefere_publicacao_e_nao_chama_sem_data_de_recente():
+    from tests.discovery.test_incremental import urlset as dated_urlset
+
+    since = datetime(2026, 10, 17, tzinfo=UTC)
+    root = 'https://exemplo.com/sitemap.xml'
+    fetcher = FakeFetcher({
+        'https://exemplo.com/robots.txt': b'',
+        root: dated_urlset(
+            ('https://exemplo.com/antiga', '2026-10-19T00:00:00Z',
+             '2026-10-01T00:00:00Z', 'Antiga atualizada'),
+            ('https://exemplo.com/limite', '2026-10-17T00:00:00Z'),
+            ('https://exemplo.com/sem-data', None),
+        ),
+    })
+    result = explore_site(make_site(), fetcher, user_agent=UA, entry_points=[root], since=since)
+    entries = result.sitemaps[0].sitemap.entries
+    assert [e.loc for e in entries] == ['https://exemplo.com/limite', 'https://exemplo.com/sem-data']
+    assert entries[1].timestamp is None
+
+
 def test_sem_teto_le_todos_os_filhos_inclusive_taxonomias_e_encerra_ciclo():
     home = 'https://exemplo.com'
     children = [f'{home}/arquivo-{n}.xml' for n in range(50)]
