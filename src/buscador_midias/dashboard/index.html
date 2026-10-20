@@ -95,6 +95,7 @@
 <header>
   <h1>Buscador de Mídias <small>painel do fluxo</small></h1>
   <div class="live" aria-live="polite">
+    <a href="/rodada-12">Ver rodada 12 simplificada</a>
     <span id="dot" class="dot off"></span>
     <span id="updated">conectando…</span>
     <button id="pause" type="button">Pausar</button>
@@ -242,9 +243,10 @@ function renderCards(d, now) {
     h("div", { class: "panel" }, h("h2", {}, "No corpus"),
       h("div", { class: "big" }, num(d.corpus.written)),
       h("div", { class: "sub" }, `${num(d.corpus.created)} criados por nós`)),
-    h("div", { class: "panel" }, h("h2", {}, "Custo da análise"),
+    h("div", { class: "panel" }, h("h2", {}, "Custo acumulado da análise"),
       h("div", { class: "big" }, usd(d.enrich.cost_total_usd)),
-      h("div", { class: "sub" }, "análise de contexto (OpenRouter)")),
+      h("div", { class: "sub" }, "Total histórico de análises de contexto (OpenRouter)"),
+      d.enrich.runs.length ? h("div", { class: "sub" }, `Última análise iniciada em ${when(d.enrich.runs[d.enrich.runs.length - 1].started_at)}`) : null),
     h("div", { class: "panel" }, h("h2", {}, "Bright Data (pago)"),
       h("div", { class: "big" }, num(d.totals.bright_data_requests)),
       h("div", { class: "sub" }, `chamadas acumuladas · ${num(d.fallback_hosts.length)} host(s) em fallback`)),

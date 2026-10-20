@@ -129,6 +129,14 @@ def test_heartbeat_da_rodada_retomada_traz_total_real_sem_falso_alerta(tmp_path)
     assert discovery['sites_expected_exact'] is True
     assert discovery['documents_completed'] == 42 and discovery['documents_queued'] == 100
     assert discovery['mechanisms_completed'] == 7 and discovery['mechanisms_total'] == 80
+    data['updated_at'] = (NOW + timedelta(seconds=1)).isoformat()
+    path.write_text(json.dumps(data))
+    during_query = build_snapshot(store, now=NOW, progress_path=path)['status']['discovery']
+    assert during_query['state'] == 'running' and during_query['sites_expected_exact'] is True
+    data['updated_at'] = (NOW + timedelta(minutes=5)).isoformat()
+    path.write_text(json.dumps(data))
+    future = build_snapshot(store, now=NOW, progress_path=path)['status']['discovery']
+    assert future['state'] == 'stale' and future['sites_expected_exact'] is False
     data['updated_at'] = (NOW - timedelta(minutes=2)).isoformat()
     path.write_text(json.dumps(data))
     stale = build_snapshot(store, now=NOW, progress_path=path)['status']['discovery']

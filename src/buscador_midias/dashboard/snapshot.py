@@ -116,8 +116,10 @@ def _live_progress(path: Path | None, run_id: int, now: datetime) -> dict[str, A
         if not isinstance(data, dict):
             return {}
         age = (now - datetime.fromisoformat(data["updated_at"])).total_seconds()
+        # O produtor pode atualizar o arquivo depois que a requisição capturou ``now``,
+        # enquanto o painel ainda consultava o banco. Tolera essa pequena diferença.
         if (data.get("run_id") == run_id and data.get("status") == "running"
-                and 0 <= age <= 60 and type(data.get("sites_expected")) is int
+                and -5 <= age <= 60 and type(data.get("sites_expected")) is int
                 and data["sites_expected"] > 0):
             return data
     except (OSError, ValueError, TypeError, KeyError):

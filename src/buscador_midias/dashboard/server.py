@@ -19,6 +19,7 @@ import psycopg
 
 from buscador_midias.dashboard.access_audit import AccessAudit
 from buscador_midias.dashboard.mapping import mapping_catalog, mapping_mechanisms, mapping_sections
+from buscador_midias.dashboard.round_view import round_links, round_summary
 from buscador_midias.dashboard.snapshot import DEFAULT_HOURS, DEFAULT_RECENT, build_snapshot
 from buscador_midias.sites.loader import load_sites
 from buscador_midias.state.store import StateConfigError, StateSchemaError, StateStore
@@ -45,6 +46,7 @@ def make_server(
     cache_seconds: float = DEFAULT_CACHE_SECONDS,
     sites_path: Path | None = None,
     audit_directory: Path | None = None,
+    round_directory: Path | None = None,
 ) -> ThreadingHTTPServer:
     """Cria o servidor do painel (sem iniciá-lo).
 
@@ -61,6 +63,7 @@ def make_server(
             (várias abas ou atualizações seguidas não recalculam tudo).
         sites_path: Catálogo CSV do mapa; padrão é o catálogo versionado do projeto.
         audit_directory: Pasta dos relatórios de acesso; padrão é ``var`` do projeto.
+        round_directory: Configuração e progresso da rodada 12; padrão é a pasta da execução.
 
     Returns:
         O servidor, pronto para ``serve_forever``.
@@ -70,6 +73,12 @@ def make_server(
     cache_lock = threading.Lock()
     page = resources.files("buscador_midias.dashboard").joinpath("index.html").read_bytes()
     map_page = resources.files("buscador_midias.dashboard").joinpath("mapping.html").read_bytes()
+    round_page = resources.files("buscador_midias.dashboard").joinpath("round.html").read_bytes()
+    round_dir = round_directory or (
+        Path(__file__).resolve().parents[3] / 'var/ciclo-busca-20261019T005450Z'
+    )
+    round_cache: tuple[datetime, dict[str, object]] | None = None
+    round_lock = threading.Lock()
     catalog = load_sites(sites_path or Path(__file__).resolve().parents[3] / "data/sites.csv")
     sites = {s.key: s for s in catalog.sites}
     map_cache: tuple[datetime, bytes] | None = None
@@ -92,6 +101,10 @@ def make_server(
                 self._send(200, "text/html; charset=utf-8", map_page)
             elif parts.path == "/fluxo":
                 self._send(200, "text/html; charset=utf-8", page)
+            elif parts.path == "/rodada-12":
+                self._send(200, "text/html; charset=utf-8", round_page)
+            elif parts.path in ('/api/rodada-12', '/api/rodada-12/noticias'):
+                self._round(parts.path, parse_qs(parts.query))
             elif parts.path == "/api/mapa/acesso":
                 self._access(parse_qs(parts.query))
             elif parts.path == "/api/mapa/validacao-secoes":
@@ -136,6 +149,46 @@ def make_server(
                 self._snapshot(parse_qs(parts.query))
             else:
                 self._json(404, {"error": "não encontrado"})
+
+        def _round(self, path: str, query: dict[str, list[str]]) -> None:
+            """Consulta exclusiva da rodada 12, com leitura paginada de notícias."""
+            nonlocal round_cache
+            key = query.get('site', [''])[0]
+            if key and key not in sites:
+                self._json(404, {'error': 'fonte não encontrada'})
+                return
+            try:
+                raw_cursor = query.get('before', [''])[0]
+                cursor = int(raw_cursor) if raw_cursor else None
+                if cursor is not None and cursor < 1:
+                    raise ValueError('cursor inválido')
+            except ValueError:
+                self._json(400, {'error': 'cursor inválido'})
+                return
+            try:
+                with round_lock:
+                    now = now_fn()
+                    if (path == '/api/rodada-12' and round_cache is not None
+                            and (now - round_cache[0]).total_seconds() < cache_seconds):
+                        self._json(200, round_cache[1])
+                        return
+                    state = open_state()
+                    try:
+                        if path.endswith('/noticias'):
+                            result = round_links(state, round_dir, site=key, before=cursor)
+                        else:
+                            summary = round_summary(state, sites, round_dir, now)
+                            if summary is None:
+                                self._json(404, {'error': 'rodada 12 ainda não disponível'})
+                                return
+                            result = summary
+                            round_cache = (now, result)
+                    finally:
+                        state.close()
+                self._json(200, result)
+            except (psycopg.Error, StateConfigError, StateSchemaError, OSError, ValueError):
+                _LOG.exception('falha ao consultar rodada 12')
+                self._json(503, {'error': 'dados da rodada indisponíveis; tente novamente'})
 
         def _mapping(self, path: str, query: dict[str, list[str]]) -> None:
             """Consulta o catálogo ou uma página de seções, sem iniciar buscas."""

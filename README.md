@@ -5,6 +5,13 @@ com auditoria dos mecanismos, associação às seções e lacunas explícitas.
 
 ## Consulta do mapa
 
+Para acompanhar apenas a busca da **rodada 12**, abra
+`http://127.0.0.1:8765/rodada-12`. A tela simples mostra o progresso, todas as fontes
+com busca/filtros e links recentes paginados, exclusivamente da janela fixa dessa rodada.
+RSS/sitemap acessível sem links novos aparece como sucesso. Datas de publicação e de
+modificação são diferenciadas; os links são candidatos à verificação de conteúdo textual.
+O painel completo continua em `/fluxo`, e o inventário em `/mapa`.
+
 O painel abre a tela de mapeamento em `http://127.0.0.1:8765`:
 
 ```bash
