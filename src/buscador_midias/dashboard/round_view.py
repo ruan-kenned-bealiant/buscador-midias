@@ -36,6 +36,10 @@ def round_summary(
     records = {r.site_key: r for r in store.site_runs(RUN_ID)}
     progress = _live_progress(directory / 'execucao.json', RUN_ID, now)
     state = 'completed' if run.finished_at else 'running' if progress else 'stale'
+    closure_path = directory / 'encerramento.json'
+    closure = json.loads(closure_path.read_text(encoding='utf-8')) if closure_path.exists() else {}
+    if run.finished_at and closure.get('run_id') == RUN_ID and closure.get('partial'):
+        state = 'partial'
     rows = []
     for key, site in sites.items():
         record = records.get(key)
@@ -46,7 +50,9 @@ def round_summary(
         )
         rows.append({'key': key, 'name': site.name, 'country': site.country,
                      'category': category, 'links': count,
-                     'detail': record.detail if record else 'Leitura ainda em andamento',
+                     'detail': record.detail if record else (
+                         'Varredura parcial; encerrada por solicitação do usuário'
+                         if state == 'partial' else 'Leitura ainda em andamento'),
                      'status': record.status if record else 'pending'})
     return {'run_id': RUN_ID, 'generated_at': now.isoformat(), 'state': state,
             'window_since': since.isoformat(), 'window_until': until.isoformat(),
@@ -54,7 +60,9 @@ def round_summary(
             'completed': len(records), 'total': len(sites),
             'accessible': sum(r.status == 'ok' for r in records.values()),
             'links': sum(row['links'] for row in rows),
-            'documents_remaining': progress.get('documents_queued'), 'sources': rows}
+            'documents_remaining': closure.get(
+                'documents_queued', progress.get('documents_queued')),
+            'sources': rows}
 
 
 def round_links(

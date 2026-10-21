@@ -18,8 +18,10 @@ from urllib.parse import parse_qs, urlsplit
 import psycopg
 
 from buscador_midias.dashboard.access_audit import AccessAudit
+from buscador_midias.dashboard.functional import FunctionalView
 from buscador_midias.dashboard.mapping import mapping_catalog, mapping_mechanisms, mapping_sections
 from buscador_midias.dashboard.round_view import round_links, round_summary
+from buscador_midias.dashboard.selection import CATEGORIES, DOWNLOADS, SelectionView
 from buscador_midias.dashboard.snapshot import DEFAULT_HOURS, DEFAULT_RECENT, build_snapshot
 from buscador_midias.sites.loader import load_sites
 from buscador_midias.state.store import StateConfigError, StateSchemaError, StateStore
@@ -47,6 +49,8 @@ def make_server(
     sites_path: Path | None = None,
     audit_directory: Path | None = None,
     round_directory: Path | None = None,
+    selection_directory: Path | None = None,
+    functional_directory: Path | None = None,
 ) -> ThreadingHTTPServer:
     """Cria o servidor do painel (sem iniciá-lo).
 
@@ -64,6 +68,8 @@ def make_server(
         sites_path: Catálogo CSV do mapa; padrão é o catálogo versionado do projeto.
         audit_directory: Pasta dos relatórios de acesso; padrão é ``var`` do projeto.
         round_directory: Configuração e progresso da rodada 12; padrão é a pasta da execução.
+        selection_directory: Pacote estático dos planos e decisões da etapa 5.
+        functional_directory: Retrato offline dos RSS/sitemaps funcionais por fonte.
 
     Returns:
         O servidor, pronto para ``serve_forever``.
@@ -74,8 +80,21 @@ def make_server(
     page = resources.files("buscador_midias.dashboard").joinpath("index.html").read_bytes()
     map_page = resources.files("buscador_midias.dashboard").joinpath("mapping.html").read_bytes()
     round_page = resources.files("buscador_midias.dashboard").joinpath("round.html").read_bytes()
+    selection_page = (
+        resources.files("buscador_midias.dashboard").joinpath("selection.html").read_bytes()
+    )
+    selection = SelectionView(
+        selection_directory
+        or (Path(__file__).resolve().parents[3] / "var/analise-rodada-12/etapa-5")
+    )
+    functional_page = (
+        resources.files("buscador_midias.dashboard").joinpath("functional.html").read_bytes()
+    )
+    functional = FunctionalView(
+        functional_directory or (Path(__file__).resolve().parents[3] / "var/consulta-funcionais")
+    )
     round_dir = round_directory or (
-        Path(__file__).resolve().parents[3] / 'var/ciclo-busca-20261019T005450Z'
+        Path(__file__).resolve().parents[3] / "var/ciclo-busca-20261019T005450Z"
     )
     round_cache: tuple[datetime, dict[str, object]] | None = None
     round_lock = threading.Lock()
@@ -103,7 +122,19 @@ def make_server(
                 self._send(200, "text/html; charset=utf-8", page)
             elif parts.path == "/rodada-12":
                 self._send(200, "text/html; charset=utf-8", round_page)
-            elif parts.path in ('/api/rodada-12', '/api/rodada-12/noticias'):
+            elif parts.path in ("/selecao", "/funcionais"):
+                self._send(200, "text/html; charset=utf-8", functional_page)
+            elif parts.path == "/classificacao":
+                self._send(200, "text/html; charset=utf-8", selection_page)
+            elif parts.path in (
+                "/api/funcionais",
+                "/api/funcionais/mecanismos",
+                "/api/funcionais/arquivo",
+            ):
+                self._functional(parts.path, parse_qs(parts.query))
+            elif parts.path in ("/api/selecao", "/api/selecao/mecanismos", "/api/selecao/arquivo"):
+                self._selection(parts.path, parse_qs(parts.query))
+            elif parts.path in ("/api/rodada-12", "/api/rodada-12/noticias"):
                 self._round(parts.path, parse_qs(parts.query))
             elif parts.path == "/api/mapa/acesso":
                 self._access(parse_qs(parts.query))
@@ -150,36 +181,125 @@ def make_server(
             else:
                 self._json(404, {"error": "não encontrado"})
 
+        def _functional(self, path: str, query: dict[str, list[str]]) -> None:
+            """Consulta arquivos derivados; não modifica o histórico nem abre o banco."""
+            downloads = {
+                "fontes.csv": "text/csv; charset=utf-8",
+                "funcionais.csv": "text/csv; charset=utf-8",
+                "fontes-funcionais.xlsx": (
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ),
+                "historico-preservado.json": "application/json; charset=utf-8",
+            }
+            try:
+                if path.endswith("/arquivo"):
+                    name = query.get("nome", [""])[0]
+                    if name not in downloads:
+                        self._json(400, {"error": "arquivo não permitido"})
+                        return
+                    self._send(200, downloads[name], (functional.directory / name).read_bytes())
+                elif path.endswith("/mecanismos"):
+                    kind = query.get("tipo", ["all"])[0]
+                    offset = int(query.get("offset", ["0"])[0])
+                    limit = int(query.get("limit", ["25"])[0])
+                    if kind not in ("all", "feed", "sitemap"):
+                        self._json(400, {"error": "tipo inválido"})
+                        return
+                    if not 0 <= offset <= 1_000_000 or not 1 <= limit <= 100:
+                        self._json(400, {"error": "paginação inválida"})
+                        return
+                    self._json(
+                        200,
+                        functional.mechanisms(
+                            query.get("site", [""])[0],
+                            kind,
+                            query.get("q", [""])[0][:200],
+                            offset,
+                            limit,
+                        ),
+                    )
+                else:
+                    self._json(200, functional.summary())
+            except KeyError:
+                self._json(404, {"error": "fonte não encontrada"})
+            except ValueError:
+                self._json(400, {"error": "parâmetro inválido"})
+            except OSError:
+                self._json(503, {"error": "retrato funcional indisponível; tente novamente"})
+
+        def _selection(self, path: str, query: dict[str, list[str]]) -> None:
+            """Serve somente os relatórios e arquivos permitidos, sem abrir o banco."""
+            try:
+                if path.endswith("/arquivo"):
+                    name = query.get("nome", [""])[0]
+                    if name not in DOWNLOADS:
+                        self._json(400, {"error": "arquivo não permitido"})
+                        return
+                    self._send(200, DOWNLOADS[name], (selection.directory / name).read_bytes())
+                elif path.endswith("/mecanismos"):
+                    category = query.get("categoria", ["all"])[0]
+                    if category not in CATEGORIES:
+                        self._json(400, {"error": "classificação inválida"})
+                        return
+                    try:
+                        offset = int(query.get("offset", ["0"])[0])
+                        limit = int(query.get("limit", ["25"])[0])
+                        if not 0 <= offset <= 1_000_000 or not 1 <= limit <= 100:
+                            raise ValueError("paginação inválida")
+                    except ValueError:
+                        self._json(400, {"error": "paginação inválida"})
+                        return
+                    self._json(
+                        200,
+                        selection.mechanisms(
+                            query.get("site", [""])[0],
+                            category,
+                            query.get("q", [""])[0][:200],
+                            offset,
+                            limit,
+                        ),
+                    )
+                else:
+                    self._json(200, selection.summary())
+            except KeyError:
+                self._json(404, {"error": "fonte não encontrada"})
+            except (OSError, ValueError, csv.Error):
+                _LOG.exception("falha ao ler seleção local")
+                self._json(503, {"error": "entrega da seleção indisponível; tente novamente"})
+
         def _round(self, path: str, query: dict[str, list[str]]) -> None:
             """Consulta exclusiva da rodada 12, com leitura paginada de notícias."""
             nonlocal round_cache
-            key = query.get('site', [''])[0]
+            key = query.get("site", [""])[0]
             if key and key not in sites:
-                self._json(404, {'error': 'fonte não encontrada'})
+                self._json(404, {"error": "fonte não encontrada"})
                 return
             try:
-                raw_cursor = query.get('before', [''])[0]
+                raw_cursor = query.get("before", [""])[0]
                 cursor = int(raw_cursor) if raw_cursor else None
                 if cursor is not None and cursor < 1:
-                    raise ValueError('cursor inválido')
+                    raise ValueError("cursor inválido")
             except ValueError:
-                self._json(400, {'error': 'cursor inválido'})
+                self._json(400, {"error": "cursor inválido"})
                 return
             try:
                 with round_lock:
                     now = now_fn()
-                    if (path == '/api/rodada-12' and round_cache is not None
-                            and (now - round_cache[0]).total_seconds() < cache_seconds):
+                    if (
+                        path == "/api/rodada-12"
+                        and round_cache is not None
+                        and (now - round_cache[0]).total_seconds() < cache_seconds
+                    ):
                         self._json(200, round_cache[1])
                         return
                     state = open_state()
                     try:
-                        if path.endswith('/noticias'):
+                        if path.endswith("/noticias"):
                             result = round_links(state, round_dir, site=key, before=cursor)
                         else:
                             summary = round_summary(state, sites, round_dir, now)
                             if summary is None:
-                                self._json(404, {'error': 'rodada 12 ainda não disponível'})
+                                self._json(404, {"error": "rodada 12 ainda não disponível"})
                                 return
                             result = summary
                             round_cache = (now, result)
@@ -187,8 +307,8 @@ def make_server(
                         state.close()
                 self._json(200, result)
             except (psycopg.Error, StateConfigError, StateSchemaError, OSError, ValueError):
-                _LOG.exception('falha ao consultar rodada 12')
-                self._json(503, {'error': 'dados da rodada indisponíveis; tente novamente'})
+                _LOG.exception("falha ao consultar rodada 12")
+                self._json(503, {"error": "dados da rodada indisponíveis; tente novamente"})
 
         def _mapping(self, path: str, query: dict[str, list[str]]) -> None:
             """Consulta o catálogo ou uma página de seções, sem iniciar buscas."""

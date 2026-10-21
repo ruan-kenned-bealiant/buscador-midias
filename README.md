@@ -5,12 +5,159 @@ com auditoria dos mecanismos, associação às seções e lacunas explícitas.
 
 ## Consulta do mapa
 
+A consulta de **RSS e sitemaps funcionais por fonte** está em
+**`http://127.0.0.1:8765/funcionais`** (também em `/selecao`). Exibe todas as
+1.294 fontes únicas do catálogo, a quantidade de endpoints funcionais e o tipo de cada um.
+Funcionamento significa XML interpretado, independentemente da data das notícias e do
+acesso ao texto dos artigos. A última revisão explícita prevalece sobre um sucesso anterior.
+
+Ao selecionar uma fonte, a tela separa URLs listadas no XML salvo **sem filtro de data**,
+URLs candidatas encontradas na janela fixa de 48h da rodada 12 (incluindo filhos lidos)
+e textos confirmados em amostras. Filhos de índices não são contados como notícias.
+Contagens não registradas ficam desconhecidas; origens sintéticas não são atribuídas a
+um RSS por suposição. Totais por mecanismo podem se sobrepor; por fonte há deduplicação.
+A tela oferece CSV e planilha, sem abrir banco, fazer buscas ou criar agendamentos.
+
+O retrato separado fica em `var/consulta-funcionais/`, com registro SHA-256 dos arquivos
+históricos em `historico-preservado.json`. A rodada 12, seus links e as etapas anteriores
+continuam intactos. Para regenerar apenas esta consulta offline:
+
+```bash
+.venv/bin/python scripts/export_functional_sources.py
+```
+
+APIs: `/api/funcionais`, `/api/funcionais/mecanismos?site=dominio&tipo=all` e
+`/api/funcionais/arquivo?nome=fontes-funcionais.xlsx`. A classificação anterior continua
+em **`/classificacao`**, com seus motivos, planos e as APIs `/api/selecao` preservadas.
+Os números das etapas descritas abaixo são retratos históricos; o pacote da etapa 5
+contém a revisão final dos inconclusivos.
+
+Para regenerar a entrega estática da etapa 5 a partir da classificação:
+
+```bash
+.venv/bin/python scripts/export_round12_selection.py
+```
+
+Em [`var/analise-rodada-12/etapa-5/`](var/analise-rodada-12/etapa-5/) ficam
+`plano-frequente.json` (6.699 mecanismos, 607 fontes), `plano-periodico.json`
+(25.206 mecanismos, 676 fontes; há sobreposição com as frequentes), a classificação e
+o catálogo completos, planilha e `manifesto.json` com hashes. Ambos os planos passam no
+leitor existente, sem origens sintéticas, URLs externas ou mecanismos excluídos/inconclusivos.
+
+`comparacao.md` e `comparacao.json` preparam a comparação futura, **ainda não executada**,
+com `plano-referencia-comparacao.json` e o frequente nas mesmas 607 fontes. O executor
+comparativo deverá isolar os estados, percorrer somente os endpoints explícitos e medir
+chamadas reais, tempo e diferenças de notícias textuais na mesma janela. A CLI `discover`
+atual acrescenta cascata/backups e limita complementos por padrão; não deve ser tratada
+como executor estrito desses planos sem adaptação. A entrega não altera planos ativos,
+não cria agendamentos e preserva as limitações da rodada 12.
+
 Para acompanhar apenas a busca da **rodada 12**, abra
 `http://127.0.0.1:8765/rodada-12`. A tela simples mostra o progresso, todas as fontes
 com busca/filtros e links recentes paginados, exclusivamente da janela fixa dessa rodada.
 RSS/sitemap acessível sem links novos aparece como sucesso. Datas de publicação e de
 modificação são diferenciadas; os links são candidatos à verificação de conteúdo textual.
 O painel completo continua em `/fluxo`, e o inventário em `/mapa`.
+
+A rodada 12 foi encerrada por solicitação do usuário, com o NZ Herald parcial e a fila
+restante preservada. A primeira etapa de análise consolida apenas os arquivos locais,
+sem acessar os sites, selecionar mecanismos ou validar o texto dos artigos:
+
+```bash
+.venv/bin/python scripts/consolidate_round12.py
+```
+
+Entrega em [`var/analise-rodada-12/etapa-1/`](var/analise-rodada-12/etapa-1/):
+`consolidacao.xlsx`, `fontes.csv`, `mecanismos.csv`, `origens-diretas.csv`, `resumo.json`
+e `relatorio.md`. Os relatórios incluem todas as 1.294 fontes e os 38.501 mecanismos
+planejados, além das páginas de descoberta geradas durante a execução. Evidência insuficiente
+por mecanismo permanece inconclusiva; resultados agregados anteriores à fila não comprovam
+leitura individual. Datas de modificação são separadas de datas de publicação. Os 61 links
+do NZ Herald já gravados são incluídos, embora essa fonte não tenha registro final de leitura.
+
+A etapa 2 valida até três candidatas por mecanismo, reutilizando o resultado da mesma URL
+na mesma fonte. O plano fixo contém 16.004 páginas distintas e 9.152 mecanismos/origens
+com amostras. Fontes sem candidatas ou sem evidência individual suficiente permanecem
+inconclusivas. O plano usa somente os links locais da rodada, sem expandir índices:
+
+```bash
+# Apenas preparar o plano local:
+.venv/bin/python scripts/validate_round12_samples.py --prepare-only
+# Executar ou retomar as amostras ainda sem resultado:
+.venv/bin/python scripts/validate_round12_samples.py
+```
+
+O procedimento usa HTTP direto, robots, escopo e exclusões congeladas, uma página por host
+em paralelo, intervalo de um segundo e checkpoint em
+`var/analise-rodada-12/etapa-2/resultados/`. Não usa Bright Data/OpenRouter, não altera o
+banco da coleta nem seleciona mecanismos. `execucao.json` registra o progresso;
+`amostras-planejadas.json` e `mecanismos-planejados.json` preservam o plano finito.
+Ao concluir, gera `validacao-amostras.xlsx`, `fontes.csv`, `mecanismos.csv`, `amostras.csv`
+e `resumo.json` na mesma pasta, com exemplos, HTTP, texto extraído e publicação na janela.
+Áudio estruturado é separado de artigo textual com áudio embutido; resultados automáticos
+são evidência amostral sujeita a revisão, sem inferir que toda a seção seja textual ou áudio.
+O painel `/rodada-12` continua exibindo a coleta encerrada, sem misturar essa auditoria.
+
+A revisão finita dos inconclusivos usa
+`scripts/resolve_round12_inconclusive.py`. O plano congelado em
+`var/analise-rodada-12/resolucao-inconclusivos/plano.json` contém os 8.545 endereços HTTP
+e 46 rótulos de procedência originalmente inconclusivos, priorizando as 35 fontes com
+texto confirmado e sem vínculo RSS/sitemap comprovado. Não inclui novos endpoints nem
+expande índices. Referências entre índices e filhos são associadas apenas entre entradas
+da lista já verificadas, por até dez níveis e sem ciclos.
+
+Cada endereço tem uma tentativa e uma repetição somente para falha transitória; marcadores
+persistentes impedem renovar a repetição ao reencontrar o mesmo endereço ou robots.
+São verificadas até três páginas por mecanismo, sem restringir a data do artigo. Amostras
+textuais da etapa 2 são reaproveitadas se a mesma URL estiver no XML agora verificado.
+Robots, escopo e exclusões manuais continuam aplicados, sem Bright Data/OpenRouter.
+
+O checkpoint por mecanismo está em `resultados/` e o progresso em `execucao.json`.
+Ao terminar, `revisao/` recebe classificação e planilha atualizadas, com impedimentos
+explícitos. A entrega inicial fica em `entrega-anterior/`; etapas 1 a 4 não são alteradas.
+O pacote da etapa 5 e o painel são regenerados com os novos totais. Bloqueio, 404 e falha
+não provocam exclusão definitiva da fonte. Um rótulo `feed:dominio` é removido da seleção
+de endpoints por ser metadado, preservando seus artigos e a evidência textual da fonte.
+Esta revisão é uma execução única com fim definido, sem continuação ou agendamento automático.
+
+A etapa 3 mede contribuição e sobreposição por URL canônica, cruza as amostras com texto
+confirmado e contabiliza tarefas/documentos compartilhados. Executa exclusivamente offline:
+
+```bash
+.venv/bin/python scripts/measure_round12_contribution.py
+```
+
+Entrega em [`var/analise-rodada-12/etapa-3/`](var/analise-rodada-12/etapa-3/):
+`contribuicao-e-custo.xlsx`, `fontes.csv`, `mecanismos.csv`, `sobreposicoes.csv`,
+`simulacao-observada.csv`, `resumo.json` e `relatorio.md`. A exclusividade é restrita
+às raízes com evidência comparável da mesma fonte. As origens de primeira gravação
+do corpus são limites inferiores e não demonstram exclusividade. Custo não registrado
+fica vazio, sem ser convertido em zero. Documentos distintos não são chamadas HTTP exatas.
+A simulação cobre apenas as candidatas já observadas, sem selecionar mecanismos, prometer
+redução de tempo ou garantir cobertura futura. A seleção pertence à etapa seguinte.
+
+A etapa 4 classifica os mecanismos sem alterar o inventário, o banco ou o plano de coleta:
+
+```bash
+.venv/bin/python scripts/classify_round12_mechanisms.py
+```
+
+Em [`var/analise-rodada-12/etapa-4/`](var/analise-rodada-12/etapa-4/),
+`classificacao-mecanismos.xlsx` e os CSVs registram busca frequente, verificação periódica,
+exclusão da seleção textual ou resultado inconclusivo, com motivo, exemplos e evidência.
+O limiar de 1.000 documentos observados distingue complementos caros; é uma política de
+classificação, sem limitar execuções. Fontes cuja única opção textual é cara/parcial preservam
+uma opção frequente com ressalva. RSS/editorias não são rebaixados apenas por coincidirem
+na janela. Sitemaps cobertos por opções frequentes permanecem como complementos periódicos.
+
+A classificação reuniu 6.699 opções frequentes em 607 fontes, 25.206 periódicas, seis
+exclusões por podcast comprovado e 8.591 inconclusivas. As 35 fontes com texto confirmado
+mas sem endpoint frequente individualmente comprovado aparecem em `fontes.csv`;
+`lacunas-proveniencia.csv` detalha origens sintéticas como `feed:dominio` e origens HTTP
+sem tipo XML comprovado. Isso não significa que a fonte não possua RSS/sitemap.
+`revisao-audio.csv` separa prova de canal podcast de amostra isolada de áudio. A etapa 4
+não cria agendamentos nem executa uma nova busca; a entrega operacional e a atualização
+do painel pertencem à etapa seguinte.
 
 O painel abre a tela de mapeamento em `http://127.0.0.1:8765`:
 

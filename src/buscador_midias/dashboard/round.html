@@ -18,7 +18,7 @@ main{max-width:1120px;margin:auto;padding:32px 24px 60px}header{display:flex;ali
 <main>
   <header>
     <div><div class="eyebrow">Buscador de mídias</div><h1>Rodada 12</h1><div class="muted" id="window">Carregando a janela da busca…</div></div>
-    <div class="actions"><span class="status" id="state">Carregando</span><button class="button" id="refresh" type="button">Atualizar</button></div>
+    <div class="actions"><a class="button" href="/selecao">Ver seleção e planos</a><span class="status" id="state">Carregando</span><button class="button" id="refresh" type="button">Atualizar</button></div>
   </header>
   <div id="error" role="alert"></div>
   <section class="panel" aria-label="Progresso e resultados">
@@ -40,7 +40,7 @@ main{max-width:1120px;margin:auto;padding:32px 24px 60px}header{display:flex;ali
     <div class="footer"><span class="muted">Datas de modificação são indicadas quando não há data de publicação.</span><button class="button" id="more" type="button" hidden>Carregar mais</button></div>
   </section>
   <div class="footer"><span class="muted" id="updated"></span><span class="muted">Atualização a cada 15 segundos</span></div>
-  <nav class="bottom-links" aria-label="Outras telas"><a href="/mapa">Inventário do mapeamento</a><a href="/fluxo">Painel completo</a></nav>
+  <nav class="bottom-links" aria-label="Outras telas"><a href="/selecao">Fontes selecionadas e planos de busca</a><a href="/mapa">Inventário do mapeamento</a><a href="/fluxo">Painel completo</a></nav>
 </main>
 <script>
 'use strict';
@@ -74,10 +74,10 @@ async function summary(){
   try{
     data=await api('/api/rodada-12');$('error').textContent='';$('error').className='';
     $('window').textContent=`Janela da busca: ${date(data.window_since)} até ${date(data.window_until)}`;
-    $('state').textContent=({running:'Em andamento',completed:'Concluída',stale:'Atualização atrasada'})[data.state]||data.state;$('state').className=`status${data.state==='stale'?' warn':''}`;
+    $('state').textContent=({running:'Em andamento',completed:'Concluída',partial:'Encerrada com varredura parcial',stale:'Atualização atrasada'})[data.state]||data.state;$('state').className=`status${['stale','partial'].includes(data.state)?' warn':''}`;
     const percent=Math.min(100,100*data.completed/data.total);$('percent').textContent=`${percent.toLocaleString('pt-BR',{maximumFractionDigits:1})}%`;$('bar').style.width=`${percent}%`;$('progress').setAttribute('aria-valuenow',String(Math.round(percent)));
     $('progress-text').textContent=`${fmt.format(data.completed)} de ${fmt.format(data.total)} fontes concluídas`;
-    $('remaining').textContent=data.state==='completed'?'Rodada encerrada. Os resultados estão disponíveis abaixo.':`${fmt.format(data.total-data.completed)} fontes ainda em leitura${data.documents_remaining!=null?` · ${fmt.format(data.documents_remaining)} documentos na fila`:''}. A quantidade de fontes não indica o tempo restante.`;
+    $('remaining').textContent=data.state==='partial'?`Rodada encerrada por solicitação do usuário. Varredura parcial em ${fmt.format(data.total-data.completed)} fonte(s); ${fmt.format(data.documents_remaining||0)} documentos preservados, sem execução ativa.`:data.state==='completed'?'Rodada encerrada. Os resultados estão disponíveis abaixo.':`${fmt.format(data.total-data.completed)} fontes ainda em leitura${data.documents_remaining!=null?` · ${fmt.format(data.documents_remaining)} documentos na fila`:''}. A quantidade de fontes não indica o tempo restante.`;
     $('completed').textContent=fmt.format(data.completed);$('links').textContent=fmt.format(data.links);$('accessible').textContent=fmt.format(data.accessible);$('updated').textContent=`Dados consultados em ${date(data.generated_at)}`;sources();
   }catch(error){$('error').textContent=error.message;$('error').className='error';}finally{summaryLoading=false;$('refresh').disabled=false;}
 }

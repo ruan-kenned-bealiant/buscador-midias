@@ -99,6 +99,24 @@ def test_links_filtram_rodada_janela_datas_futuras_e_descartes(round_server):
     assert get(base + '/api/rodada-12/noticias?before=-1')[0] == 400
 
 
+def test_encerramento_parcial_preserva_fonte_incompleta_sem_simular_conclusao(round_server):
+    base, directory = round_server
+    store = StateStore()
+    store.finish_run(12, NOW)
+    store.close()
+    (directory / 'encerramento.json').write_text(json.dumps({
+        'run_id': 12, 'partial': True, 'documents_queued': 34,
+    }))
+    _, body = get(base + '/api/rodada-12')
+    data = json.loads(body)
+    assert data['state'] == 'partial'
+    assert data['completed'] == 2 and data['total'] == 3
+    assert data['documents_remaining'] == 34
+    source = next(s for s in data['sources'] if s['key'] == 'c.com')
+    assert source['category'] == 'pending'
+    assert 'encerrada' in source['detail']
+
+
 def test_paginacao_por_cursor_nao_repete_links(round_server):
     _, directory = round_server
     store = StateStore(read_only=True)
