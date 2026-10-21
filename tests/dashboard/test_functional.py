@@ -142,3 +142,21 @@ def test_recarrega_retrato_e_reporta_ausencia(functional_server):
     assert json.loads(get(base + "/api/funcionais")[1])["sources"][0]["functional"] == 3
     path.unlink()
     assert get(base + "/api/funcionais")[0] == 503
+
+
+def test_filtro_de_texto_nao_inclui_canal_de_audio(functional_server):
+    base, folder = functional_server
+    path = folder / "retrato.json"
+    snapshot = json.loads(path.read_text())
+    snapshot["mechanisms"]["example.com"] += [
+        dict(url="https://example.com/articles.xml", kind="sitemap", texts=2, audio=False),
+        dict(url="https://example.com/podcast.xml", kind="feed", texts=2, audio=True),
+    ]
+    path.write_text(json.dumps(snapshot))
+    _, body = get(base + "/api/funcionais/mecanismos?site=example.com&uso=text")
+    assert [r["url"] for r in json.loads(body)["items"]] == ["https://example.com/articles.xml"]
+    _, body = get(base + "/api/funcionais/mecanismos?site=example.com&uso=audio")
+    assert [r["url"] for r in json.loads(body)["items"]] == ["https://example.com/podcast.xml"]
+    _, body = get(base + "/api/funcionais/mecanismos?site=example.com&uso=xml")
+    assert json.loads(body)["total"] == 2
+    assert get(base + "/api/funcionais/mecanismos?site=example.com&uso=invalid")[0] == 400

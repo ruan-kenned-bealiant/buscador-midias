@@ -186,10 +186,18 @@ def make_server(
             downloads = {
                 "fontes.csv": "text/csv; charset=utf-8",
                 "funcionais.csv": "text/csv; charset=utf-8",
+                "links-com-texto.csv": "text/csv; charset=utf-8",
                 "fontes-funcionais.xlsx": (
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 ),
                 "historico-preservado.json": "application/json; charset=utf-8",
+                "auditoria-dirigida.md": "text/markdown; charset=utf-8",
+                "diagnostico-fontes.csv": "text/csv; charset=utf-8",
+                "diagnostico-links.csv": "text/csv; charset=utf-8",
+                "conclusao.json": "application/json; charset=utf-8",
+                "auditoria-final.xlsx": (
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ),
             }
             try:
                 if path.endswith("/arquivo"):
@@ -200,6 +208,10 @@ def make_server(
                     self._send(200, downloads[name], (functional.directory / name).read_bytes())
                 elif path.endswith("/mecanismos"):
                     kind = query.get("tipo", ["all"])[0]
+                    usage = query.get("uso", ["all"])[0]
+                    if usage not in ("all", "text", "xml", "audio"):
+                        self._json(400, {"error": "uso inválido"})
+                        return
                     offset = int(query.get("offset", ["0"])[0])
                     limit = int(query.get("limit", ["25"])[0])
                     if kind not in ("all", "feed", "sitemap"):
@@ -216,6 +228,7 @@ def make_server(
                             query.get("q", [""])[0][:200],
                             offset,
                             limit,
+                            usage=usage,
                         ),
                     )
                 else:

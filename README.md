@@ -32,6 +32,60 @@ em **`/classificacao`**, com seus motivos, planos e as APIs `/api/selecao` prese
 Os números das etapas descritas abaixo são retratos históricos; o pacote da etapa 5
 contém a revisão final dos inconclusivos.
 
+A auditoria dirigida de dez fontes problemáticas está em
+[`var/auditoria-dirigida-10/relatorio.md`](var/auditoria-dirigida-10/relatorio.md).
+Foi encerrada após 90 endereços examinados e 98 requisições HTTP reais: recuperou Canaltech,
+Jornal de Brasília e Agência Mural e confirmou texto no Bem Paraná e na Itatiaia. Cinco
+fontes continuaram bloqueadas por HTTP 403. `plano.json` congela dez fontes, até 12 XMLs,
+quatro artigos, profundidade dois, 60 requisições e 180 segundos por fonte, sem repetições
+nem serviços pagos. `scripts/audit_problem_sources.py` reutiliza checkpoints ao ser executado
+novamente. Os resultados são uma camada posterior no retrato funcional, sem modificar a
+rodada 12 nem as classificações das etapas 1–5. O retrato anterior está em `painel-anterior/`.
+
+O segundo lote, também encerrado, está em
+[`var/auditoria-dirigida-10-02/relatorio.md`](var/auditoria-dirigida-10-02/relatorio.md).
+`scripts/audit_problem_sources.py --batch 2` seleciona dez outras fontes e reutiliza
+checkpoints. A conferência do domínio editorial oficial da Mongabay Brasil confirmou RSS,
+sitemaps e notícia textual acessível. O feed de teste do endereço antigo permanece no
+histórico, fora dos links para notícias. Foram examinados 94 endereços de mecanismos,
+com 93 requisições HTTP, e as outras nove fontes mantiveram impedimentos explícitos.
+O complemento restrito de domínio está documentado em `complemento-mongabay.json`.
+O exportador funcional incorpora somente lotes concluídos e reúne os dois relatórios.
+
+A revisão completa dos problemas usa `scripts/audit_problem_sources.py --all-problems`.
+A lista congelada em `var/auditoria-final-problemas/plano.json` contém 778 fontes,
+sem repetir os dois lotes anteriores: 241 sem XML funcional, 314 sem confirmação textual
+ou com bloqueios e 223 com outros mecanismos inconclusivos. Os grupos executam em sequência,
+com 12 fontes concorrentes e os mesmos limites por fonte. Checkpoints permitem retomada;
+falhas isoladas ficam explícitas e não interrompem as outras fontes.
+
+A recuperação de “Não registrado” usa também os caches históricos de RSS, sitemaps e
+revisões anteriores. A data não elimina mecanismos funcionais. Amostras novas não são
+usadas para inventar procedência histórica da rodada 12. O painel filtra evidência textual,
+XML sem confirmação textual e áudio; `links-com-texto.csv` contém somente mecanismos com
+texto confirmado em amostras e sem canal de áudio comprovado. Essa evidência pode ser
+histórica e não garante acesso permanente ou cobertura integral.
+
+Após concluir a revisão, exporte o retrato e feche o diagnóstico sem novas requisições:
+
+```bash
+.venv/bin/python scripts/export_functional_sources.py
+.venv/bin/python scripts/close_problem_audit.py
+```
+
+A qualificação editorial conserva as avaliações anteriores e remove das provas textuais
+páginas de áudio dedicado ou fora da seção configurada. Players BBC Audio e episódios
+Bloomberg Podcasts não viram notícia textual por terem descrição longa; reportagens com
+áudio embutido continuam elegíveis. O leitor trata sitemaps gzip/zip defensivamente.
+Limites próprios de tempo, tamanho ou disponibilidade do cache não invalidam uma prova
+histórica de XML funcional. Correções de cache e reavaliações offline ficam documentadas
+na pasta da auditoria, sem repetir downloads nem modificar a rodada 12.
+
+O fechamento confere SHA-256 dos arquivos originais e gera `diagnostico-fontes.csv`,
+`diagnostico-links.csv`, `consolidacao.xlsx`, `conclusao.json` e `relatorio.md` na pasta
+da auditoria. O relatório e a planilha de diagnóstico ficam disponíveis nos detalhes
+da tela funcional. Não há nova coleta contínua ou agendamento.
+
 Para regenerar a entrega estática da etapa 5 a partir da classificação:
 
 ```bash

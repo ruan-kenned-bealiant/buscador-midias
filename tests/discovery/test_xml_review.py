@@ -1,3 +1,5 @@
+import gzip
+
 import pytest
 
 from buscador_midias.discovery.sitemap_parser import SitemapParseError
@@ -36,3 +38,11 @@ def test_403_e_dns_permanente_nao_disparam_repeticao():
     assert not transient(FetchResult("https://x.com", None, b"", "Name or service not known"))
     assert transient(FetchResult("https://x.com", 503, b"", None))
     assert transient(FetchResult("https://x.com", None, b"", "ReadTimeout"))
+
+
+def test_sitemap_gzip_e_interpretado_sem_tentar_decodificar_como_feed():
+    body = gzip.compress(
+        b"<sitemapindex><sitemap><loc>https://x.com/child.xml</loc></sitemap></sitemapindex>"
+    )
+    result = review_xml(body, "https://x.com/index.xml.gz")
+    assert result.kind == "sitemap" and result.children == ("https://x.com/child.xml",)

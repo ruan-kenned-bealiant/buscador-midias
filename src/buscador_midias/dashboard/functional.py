@@ -75,10 +75,14 @@ class FunctionalView:
         """Mostra todas as fontes, incluindo as sem mecanismo funcional comprovado."""
         with self.lock:
             self._refresh()
-            return dict(meta=self.data["meta"], sources=self.data["sources"])
+            return dict(
+                meta=self.data["meta"],
+                sources=self.data["sources"],
+                audits=self.data.get("audits", {}),
+            )
 
     def mechanisms(
-        self, site: str, kind: str, search: str, offset: int, limit: int
+        self, site: str, kind: str, search: str, offset: int, limit: int, usage: str = "all"
     ) -> dict[str, Any]:
         """Pagina mecanismos técnicos, sem filtrar por data ou uso frequente/periódico."""
         with self.lock:
@@ -92,6 +96,17 @@ class FunctionalView:
                 for r in self.data["mechanisms"].get(site, [])
                 if (kind == "all" or r["kind"] == kind)
                 and (not search or search in r["url"].casefold())
+                and (
+                    usage == "all"
+                    or usage == "text"
+                    and r["texts"] > 0
+                    and not r.get("audio")
+                    or usage == "xml"
+                    and r["texts"] == 0
+                    and not r.get("audio")
+                    or usage == "audio"
+                    and r.get("audio")
+                )
             ]
             return dict(
                 source=source,

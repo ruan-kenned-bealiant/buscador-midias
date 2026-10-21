@@ -1136,10 +1136,8 @@ def _dashboard(
     args: argparse.Namespace, serve: Callable[[ThreadingHTTPServer], None] | None
 ) -> int:
     """Sobe o painel local e bloqueia até Ctrl+C."""
-    probe = _open_state(read_only=True)
-    if probe is None:
-        return 2
-    probe.close()
+    # As telas de resultados salvos não dependem do PostgreSQL. As rotas que
+    # precisam dele abrem a conexão sob demanda e respondem 503 se indisponível.
     server = make_server(
         lambda: StateStore(read_only=True), args.host, args.port, schedule_path=args.schedule,
         sites_path=args.sites,

@@ -24,7 +24,8 @@ class XmlReview:
 
 def review_xml(body: bytes, url: str) -> XmlReview:
     """Interpreta RSS/Atom ou sitemap, preservando artigos antigos como amostras elegíveis."""
-    feed = parse_feed(body)
+    # Sitemaps comprimidos devem ir ao parser que limita a descompressão.
+    feed = None if body.startswith((b"\x1f\x8b", b"PK")) else parse_feed(body)
     if feed is not None:
         podcast = False
         try:
