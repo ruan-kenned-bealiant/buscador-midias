@@ -71,7 +71,7 @@ def get(url):
 def test_tela_simples_e_resumo_isolam_rodada_12(round_server):
     base, _ = round_server
     status, body = get(base + '/rodada-12')
-    assert status == 200 and b'Rodada 12' in body
+    assert status == 410
     assert b'OpenRouter' not in body and b'cost_total' not in body
     status, body = get(base + '/api/rodada-12')
     data = json.loads(body)

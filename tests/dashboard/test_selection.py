@@ -75,7 +75,7 @@ def get(url):
 
 def test_selecao_funciona_sem_banco_e_preserva_custo_ausente(selection_server):
     base, _ = selection_server
-    assert get(base + "/selecao")[0] == 200
+    assert get(base + "/selecao")[0] == 410
     status, body = get(base + "/api/selecao")
     data = json.loads(body)
     assert status == 200 and len(data["sources"]) == 1

@@ -1,5 +1,96 @@
 # Design
 
+## MVP do produto: gerenciador de sites
+
+O produto terá busca de notícias e gerenciador de sites. A interface atual contém
+o gerenciador em `/` e `/gerenciador`, com CRUD, estados ativo/inativo, filtros, paginação,
+evidências e teste interativo. A configuração dos mecanismos fica em `/mecanismos`. As demais telas foram removidas; os arquivos históricos
+e APIs de consulta são preservados. A busca completa será integrada depois.
+
+O cadastro editável usa SQLite independente em `var/gerenciador/catalogo.sqlite`,
+adequado ao MVP local sem depender do PostgreSQL do corpus. Importação transacional
+única do retrato funcional e catálogo CSV; IDs estáveis, vínculo fonte-mecanismo,
+unicidade de endereço e revisão para evitar sobrescritas concorrentes. Cadastros
+novos não recebem comprovação automaticamente. Alterar URL/tipo invalida a prova
+atual; a auditoria conserva os valores anteriores. Inativação da fonte é herdada
+em consulta e mantém a escolha individual dos links. Exclusão lógica e eventos
+preservam rastreabilidade, sem modificar a rodada 12 ou relatórios do mapeamento.
+
+A API do gerenciador é a única área com escrita; as rotas históricas continuam
+somente leitura. Escritas limitadas a HTTP local, JSON de tamanho limitado e token
+de mesma origem. O MVP não oferece autenticação, restauração de excluídos pela
+interface nem coleta contínua. Publicação e uso multiusuário exigirão
+autenticação e revisão da infraestrutura. Não cria agendamentos ou custos externos.
+
+### Mecanismos separados e configuração persistente
+
+Cada modelo implementa o contrato `Mechanism` em módulo próprio: automático, RSS,
+sitemap direto, índice e news sitemap. As regras de aceitação, expansão e ajuste do tipo
+ficam nesses módulos. Parsing defensivo, executor, rede e persistência são compartilhados.
+A interface cria os campos a partir do esquema de parâmetros do próprio mecanismo.
+Modelos sem expansão não expõem parâmetros de árvore.
+
+`mechanisms` mantém parâmetros globais e revisão, inicializados idempotentemente
+sem alterar os endpoints existentes. Escritas validam esquema e revisão com auditoria.
+Novos testes congelam os valores e a revisão; o resultado salvo conserva esse contexto.
+Alterações de configuração não apagam provas ou mudam o status dos links. A consulta
+marca testes de configurações anteriores. A aplicação de um teste ou rascunho confere
+atomicamente a revisão global e a revisão/configuração do endpoint.
+
+O tamanho configurado é aplicado ao transporte e à descompressão/parsing. Duração e
+requisições limitam a rede; quantidade de XMLs, profundidade, ordem e quantidade de
+amostras controlam o executor. Regras de robots, domínio/IP público e TLS são invariantes.
+
+### Modelos e validação sob demanda
+
+Cinco modelos versionados em código: automático, RSS/Atom/RDF, sitemap direto, árvore de
+sitemaps e sitemap de notícias. Configuração por endpoint, independente do estado ativo.
+Migração idempotente adiciona `model` e `last_test` ao cadastro existente, inferindo apenas
+formato/índice. Modelos novos não recebem comprovação retroativa.
+
+O botão Testar inicia um trabalho e consulta progresso por polling. Até dois trabalhos
+simultâneos, sem fila ilimitada, com limite de documentos, requisições, bytes, tempo e
+profundidade 10. Cada filho é deduplicado; referências de índice não são notícias.
+Notícias precisam pertencer à fonte configurada. A prova de texto usa a classificação e
+extração existentes, incluindo rejeição de áudio dedicado e páginas de bloqueio. A idade
+da notícia é independente da legibilidade. Um resultado vazio em XML válido não é erro.
+O resultado registra `assessment_version`, `usable_for_news`, `article_samples` e três
+`checks` (acesso, notícia, texto), com estados confirmado, não confirmado ou não testado.
+`usable_for_news` exige XML válido e compatível e pelo menos uma amostra de notícia
+textual. Acessibilidade do artigo e classificação ficam registradas por amostra; áudio
+é excluído da contagem de artigos úteis. XML sozinho, página HTML genérica, zero amostras
+ou lista vazia não conferem a confirmação de busca textual. O selo verde é exclusivo
+dessa comprovação com a revisão atual. Resultados antigos não são reescritos; a UI pede
+um novo teste quando a avaliação completa não foi registrada.
+
+Rede direta: robots antes do destino, DNS público fixado na conexão com Host/SNI originais,
+redirecionamentos validados, sem cookies/credenciais/proxies de outros serviços. Persistência
+separada de rede: nenhum lock de banco fica aberto durante downloads. Provas são aplicadas
+somente à configuração e revisão que originaram o teste; rascunhos persistem ao salvar.
+Resultados atuais e evidência histórica são apresentados separadamente.
+
+## Modelo relacional destinado a Mídias
+
+O cadastro utiliza tabelas físicas `sites`, `links` e `mechanisms` no SQLite local.
+`links.source_id → sites.id` e `links.model → mechanisms.model` são FKs obrigatórias.
+Um site tem vários links; cada link seleciona um mecanismo reutilizável.
+`link_test_results` referencia link/mecanismo e preserva parâmetros, revisão e resultado
+dos testes salvos; `links.last_test` é cache compatível com a API atual. Auditoria e
+exclusões lógicas preservam origem, versões e evidências. Parâmetros e snapshots são
+JSON em colunas; entidades e relações têm tabelas e constraints reais.
+
+`catalog/schema.py` migra transacionalmente os nomes antigos, estabelece FKs e recupera
+os testes já salvos na auditoria local. `schema_migrations` torna a operação idempotente.
+A estrutura atual é provisória: o destino definitivo é o banco de Mídias, cuja conexão
+não é utilizada aqui. Adaptador, DDL nativo, transporte, conversão de tipos e validação
+completa antes da troca são trabalho posterior obrigatório. Ver
+[modelo relacional e roteiro de migração](docs/MODELO_RELACIONAL_CATALOGO.md).
+
+## Referência histórica do mapeamento
+
+As descrições seguintes registram decisões anteriores; interfaces citadas foram removidas
+do produto atual, preservando dados, análises e APIs de compatibilidade.
+
 ## Objetivo
 
 Consolidar RSS/sitemaps utilizáveis nas futuras buscas das 1.294 fontes, associados ao

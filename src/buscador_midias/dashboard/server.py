@@ -1,4 +1,4 @@
-"""Servidor local do mapa e do painel operacional, com APIs somente leitura."""
+"""Servidor local do gerenciador e das consultas históricas do buscador."""
 
 from __future__ import annotations
 
@@ -17,7 +17,10 @@ from urllib.parse import parse_qs, urlsplit
 
 import psycopg
 
+from buscador_midias.catalog.store import CatalogStore
+from buscador_midias.catalog.testing import ReaderFactory
 from buscador_midias.dashboard.access_audit import AccessAudit
+from buscador_midias.dashboard.catalog_api import CatalogAPI
 from buscador_midias.dashboard.functional import FunctionalView
 from buscador_midias.dashboard.mapping import mapping_catalog, mapping_mechanisms, mapping_sections
 from buscador_midias.dashboard.round_view import round_links, round_summary
@@ -51,11 +54,13 @@ def make_server(
     round_directory: Path | None = None,
     selection_directory: Path | None = None,
     functional_directory: Path | None = None,
+    manager_db_path: Path | None = None,
+    test_reader_factory: ReaderFactory | None = None,
 ) -> ThreadingHTTPServer:
     """Cria o servidor do painel (sem iniciá-lo).
 
-    O estado é aberto somente leitura a cada cálculo do retrato e fechado em seguida, então o painel
-    nunca grava nem segura o banco enquanto a descoberta e o enriquecimento trabalham.
+    O estado da coleta é aberto somente leitura a cada cálculo do retrato e fechado em seguida.
+    Escritas do gerenciador usam um cadastro independente e preservam os relatórios históricos.
 
     Args:
         open_state: Abre o estado somente leitura (uma conexão por cálculo do retrato).
@@ -70,6 +75,8 @@ def make_server(
         round_directory: Configuração e progresso da rodada 12; padrão é a pasta da execução.
         selection_directory: Pacote estático dos planos e decisões da etapa 5.
         functional_directory: Retrato offline dos RSS/sitemaps funcionais por fonte.
+        manager_db_path: Cadastro editável separado, em SQLite local.
+        test_reader_factory: Leitor dos testes interativos, substituível em testes sem rede.
 
     Returns:
         O servidor, pronto para ``serve_forever``.
@@ -77,22 +84,26 @@ def make_server(
     now_fn = clock or (lambda: datetime.now(UTC))
     cache: dict[tuple[int, int], tuple[datetime, bytes]] = {}
     cache_lock = threading.Lock()
-    page = resources.files("buscador_midias.dashboard").joinpath("index.html").read_bytes()
-    map_page = resources.files("buscador_midias.dashboard").joinpath("mapping.html").read_bytes()
-    round_page = resources.files("buscador_midias.dashboard").joinpath("round.html").read_bytes()
-    selection_page = (
-        resources.files("buscador_midias.dashboard").joinpath("selection.html").read_bytes()
-    )
     selection = SelectionView(
         selection_directory
         or (Path(__file__).resolve().parents[3] / "var/analise-rodada-12/etapa-5")
     )
-    functional_page = (
-        resources.files("buscador_midias.dashboard").joinpath("functional.html").read_bytes()
-    )
     functional = FunctionalView(
         functional_directory or (Path(__file__).resolve().parents[3] / "var/consulta-funcionais")
     )
+    manager_page = (
+        resources.files("buscador_midias.dashboard").joinpath("manager.html").read_bytes()
+    )
+    manager = CatalogAPI(
+        CatalogStore(
+            manager_db_path
+            or Path(__file__).resolve().parents[3] / "var/gerenciador/catalogo.sqlite",
+            functional.directory / "retrato.json",
+            sites_path or Path(__file__).resolve().parents[3] / "data/sites.csv",
+        )
+    )
+    if test_reader_factory is not None:
+        manager.jobs.factory = test_reader_factory
     round_dir = round_directory or (
         Path(__file__).resolve().parents[3] / "var/ciclo-busca-20261019T005450Z"
     )
@@ -116,16 +127,19 @@ def make_server(
         def do_GET(self) -> None:  # noqa: N802 - nome exigido pelo http.server
             """Roteia as requisições GET."""
             parts = urlsplit(self.path)
-            if parts.path in ("/", "/mapa"):
-                self._send(200, "text/html; charset=utf-8", map_page)
-            elif parts.path == "/fluxo":
-                self._send(200, "text/html; charset=utf-8", page)
-            elif parts.path == "/rodada-12":
-                self._send(200, "text/html; charset=utf-8", round_page)
-            elif parts.path in ("/selecao", "/funcionais"):
-                self._send(200, "text/html; charset=utf-8", functional_page)
-            elif parts.path == "/classificacao":
-                self._send(200, "text/html; charset=utf-8", selection_page)
+            if parts.path in ("/", "/gerenciador", "/mecanismos"):
+                self._send(200, "text/html; charset=utf-8", manager_page)
+            elif parts.path.startswith("/api/gerenciador/"):
+                self._json(*manager.handle(self))
+            elif parts.path in (
+                "/mapa",
+                "/fluxo",
+                "/rodada-12",
+                "/selecao",
+                "/funcionais",
+                "/classificacao",
+            ):
+                self._json(410, {"error": "Tela removida. Acesse o gerenciador em /."})
             elif parts.path in (
                 "/api/funcionais",
                 "/api/funcionais/mecanismos",
@@ -621,12 +635,26 @@ def make_server(
             self.end_headers()
             self.wfile.write(body)
 
-        do_POST = do_PUT = do_DELETE = do_PATCH = _not_allowed  # noqa: N815
+        def _catalog_write(self) -> None:
+            """Escreve apenas no cadastro novo; rotas históricas permanecem somente leitura."""
+            if urlsplit(self.path).path.startswith("/api/gerenciador/"):
+                self._json(*manager.handle(self))
+            else:
+                self._not_allowed()
+
+        do_POST = do_DELETE = do_PATCH = _catalog_write  # noqa: N815
+        do_PUT = _not_allowed  # noqa: N815
 
         def log_message(self, format: str, *args: object) -> None:  # noqa: A002
             """Silencia o log por requisição (o painel consulta a cada poucos segundos)."""
 
-    return ThreadingHTTPServer((host, port), Handler)
+    class ManagerServer(ThreadingHTTPServer):
+        def server_close(self) -> None:
+            """Fecha também o executor limitado dos testes interativos."""
+            manager.jobs.close()
+            super().server_close()
+
+    return ManagerServer((host, port), Handler)
 
 
 def _bounded(query: dict[str, list[str]], name: str, default: int, maximum: int) -> int:

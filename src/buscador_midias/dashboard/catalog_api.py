@@ -1,0 +1,161 @@
+"""API local de escrita do gerenciador, isolada das consultas históricas."""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+import secrets
+import sqlite3
+from dataclasses import dataclass, field
+from http.server import BaseHTTPRequestHandler
+from socketserver import TCPServer
+from typing import Any
+from urllib.parse import parse_qs, urlsplit
+
+from buscador_midias.catalog.store import CatalogError, CatalogStore
+from buscador_midias.catalog.testing import TestJobs
+
+_LOG = logging.getLogger(__name__)
+_BASE = "/api/gerenciador"
+_SOURCE = re.compile(r"/fontes/([1-9]\d{0,12})(/mecanismos)?$")
+_LINK = re.compile(r"/mecanismos/([1-9]\d{0,12})$")
+_MODEL = re.compile(r"/modelos/([a-z_]{1,40})$")
+
+
+@dataclass
+class CatalogAPI:
+    """Roteia cadastros com JSON limitado, proteção de origem e controle de concorrência."""
+
+    store: CatalogStore
+    token: str = field(default_factory=lambda: secrets.token_urlsafe(32))
+    jobs: TestJobs = field(init=False)
+
+    def __post_init__(self) -> None:
+        """Inicia o executor limitado de testes sob demanda."""
+        self.jobs = TestJobs(self.store)
+
+    def handle(self, handler: BaseHTTPRequestHandler) -> tuple[int, dict[str, Any]]:
+        """Produz uma resposta segura para uma requisição do gerenciador."""
+        try:
+            return self._dispatch(handler)
+        except CatalogError as error:
+            return error.status, dict(error=str(error))
+        except (ValueError, UnicodeError, json.JSONDecodeError):
+            return 400, dict(error="Requisição inválida.")
+        except (sqlite3.Error, OSError):
+            _LOG.exception("Falha no cadastro local")
+            return 503, dict(error="Cadastro indisponível. Tente novamente.")
+
+    def _dispatch(self, handler: BaseHTTPRequestHandler) -> tuple[int, dict[str, Any]]:
+        parts = urlsplit(handler.path)
+        path = parts.path.removeprefix(_BASE)
+        method = handler.command
+        query = {k: v[0] for k, v in parse_qs(parts.query).items()}
+        source, link = _SOURCE.fullmatch(path), _LINK.fullmatch(path)
+        model = _MODEL.fullmatch(path)
+        if method == "GET":
+            if path == "/resumo":
+                return 200, dict(**self.store.summary(), csrf_token=self.token)
+            if path == "/modelos":
+                return 200, dict(items=self.store.models())
+            if model:
+                return 200, self.store.model_settings(model[1])
+            if re.fullmatch(r"/testes/[a-f0-9]{32}", path):
+                return 200, self.jobs.get(path.rsplit("/", 1)[1])
+            offset = int(query.get("offset", "0"))
+            limit = int(query.get("limit", "25"))
+            if not 0 <= offset <= 1_000_000 or not 1 <= limit <= 100:
+                raise CatalogError("Paginação inválida.", 400)
+            status, kind = query.get("status", "all"), query.get("kind", "all")
+            if status not in ("all", "active", "inactive") or kind not in (
+                "all",
+                "feed",
+                "sitemap",
+            ):
+                raise CatalogError("Filtro inválido.", 400)
+            if path == "/fontes":
+                return 200, self.store.sources(
+                    query.get("q", "")[:200],
+                    status,
+                    query.get("country", "")[:100],
+                    offset,
+                    limit,
+                )
+            if source:
+                ident = int(source[1])
+                if source[2]:
+                    return 200, self.store.endpoints(
+                        ident,
+                        query.get("q", "")[:200],
+                        status,
+                        kind,
+                        offset,
+                        limit,
+                    )
+                return 200, self.store.source(ident)
+            raise CatalogError("Endereço não encontrado.", 404)
+        if method not in ("POST", "PATCH", "DELETE"):
+            raise CatalogError("Método não permitido.", 405)
+        self._authorize(handler)
+        data = self._body(handler)
+        if method == "PATCH" and model:
+            return 200, self.store.save_model(model[1], data)
+        if method == "POST":
+            if path == "/testar":
+                return 202, self.jobs.start(data)
+            if path == "/fontes":
+                return 201, self.store.save("source", data)
+            if source and source[2]:
+                result = self.jobs.result(data.pop("test_id")) if "test_id" in data else None
+                return 201, self.store.save(
+                    "endpoint", data, source_id=int(source[1]), test_result=result
+                )
+        elif (source and not source[2]) or link:
+            entity = "source" if source else "endpoint"
+            ident = int(source[1] if source else link[1])  # type: ignore[index]
+            if method == "PATCH":
+                result = (
+                    self.jobs.result(data.pop("test_id"))
+                    if entity == "endpoint" and "test_id" in data
+                    else None
+                )
+                return 200, self.store.save(entity, data, ident, test_result=result)
+            self.store.delete(entity, ident, data.get("version"))
+            return 200, dict(deleted=True)
+        raise CatalogError("Endereço ou método não permitido.", 404)
+
+    def _authorize(self, handler: BaseHTTPRequestHandler) -> None:
+        """Restringe escrita ao navegador local com token e origem do próprio servidor."""
+        host = handler.headers.get("Host", "")
+        try:
+            parsed = urlsplit(f"http://{host}")
+            port = parsed.port or 80
+        except ValueError as error:
+            raise CatalogError("Origem inválida.", 403) from error
+        if (
+            parsed.hostname not in ("127.0.0.1", "localhost", "::1")
+            or not isinstance(handler.server, TCPServer)
+            or port != handler.server.server_address[1]
+        ):
+            raise CatalogError("Edições são permitidas somente no painel local.", 403)
+        origin = handler.headers.get("Origin")
+        if origin is not None and origin != f"http://{host}":
+            raise CatalogError("Origem não permitida.", 403)
+        if not secrets.compare_digest(handler.headers.get("X-Catalog-Token", ""), self.token):
+            raise CatalogError("Atualize a página antes de editar o cadastro.", 403)
+
+    @staticmethod
+    def _body(handler: BaseHTTPRequestHandler) -> dict[str, Any]:
+        if handler.headers.get_content_type() != "application/json":
+            raise CatalogError("Envie os dados como JSON.", 415)
+        if handler.headers.get("Transfer-Encoding"):
+            raise CatalogError("Formato de envio não permitido.", 400)
+        size = int(handler.headers.get("Content-Length", "0"))
+        if not 0 < size <= 32_768:
+            raise CatalogError("Tamanho de envio inválido.", 413)
+        handler.connection.settimeout(10)
+        data = json.loads(handler.rfile.read(size))
+        if not isinstance(data, dict):
+            raise CatalogError("Envie um objeto JSON.", 400)
+        return data

@@ -1,9 +1,174 @@
 # buscador-midias
 
-Inventário de RSS/sitemaps das 1.294 fontes de notícias do catálogo para futuras buscas,
-com auditoria dos mecanismos, associação às seções e lacunas explícitas.
+MVP local do gerenciador de fontes de notícias, com cadastro de sites, RSS/sitemaps,
+modelos de leitura e testes interativos. O mapeamento inicial alimenta o cadastro.
 
-## Consulta do mapa
+## MVP: gerenciador de sites
+
+Abra **http://127.0.0.1:8765/** (também em `/gerenciador`) após iniciar `scripts/bm.sh dashboard`.
+O gerenciador permite cadastrar, consultar, editar, inativar e excluir sites e seus
+RSS/Atom e sitemaps, com busca, filtros por país/status/tipo e paginação.
+O cadastro inicial importa as 1.294 fontes e os 40.445 links com XML comprovado do
+retrato funcional existente; as 258 fontes sem comprovação também ficam visíveis,
+sem inventar links. Canais de áudio identificados são importados inativos.
+
+Os dados editáveis ficam em **`var/gerenciador/catalogo.sqlite`**, com importação única,
+transações e registro anterior/posterior de cada alteração. Reiniciar o painel não
+sobrescreve edições nem recria registros excluídos. Inativar um site suspende todos os
+seus links; reativar preserva o estado individual de cada um. A exclusão é lógica:
+retira o registro e seus dependentes da consulta, preservando evidências e auditoria.
+As versões estaduais do g1 foram consolidadas explicitamente no cadastro principal:
+o RSS estadual aparece como seção (por exemplo, g1 Acre), sem duplicar o site. Links
+exclusivos são associados ao g1; cadastros de origem, testes e evidências permanecem
+preservados com auditoria. A rotina `catalog/consolidation.py` não roda automaticamente
+na inicialização. Mesmo domínio ou RSS compartilhado não autoriza juntar marcas ou
+edições em idiomas diferentes. O relatório local fica em
+`var/gerenciador/consolidacao-regionais/resultado.json`.
+
+A revisão completa do cadastro está documentada em
+`var/gerenciador/revisao-base/relatorio.md`, com inventário em `fontes.csv` e diagnóstico
+antes/depois em `resultado.json`. Além dos estados do g1, foram consolidados aliases
+confirmados e seções explicitamente revisadas. Marcas, idiomas e homônimos distintos
+permanecem separados. O domínio do Mongabay Brasil foi corrigido e cinco caminhos com
+espaços foram codificados, exigindo novo teste das URLs alteradas. Alterar o endereço
+da fonte também identifica testes anteriores como configuração antiga, sem apagá-los.
+
+Para uma nova auditoria finita e sem rede, use
+`PYTHONPATH=src .venv/bin/python scripts/review_catalog.py --output var/gerenciador/nova-revisao`.
+`--apply` executa apenas as decisões explícitas de consolidação e codificação,
+com backup SQLite, ensaio em cópia e proteção de revisões. Use uma nova pasta por revisão
+para preservar relatórios anteriores. Não há consolidação automática na inicialização.
+
+O endereço de um site e a URL de um link dentro dele não podem se repetir, inclusive
+entre excluídos. Não há restauração de excluídos pela interface neste MVP.
+
+**Ativo não significa validado.** Novos links ficam não testados. Selecione o modelo e
+use **Testar funcionamento**, no formulário ou no link já cadastrado. Alterar URL, tipo
+ou modelo remove a prova do cadastro atual, mantendo-a na trilha de alterações. Editar nome,
+seção, observações ou status conserva a prova. Evidências exibidas são históricas,
+sem filtro de publicação, e não garantem disponibilidade atual. Os testes fazem apenas HTTP direto, sob demanda, sem
+Bright Data, OpenRouter ou coleta contínua.
+
+Esta entrega é local, sem autenticação multiusuário. Escritas exigem JSON, token do
+painel e origem local válida; edições concorrentes usam revisão e retornam conflito.
+As telas antigas foram removidas, inclusive seus arquivos HTML. `/` abre somente o
+gerenciador; os endereços antigos respondem 410. Arquivos da rodada 12 e APIs históricas
+de consulta permanecem preservados por compatibilidade, sem navegação na interface. A conexão do futuro mecanismo de busca
+com o novo cadastro será uma próxima etapa; os executores existentes continuam
+usando seus planos anteriores.
+
+APIs do cadastro: `GET /api/gerenciador/resumo`, `GET/POST /api/gerenciador/fontes`,
+`GET/PATCH/DELETE /api/gerenciador/fontes/{id}`,
+`GET/POST /api/gerenciador/fontes/{id}/mecanismos` e
+`PATCH/DELETE /api/gerenciador/mecanismos/{id}`. Alterações/exclusões enviam `version`;
+escritas incluem `X-Catalog-Token` obtido no resumo. `manager_db_path` em `make_server`
+permite isolar o banco em testes. Para backup consistente enquanto o servidor estiver
+ativo, use a API `sqlite3.Connection.backup()`; copiar apenas o `.sqlite` pode ignorar o WAL.
+
+## Modelo relacional e futura base de Mídias
+
+O destino definitivo do gerenciador é **o banco de Mídias**. Por enquanto, o cadastro
+continua exclusivamente no SQLite local. A migração para Mídias será uma etapa posterior.
+
+As tabelas centrais agora são `sites`, `links` e `mechanisms`: um site possui vários
+links; cada link tem um site e um mecanismo obrigatórios por chaves estrangeiras.
+`link_test_results` guarda os testes salvos com os parâmetros e a revisão utilizados;
+`events` mantém a auditoria. Exclusões continuam lógicas e o histórico é preservado.
+Os nomes antigos das tabelas foram migrados sem mudar IDs ou o contrato da API.
+Parâmetros e instantâneos permanecem JSON em colunas das tabelas relacionadas.
+
+Veja o [modelo relacional e as etapas de migração para Mídias](docs/MODELO_RELACIONAL_CATALOGO.md).
+A troca de banco exigirá adaptador, migrações e conferência dos dados; não há conexão
+ou sincronização com Mídias nesta entrega.
+
+## Configuração dos mecanismos
+
+A tela **http://127.0.0.1:8765/mecanismos** fica no menu do gerenciador. Cada modelo
+possui parâmetros globais, número de links que o utilizam e revisão de configuração.
+É possível salvar alterações, recarregar valores persistidos e carregar os padrões
+para então salvá-los. RSS e modelos diretos não oferecem profundidade ou quantidade
+máxima de filhos, pois não expandem índices.
+
+Parâmetros comuns: duração total (5–60 s), requisições (4–48), notícias amostradas
+(0–3), posição das amostras (distribuídas/primeiras/últimas) e tamanho de resposta/XML
+(1–16 MiB). Automático e índice também permitem quantidade de documentos (1–24) e
+profundidade (0–10, raiz no nível 0). Zero amostras valida somente o XML; datas continuam
+sem restringir a legibilidade. Robots, escopo, TLS e deduplicação permanecem obrigatórios.
+
+Cada mecanismo está implementado em seu próprio módulo de
+`src/buscador_midias/catalog/mechanisms/`: `automatic.py`, `rss.py`, `sitemap.py`,
+`sitemap_index.py` e `news_sitemap.py`. `base.py` define o contrato e os campos
+configuráveis; `parsing.py` compartilha a interpretação defensiva do XML.
+`catalog/models.py` mantém a fachada de metadados. O executor, a rede e o banco
+continuam compartilhados, sem condicionais de ID para as regras de formato no executor.
+
+As configurações ficam na tabela `mechanisms` do SQLite do gerenciador,
+com atualização otimista e auditoria. Uma alteração vale para os próximos testes,
+sem modificar em massa o cadastro ou apagar provas históricas. Cada teste registra
+os parâmetros e a revisão utilizados. Resultados de revisões anteriores continuam
+visíveis, identificados como configuração anterior. Uma configuração alterada durante
+o teste impede a aplicação da prova à nova revisão, inclusive ao salvar um rascunho.
+
+`GET /api/gerenciador/modelos` retorna definições, esquema dos campos, padrões e valores
+salvos. `GET /api/gerenciador/modelos/{id}` consulta parâmetros e revisão;
+`PATCH /api/gerenciador/modelos/{id}` recebe `version` e `parameters`, com o mesmo
+token/origem de escrita do cadastro. Campos desconhecidos, tipos e valores fora dos
+intervalos são recusados. Alterações sem diferença não incrementam a revisão.
+
+## Modelos e teste de funcionamento
+
+O menu de modelo oferece:
+
+- **Automático:** detecta RSS/Atom/RDF, sitemap direto ou índice e ajusta o tipo detectado.
+- **RSS / Atom / RDF:** lê entradas e confere amostras de notícias.
+- **Sitemap direto:** exige uma lista `urlset`; aceita gzip e zip com um único XML.
+- **Índice de sitemaps:** segue filhos e índices aninhados até profundidade 10, sem ciclos.
+- **Sitemap de notícias:** exige metadados Google News; não exige publicação recente.
+
+A migração preenche os links existentes conforme tipo e evidência de índice, sem modificar
+status, URLs, versões ou provas históricas. O modelo é uma configuração inicial, não uma
+nova validação. O teste distingue XML inválido, modelo incompatível, XML sem notícias,
+notícia textual confirmada, áudio nas amostras, bloqueio e resultado inconclusivo.
+A confirmação **Funcional para busca de notícias textuais** exige, na mesma configuração,
+acesso ao RSS/sitemap, XML compatível com o modelo, acesso a uma notícia e extração de
+texto útil. A tela mostra separadamente as três verificações: acesso, notícia e texto.
+URLs listadas são candidatas; páginas de seção, áudio dedicado e HTTP 200 isolado não
+comprovam uma notícia textual. A confirmação vale para a amostra, não para todas as URLs
+ou a disponibilidade futura. XML vazio não é erro de acesso, mas deixa a busca sem
+comprovação. Zero amostras testa somente o XML. Resultados anteriores ficam preservados
+e exigem novo teste para registrar a avaliação completa.
+
+XML funcional com artigos bloqueados continua distinguido de falha no XML. Índices
+referenciam filhos, que não são contados como notícias. Datas antigas não reprovam o link.
+
+Cada teste é uma **amostra finita**. Os padrões são até 12 XMLs nos modelos com expansão,
+3 notícias, 24 GETs incluindo robots e redirecionamentos, 8 MiB por resposta/XML,
+profundidade 10 e orçamento de 45 segundos. Os parâmetros da tela de mecanismos ajustam
+esses valores dentro dos intervalos definidos acima; modelos diretos leem apenas um XML.
+Ao encontrar notícias, prioriza as amostras e informa que não leu os demais filhos.
+Robots, escopo da fonte e limites são explícitos; não há tentativas infinitas ou cobrança
+externa. O leitor valida IPs públicos e fixa o IP da conexão, preservando Host/SNI/TLS;
+revalida cada redirecionamento e recusa destinos privados ou fora dos domínios permitidos.
+
+Resultados de links cadastrados são salvos automaticamente apenas se a revisão e a
+configuração continuarem iguais. Testes de rascunho só entram no cadastro ao salvar.
+Alterações concorrentes nunca recebem a prova de outra versão. O progresso transitório
+e os testes de rascunho expiram em 15 minutos; o último resultado salvo persiste no banco.
+Há no máximo dois testes em execução e cem registros transitórios em memória.
+
+APIs adicionais: `GET /api/gerenciador/modelos`, `POST /api/gerenciador/testar` e
+`GET /api/gerenciador/testes/{id}`. O POST usa o mesmo token de escrita e recebe
+`source_id`, `url`, `kind`, `model`; para aplicar a um cadastro, inclui `endpoint_id`
+e `version`. Retorna 202 com o ID para consultar progresso. Ao salvar um rascunho,
+`test_id` referencia um resultado calculado pelo servidor, com configuração idêntica.
+O navegador não pode enviar uma prova funcional arbitrária.
+
+## Referência histórica do mapeamento
+
+As seções abaixo documentam as rodadas anteriores. As telas citadas nelas foram removidas
+do MVP; os comandos de análise, as APIs de consulta e os arquivos históricos permanecem.
+
+### Consulta do mapa (tela removida)
 
 A consulta de **RSS e sitemaps funcionais por fonte** está em
 **`http://127.0.0.1:8765/funcionais`** (também em `/selecao`). Exibe todas as

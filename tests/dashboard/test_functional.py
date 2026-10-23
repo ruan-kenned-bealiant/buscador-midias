@@ -115,7 +115,7 @@ def get(url):
 def test_consulta_xml_funcional_independe_de_acesso_ao_artigo(functional_server):
     base, _ = functional_server
     for path in ("/funcionais", "/selecao", "/classificacao"):
-        assert get(base + path)[0] == 200
+        assert get(base + path)[0] == 410
     code, body = get(base + "/api/funcionais")
     assert code == 200 and json.loads(body)["sources"][0]["functional"] == 2
     _, body = get(base + "/api/funcionais/mecanismos?site=example.com&tipo=feed")

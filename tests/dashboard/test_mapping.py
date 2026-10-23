@@ -104,8 +104,8 @@ def test_fonte_sem_secoes_e_fonte_desconhecida_sao_distintas(map_base):
 
 def test_tela_mapa_e_painel_anterior_permanecem_acessiveis(map_base):
     assert "Mapa de fontes" in get(map_base + "/")[2].decode()
-    assert "Mapa de fontes" in get(map_base + "/mapa")[2].decode()
-    assert "painel do fluxo" in get(map_base + "/fluxo")[2].decode()
+    assert get(map_base + "/mapa")[0] == 410
+    assert get(map_base + "/fluxo")[0] == 410
     store = StateStore(read_only=True)
     assert len(store.mapping_pages("a.com")) == 6
     assert store.list_runs() == []
