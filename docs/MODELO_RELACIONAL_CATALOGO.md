@@ -98,3 +98,12 @@ A etapa deverá:
    para impedir duas bases divergentes recebendo alterações.
 
 Não existe sincronização, escrita dupla ou migração remota nesta entrega.
+
+
+## Qualificação operacional anterior à migração
+
+A validação integral acrescenta `catalog_validation_runs`, `catalog_validation_links`,
+`catalog_validation_attempts` e `link_cadence`, com vínculos para os links e mecanismos.
+A rodada e suas decisões também precisam ser preservadas na futura migração para
+Mídias. O resultado comprimido das tentativas exige conversão explícita de zlib para
+JSON caso o destino utilize JSON nativo. Ver [critérios e retomada da validação](VALIDACAO_COMPLETA_CATALOGO.md).

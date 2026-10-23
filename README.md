@@ -81,6 +81,19 @@ Veja o [modelo relacional e as etapas de migração para Mídias](docs/MODELO_RE
 A troca de banco exigirá adaptador, migrações e conferência dos dados; não há conexão
 ou sincronização com Mídias nesta entrega.
 
+## Validação completa da base antes da migração
+
+A rodada autorizada testa todos os links não excluídos, inclusive inativos, em uma fila
+persistente com até três tentativas. Mantém somente caminhos comprovados de XML até
+notícia textual e atribui o mecanismo que passar. A janela atual dos modelos é de
+365 dias; publicações conhecidas fora dela não servem como prova. Datas desconhecidas
+ficam sinalizadas. O painel mostra o progresso em tempo real em um bloco no topo.
+
+Exclusões lógicas e inativação dos sites sem links são aplicadas após concluir a fila,
+com preservação de histórico, backup e proteção de edições concorrentes. A periodicidade
+estimada fica em `link_cadence` e nos resultados dos testes, sem gerar agendamento.
+Veja [critérios, tabelas, limites e retomada](docs/VALIDACAO_COMPLETA_CATALOGO.md).
+
 ## Configuração dos mecanismos
 
 A tela **http://127.0.0.1:8765/mecanismos** fica no menu do gerenciador. Cada modelo
@@ -93,7 +106,7 @@ Parâmetros comuns: duração total (5–60 s), requisições (4–48), notícia
 (0–3), posição das amostras (distribuídas/primeiras/últimas) e tamanho de resposta/XML
 (1–16 MiB). Automático e índice também permitem quantidade de documentos (1–24) e
 profundidade (0–10, raiz no nível 0). Zero amostras valida somente o XML; datas continuam
-sem restringir a legibilidade. Robots, escopo, TLS e deduplicação permanecem obrigatórios.
+sem restringir a legibilidade quando a janela está em 0. A rodada atual usa 365 dias. Robots, escopo, TLS e deduplicação permanecem obrigatórios.
 
 Cada mecanismo está implementado em seu próprio módulo de
 `src/buscador_midias/catalog/mechanisms/`: `automatic.py`, `rss.py`, `sitemap.py`,
@@ -123,7 +136,7 @@ O menu de modelo oferece:
 - **RSS / Atom / RDF:** lê entradas e confere amostras de notícias.
 - **Sitemap direto:** exige uma lista `urlset`; aceita gzip e zip com um único XML.
 - **Índice de sitemaps:** segue filhos e índices aninhados até profundidade 10, sem ciclos.
-- **Sitemap de notícias:** exige metadados Google News; não exige publicação recente.
+- **Sitemap de notícias:** exige metadados Google News; usa a janela temporal configurada.
 
 A migração preenche os links existentes conforme tipo e evidência de índice, sem modificar
 status, URLs, versões ou provas históricas. O modelo é uma configuração inicial, não uma
@@ -139,7 +152,7 @@ comprovação. Zero amostras testa somente o XML. Resultados anteriores ficam pr
 e exigem novo teste para registrar a avaliação completa.
 
 XML funcional com artigos bloqueados continua distinguido de falha no XML. Índices
-referenciam filhos, que não são contados como notícias. Datas antigas não reprovam o link.
+referenciam filhos, que não são contados como notícias. Com janela 0, datas antigas não reprovam o link; na rodada anual, publicações conhecidas fora dos 365 dias não servem como prova.
 
 Cada teste é uma **amostra finita**. Os padrões são até 12 XMLs nos modelos com expansão,
 3 notícias, 24 GETs incluindo robots e redirecionamentos, 8 MiB por resposta/XML,

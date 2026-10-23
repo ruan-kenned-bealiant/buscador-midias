@@ -12,7 +12,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from contextlib import suppress
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import quote, urljoin, urlsplit
 
 from buscador_midias.catalog.compression import MAX_BYTES as MAX_BYTES
 from buscador_midias.catalog.compression import unpack_gzip as unpack_gzip
@@ -20,7 +20,7 @@ from buscador_midias.catalog.store import CatalogError, clean_url
 from buscador_midias.discovery.robots import RobotsPolicy
 from buscador_midias.net.fetcher import USER_AGENT, FetchResult
 
-_DNS = ThreadPoolExecutor(max_workers=2, thread_name_prefix="catalog-dns")
+_DNS = ThreadPoolExecutor(max_workers=32, thread_name_prefix="catalog-dns")
 
 
 class TestLimitError(Exception):
@@ -75,12 +75,14 @@ class TestReader:
         seconds: float = 45,
         requests: int = 24,
         max_bytes: int = MAX_BYTES,
+        before_request: Callable[[str], None] | None = None,
     ) -> None:
         """Define escopo explícito e orçamento por teste."""
         self.deadline = time.monotonic() + seconds
         self.max_requests = requests
         self.max_bytes = max_bytes
         self.requests = 0
+        self.before_request = before_request
         self.progress = progress
         self.hosts = [(urlsplit(u).hostname or "").removeprefix("www.") for u in roots]
         self.policies: dict[str, RobotsPolicy | None] = {}
@@ -145,6 +147,8 @@ class TestReader:
             delay = max(0.0, self.last.get(host, 0) + 0.3 - time.monotonic())
             if delay:
                 time.sleep(min(delay, remaining))
+            if self.before_request is not None:
+                self.before_request(host)
             ip = public_ip(host, min(3, self._check()))
             connection = _PinnedConnection(
                 host,
@@ -168,7 +172,10 @@ class TestReader:
             try:
                 connection.request(
                     "GET",
-                    parts.path + ("?" + parts.query if parts.query else ""),
+                    quote(parts.path or "/", safe="/%:@!$&'()*+,;=-._~")
+                    + (
+                        "?" + quote(parts.query, safe="/%?:@!$&'()*+,;=-._~") if parts.query else ""
+                    ),
                     headers={"User-Agent": USER_AGENT, "Accept-Encoding": "identity"},
                 )
                 response = connection.getresponse()

@@ -42,6 +42,14 @@ class Parameter:
 
 COMMON_PARAMETERS = (
     Parameter(
+        "lookback_days",
+        "Janela de notícias (dias)",
+        0,
+        "0 aceita qualquer data; 365 busca até um ano atrás. Datas desconhecidas são sinalizadas.",
+        0,
+        3650,
+    ),
+    Parameter(
         "timeout_seconds",
         "Duração máxima do teste (segundos)",
         45,
@@ -61,7 +69,7 @@ COMMON_PARAMETERS = (
         "article_samples",
         "Notícias para testar",
         3,
-        "Use 0 para verificar apenas o XML; a data da notícia não é um filtro.",
+        "Use 0 para verificar apenas o XML; as amostras respeitam a janela configurada.",
         0,
         3,
     ),

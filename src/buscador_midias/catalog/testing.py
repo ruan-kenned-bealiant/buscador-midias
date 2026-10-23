@@ -10,10 +10,11 @@ import uuid
 from collections import OrderedDict, deque
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 from urllib.parse import urljoin
 
+from buscador_midias.catalog.cadence import estimate_cadence
 from buscador_midias.catalog.mechanisms import get_mechanism
 from buscador_midias.catalog.reader import TestLimitError, TestReader
 from buscador_midias.catalog.store import CatalogError, CatalogStore, clean_url
@@ -46,9 +47,19 @@ def run_test(
 ) -> dict[str, Any]:
     """Executa a amostra configurada; HTTP 200 isolado nunca confirma texto."""
     started = time.monotonic()
-    now = datetime.now(UTC)
+    now = (
+        datetime.fromisoformat(config["window_until"])
+        if config.get("window_until")
+        else datetime.now(UTC)
+    )
     mechanism = get_mechanism(config["model"], config["kind"])
     parameters = mechanism.validate(config.get("parameters", {}))
+    since = (
+        now - timedelta(days=parameters["lookback_days"])
+        if parameters["lookback_days"]
+        else datetime.min.replace(tzinfo=UTC)
+    )
+    dates: dict[str, datetime] = {}
     site = Site.create(
         name=source["name"],
         url=source["url"],
@@ -71,6 +82,8 @@ def run_test(
         )
     )
     result: dict[str, Any] = dict(
+        window_since=since.isoformat(),
+        window_until=now.isoformat(),
         test_id=config["test_id"],
         source_id=source["id"],
         source_url=source["url"],
@@ -93,14 +106,25 @@ def run_test(
         outcome="inconclusive",
         warnings=[],
         complete=True,
-        observed_at=now.isoformat(),
+        observed_at=datetime.now(UTC).isoformat(),
     )
     queue = deque([(config["url"], 0)])
     scheduled = {config["url"]}
     candidates: dict[str, None] = {}
     root_loaded = False
+    candidate_documents = 0
     try:
         while queue:
+            if candidates and (
+                result["xml_documents"] >= parameters.get("max_documents", 1)
+                or time.monotonic() - started >= parameters["timeout_seconds"] * 0.5
+                or reader.requests >= parameters["max_requests"] - 8
+            ):
+                result["complete"] = False
+                result["warnings"].append(
+                    "Amostra XML limitada para reservar orçamento às notícias."
+                )
+                break
             if result["xml_documents"] >= parameters.get("max_documents", 1):
                 raise TestLimitError(
                     f"Amostra limitada a {parameters.get('max_documents', 1)} documentos XML; "
@@ -155,7 +179,11 @@ def run_test(
                 result["warnings"].append("Um filho tem formato diferente do documento inicial.")
                 result["complete"] = False
                 continue
-            for candidate in document["entries"]:
+            entries = document["entries"]
+            if parameters["lookback_days"]:
+                entries = sorted(entries, key=lambda u: document["hints"].get(u, ""), reverse=True)
+            before_candidates = len(candidates)
+            for candidate in entries:
                 try:
                     candidate = clean_url(urljoin(response.final_url or url, candidate))
                     if not site.owns(candidate):
@@ -163,6 +191,13 @@ def run_test(
                             "URLs fora da fonte configurada não foram amostradas."
                         )
                         continue
+                    stamp = document["dates"].get(candidate)
+                    if stamp:
+                        published = datetime.fromisoformat(stamp)
+                        if not since <= published <= now:
+                            continue
+                        if len(dates) < 5000:
+                            dates[candidate] = published
                     if len(candidates) < 5000:
                         candidates[candidate] = None
                     else:
@@ -170,8 +205,15 @@ def run_test(
                         result["warnings"].append("Retidas até 5.000 URLs candidatas na amostra.")
                 except CatalogError:
                     continue
+            if len(candidates) > before_candidates:
+                candidate_documents += 1
             if mechanism.expand:
-                for child in mechanism.children(document):
+                children = mechanism.children(document)
+                if parameters["lookback_days"]:
+                    children = sorted(
+                        children, key=lambda u: document["child_dates"].get(u, ""), reverse=True
+                    )
+                for child in children:
                     try:
                         child = clean_url(urljoin(response.final_url or url, child))
                     except CatalogError:
@@ -189,7 +231,9 @@ def run_test(
                     scheduled.add(child)
                     queue.append((child, depth + 1))
             # Um teste interativo comprova um caminho; não varre um arquivo histórico inteiro.
-            if candidates:
+            if candidates and (
+                not queue or not parameters["lookback_days"] or candidate_documents >= 3
+            ):
                 if queue:
                     result["complete"] = False
                     result["warnings"].append(
@@ -244,12 +288,22 @@ def run_test(
                     response.final_url,
                     response.content,
                 ),
-                since=datetime.min.replace(tzinfo=UTC),
+                since=since,
                 until=now,
                 now=now,
             )
+            if audit["publicado_em"]:
+                published = datetime.fromisoformat(audit["publicado_em"])
+                if since <= published <= now:
+                    dates[url] = published
+                else:
+                    dates.pop(url, None)
+            eligible = not parameters["lookback_days"] or audit["publicacao_na_janela"] != "nao"
             result["samples"].append(
                 dict(
+                    eligible=eligible,
+                    published_at=audit["publicado_em"],
+                    publication_window=audit["publicacao_na_janela"],
                     url=url,
                     final_url=response.final_url,
                     status=response.status,
@@ -268,7 +322,9 @@ def run_test(
         result["warnings"].append(str(error))
         result["complete"] = False
     result["news_urls"] = len(candidates)
-    result["text_samples"] = sum(bool(s.get("text")) for s in result["samples"])
+    result["text_samples"] = sum(
+        bool(s.get("text") and s.get("eligible", True)) for s in result["samples"]
+    )
     if result["xml_valid"] and result["compatible"]:
         result["outcome"] = (
             "text_confirmed"
@@ -279,6 +335,7 @@ def run_test(
             if candidates or not result["complete"] or result["root_entries"]
             else "empty"
         )
+    result["cadence"] = estimate_cadence(dates)
     result.update(assess_news_search(result))
     result["requests"] = reader.requests
     result["elapsed_seconds"] = round(time.monotonic() - started, 2)

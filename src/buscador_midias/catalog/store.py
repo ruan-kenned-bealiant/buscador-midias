@@ -343,7 +343,7 @@ class CatalogStore:
                 0
             ]
             rows = db.execute(
-                "SELECT s.*,COALESCE(e.total,0) links,COALESCE(e.rss,0) rss,"
+                "SELECT s.*,COALESCE(e.total,0) endpoints,COALESCE(e.rss,0) rss,"
                 "COALESCE(e.sitemaps,0) sitemaps,COALESCE(e.enabled,0)*s.active enabled "
                 "FROM sites s LEFT JOIN (SELECT source_id,COUNT(*) total,"
                 "SUM(kind='feed') rss,SUM(kind='sitemap') sitemaps,SUM(active) enabled "
@@ -525,7 +525,10 @@ class CatalogStore:
             observed_at=result["observed_at"],
             texts=result["text_samples"],
             round_news=None,
-            example=next((s["url"] for s in result["samples"] if s.get("text")), ""),
+            example=next(
+                (s["url"] for s in result["samples"] if s.get("text") and s.get("eligible", True)),
+                "",
+            ),
             audio=result["outcome"] == "audio_only",
             test_id=result["test_id"],
         )
@@ -553,7 +556,9 @@ class CatalogStore:
             return [
                 dict(
                     **definition,
-                    parameters=json.loads(records[definition["id"]]["parameters"]),
+                    parameters=get_mechanism(definition["id"]).validate(
+                        json.loads(records[definition["id"]]["parameters"])
+                    ),
                     version=records[definition["id"]]["version"],
                     updated_at=records[definition["id"]]["updated_at"],
                     endpoints=counts.get(definition["id"], 0),

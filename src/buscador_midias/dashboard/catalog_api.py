@@ -13,6 +13,7 @@ from socketserver import TCPServer
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+from buscador_midias.catalog.batch import status as validation_status
 from buscador_midias.catalog.store import CatalogError, CatalogStore
 from buscador_midias.catalog.testing import TestJobs
 
@@ -57,6 +58,8 @@ class CatalogAPI:
         if method == "GET":
             if path == "/resumo":
                 return 200, dict(**self.store.summary(), csrf_token=self.token)
+            if path == "/validacao":
+                return 200, validation_status(self.store)
             if path == "/modelos":
                 return 200, dict(items=self.store.models())
             if model:

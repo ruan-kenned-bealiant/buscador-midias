@@ -86,6 +86,17 @@ não é utilizada aqui. Adaptador, DDL nativo, transporte, conversão de tipos e
 completa antes da troca são trabalho posterior obrigatório. Ver
 [modelo relacional e roteiro de migração](docs/MODELO_RELACIONAL_CATALOGO.md).
 
+## Validação completa anterior à migração
+
+A qualificação operacional dos links é uma rodada finita, com fila e tentativas
+persistentes ligadas ao cadastro. Janela móvel de 365 dias por tentativa, três
+mecanismos/tentativas no máximo, prova real de XML → notícia → texto e estimativa
+conservadora de periodicidade. Aplicação ao final com revisão otimista, exclusão
+lógica, inativação dos sites vazios e preservação integral das evidências anteriores.
+As tabelas de rodada/tentativa e `link_cadence` também integram o modelo destinado
+futuramente a Mídias. Não há coleta contínua ou agenda automática. Ver
+[critérios, limites e retomada](docs/VALIDACAO_COMPLETA_CATALOGO.md).
+
 ## Referência histórica do mapeamento
 
 As descrições seguintes registram decisões anteriores; interfaces citadas foram removidas
