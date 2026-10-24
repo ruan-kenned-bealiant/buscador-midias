@@ -2,7 +2,7 @@
 
 O teste do gerenciador e as rotinas de Saúde das fontes usam o mesmo motor.
 Quando habilitado, o transporte tenta **HTTP direto primeiro** e recorre ao Web
-Unlocker para bloqueios HTTP 403/429, desafios antibot reconhecidos e determinadas
+Unlocker para bloqueios HTTP 403/429, falhas de proxy HTTP 407, desafios antibot reconhecidos e determinadas
 falhas de rede. Não usa o serviço para 401 de autenticação, 404, XML vazio, áudio
 ou ausência de texto. A recuperação de robots.txt também pode usar fallback;
 uma política obtida que proíba o caminho continua sendo respeitada.
@@ -76,3 +76,7 @@ links do site reconhecem essa alteração feita pela própria rodada; qualquer e
 externa de site, link ou mecanismo invalida o teste pendente. Os eventos originais,
 as exclusões e os resultados históricos permanecem no banco. O selo **Ativado**
 e o filtro de ativados também identificam estes links restaurados.
+
+A detecção de desafios HTTP 200 também reconhece a página `Client Challenge`
+e os recursos `/_fs-ch-`. Uma resposta assim não comprova texto: quando habilitado,
+o leitor tenta o fallback e mantém a exigência de notícia textual.

@@ -2004,3 +2004,15 @@ Todo o estado (URLs vistas, rodadas, análises, evidências, gravações) vive n
   (1294 únicas, 5 duplicatas).
 - 63 fontes são **seções** de um domínio (ex.: `g1.globo.com/globonews`): só URLs sob o prefixo
   pertencem a elas (`Site.owns`).
+
+## Rodada dirigida dos veículos prioritários
+
+A rodada fechada de 60 veículos foi concluída em 24/10/2026.
+Relatório por fonte: `var/gerenciador/mapeamento-prioritario/RELATORIO.md`.
+Os arquivos `fontes.csv`, `links-confirmados.csv` e `resultado.json` registram
+resultados, endereços aplicados e decisões. As provas completas e pistas de
+pesquisa foram preservadas nas subpastas da rodada.
+
+Foram 96 links novos e cinco restaurados, em 24 fontes; BBC News Brasil,
+BBC News e A Crítica foram reativadas após prova textual. Arquivos datados,
+webstories e duplicações identificadas na rodada ficaram fora das novas inclusões.

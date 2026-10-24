@@ -29,7 +29,7 @@ def should_fallback(result: FetchResult) -> bool:
         for word in ("robots_", "não pública", "nao publica", "fora dos domínios", "url pública")
     ):
         return False
-    if result.status in (403, 429):
+    if result.status in (403, 407, 429):
         return True
     if result.status == 401:
         return False  # Autenticação real não pode ser suprida por um proxy.
@@ -38,6 +38,8 @@ def should_fallback(result: FetchResult) -> bool:
         marker in body
         for marker in (
             b"cf-chl-",
+            b"<title>client challenge</title>",
+            b"/_fs-ch-",
             b"challenge-platform",
             b"verify you are human",
             b"checking your browser",
