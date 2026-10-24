@@ -12,6 +12,17 @@ powerDD. O SQLite anterior foi preservado como retrato do corte. O painel não
 faz escrita dupla nem volta automaticamente ao SQLite em caso de falha.
 Veja [tabelas, migração e configuração](docs/MIGRACAO_POSTGRES_GERENCIADOR.md).
 
+## Saúde das fontes
+
+Abra **http://127.0.0.1:8765/saude**. Duas rotinas verificam os links ativos e
+retestam inativos com falhas de acesso, rede ou permissão. A tela permite configurar
+frequência, paralelismo e tentativas, executar/cancelar rodadas e consultar histórico
+por link. O padrão é 24 horas, 8 sites em paralelo e até 2 tentativas por link.
+O agendador funciona no serviço do gerenciador; as primeiras rodadas ficam para
+24 horas após a instalação. Não altera intervalos de busca. O fallback Bright Data e a ativação auditada de
+recuperados são configuráveis. Ver [integração Bright Data](docs/BRIGHT_DATA_TESTES.md).
+Ver [funcionamento e tabelas](docs/SAUDE_DAS_FONTES.md).
+
 ## Intervalo de busca por link
 
 Cada link possui `links.search_interval_seconds`, inteiro positivo em segundos,

@@ -42,6 +42,9 @@ O código dos mecanismos permanece em arquivos Python; a tabela guarda a escolha
 e os parâmetros, sem código executável. A migração posterior da aplicação para o
 powerDD deve preservar o mesmo contrato e o controle otimista por `version`.
 
+As rotinas periódicas acrescentam cinco tabelas definidas em `catalog/health_schema.py`;
+ver [Saúde das fontes](SAUDE_DAS_FONTES.md). Elas também devem ser transportadas ao powerDD.
+
 ## Comandos e corte
 
 ```bash

@@ -547,6 +547,8 @@ class CatalogStore:
                 "",
             ),
             audio=result["outcome"] == "audio_only",
+            access_method=result.get("access_method","direct"),
+            bright_data_requests=result.get("bright_data_requests",0),
             test_id=result["test_id"],
         )
 

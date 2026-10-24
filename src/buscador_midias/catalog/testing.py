@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 from urllib.parse import urljoin
 
+from buscador_midias.catalog.bright_reader import BrightTestReader, bright_data_available
 from buscador_midias.catalog.cadence import estimate_cadence
 from buscador_midias.catalog.mechanisms import get_mechanism
 from buscador_midias.catalog.reader import TestLimitError, TestReader
@@ -73,12 +74,17 @@ def run_test(
     reader = (
         factory(roots, progress)
         if factory is not None
-        else TestReader(
+        else (BrightTestReader if config.get("bright_data") else TestReader)(
             roots,
             progress,
             seconds=parameters["timeout_seconds"],
             requests=parameters["max_requests"],
             max_bytes=parameters["max_response_mib"] * 1024 * 1024,
+            **(
+                {"max_bright_requests": config.get("max_bright_requests", 8)}
+                if config.get("bright_data")
+                else {}
+            ),
         )
     )
     result: dict[str, Any] = dict(
@@ -136,6 +142,8 @@ def run_test(
             result["xml_documents"] += 1
             if not root_loaded:
                 result["endpoint_accessible"] = response.ok
+                result["endpoint_status"] = response.status
+                result["endpoint_error"] = response.error
             if not response.ok:
                 message = response.error or f"HTTP {response.status}"
                 result["warnings"].append(message)
@@ -338,6 +346,12 @@ def run_test(
     result["cadence"] = estimate_cadence(dates)
     result.update(assess_news_search(result))
     result["requests"] = reader.requests
+    result["bright_data_enabled"] = bool(config.get("bright_data"))
+    result["bright_data_requests"] = getattr(reader, "bright_requests", 0)
+    result["bright_data_events"] = getattr(reader, "bright_events", [])
+    result["bright_data_provider_error"] = getattr(reader, "bright_provider_error", False)
+    result["bright_data_limit_reached"] = getattr(reader, "bright_limit_reached", False)
+    result["access_method"] = "bright_data" if result["bright_data_requests"] else "direct"
     result["elapsed_seconds"] = round(time.monotonic() - started, 2)
     result["warnings"] = list(dict.fromkeys(result["warnings"]))[:15]
     return result
@@ -411,7 +425,15 @@ class TestJobs:
 
     def start(self, data: dict[str, Any]) -> dict[str, Any]:
         """Valida o rascunho ou revisão cadastrada e inicia trabalho limitado."""
-        if data.keys() - {"source_id", "url", "kind", "model", "endpoint_id", "version"}:
+        if data.keys() - {
+            "source_id",
+            "url",
+            "kind",
+            "model",
+            "endpoint_id",
+            "version",
+            "bright_data",
+        }:
             raise CatalogError("Campos de teste desconhecidos.")
         source_id = data.get("source_id")
         if type(source_id) is not int:
@@ -423,12 +445,21 @@ class TestJobs:
         model = data.get("model", "auto")
         get_mechanism(model, kind)
         settings = self.store.model_settings(model)
+        bright = data.get("bright_data", bright_data_available())
+        if type(bright) is not bool:
+            raise CatalogError("A opção Bright Data deve ser verdadeira ou falsa.")
+        if bright and not bright_data_available():
+            raise CatalogError("Credenciais Bright Data não configuradas no servidor.")
+        test_parameters = dict(settings["parameters"], lookback_days=0)
+        if bright:
+            test_parameters["timeout_seconds"] = 60
         config = dict(
             url=clean_url(data.get("url")),
             kind=kind,
             model=model,
             test_id=uuid.uuid4().hex,
-            parameters=settings["parameters"],
+            parameters=test_parameters,
+            bright_data=bright,
             model_version=settings["version"],
         )
         if data.get("endpoint_id") is not None:

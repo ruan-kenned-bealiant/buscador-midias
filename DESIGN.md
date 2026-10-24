@@ -69,6 +69,17 @@ separada de rede: nenhum lock de banco fica aberto durante downloads. Provas sã
 somente à configuração e revisão que originaram o teste; rascunhos persistem ao salvar.
 Resultados atuais e evidência histórica são apresentados separadamente.
 
+## Saúde das fontes
+
+A rota `/saude` apresenta duas rotinas configuráveis: verificação de links ativos e
+recuperação de inativos com falhas de acesso. Um worker do serviço do painel agenda
+filas finitas no PostgreSQL e reutiliza `run_test`, com idade da notícia desconsiderada.
+Locks de liderança, snapshots de revisões, tentativas limitadas e fila persistente
+permitem retomada e impedem duplicação/edições concorrentes. As rotinas não alteram
+estados manuais, parâmetros globais ou intervalos de busca. Histórico próprio em
+`health_settings`, `health_runs`, `health_results`, `health_attempts` e `link_health`.
+Detalhes em [Saúde das fontes](docs/SAUDE_DAS_FONTES.md).
+
 ## Modelo relacional destinado a Mídias
 
 O cadastro utiliza tabelas físicas `sites`, `links` e `mechanisms` no esquema

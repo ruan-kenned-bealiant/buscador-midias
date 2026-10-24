@@ -26,6 +26,7 @@ class FetchResult:
         error: Descrição da falha de transporte ou de limite, se houve.
         final_url: URL final depois dos redirecionamentos (``None`` se não se aplica).
         content_type: Cabeçalho ``Content-Type`` da resposta, se houve.
+        redirect_url: Cabeçalho Location quando o transporte retorna um redirecionamento.
     """
 
     url: str
@@ -34,6 +35,7 @@ class FetchResult:
     error: str | None
     final_url: str | None = None
     content_type: str | None = None
+    redirect_url: str | None = None
 
     @property
     def ok(self) -> bool:

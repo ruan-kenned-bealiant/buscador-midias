@@ -35,7 +35,7 @@ DEFAULT_CACHE_SECONDS = 4.0
 _MAX_HOURS = 168
 _MAX_RECENT = 200
 _CSP = (
-    "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
+    "default-src 'none'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
     "connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'"
 )
 _LOG = logging.getLogger(__name__)
@@ -94,6 +94,7 @@ def make_server(
     manager_page = (
         resources.files("buscador_midias.dashboard").joinpath("manager.html").read_bytes()
     )
+    health_script = resources.files("buscador_midias.dashboard").joinpath("health.js").read_bytes()
     manager = CatalogAPI(
         open_catalog(
             manager_db_path
@@ -105,6 +106,8 @@ def make_server(
     )
     if test_reader_factory is not None:
         manager.jobs.factory = test_reader_factory
+        if manager.health_worker:
+            manager.health_worker.factory = test_reader_factory
     round_dir = round_directory or (
         Path(__file__).resolve().parents[3] / "var/ciclo-busca-20261019T005450Z"
     )
@@ -128,8 +131,10 @@ def make_server(
         def do_GET(self) -> None:  # noqa: N802 - nome exigido pelo http.server
             """Roteia as requisições GET."""
             parts = urlsplit(self.path)
-            if parts.path in ("/", "/gerenciador", "/mecanismos"):
+            if parts.path in ("/", "/gerenciador", "/mecanismos", "/saude"):
                 self._send(200, "text/html; charset=utf-8", manager_page)
+            elif parts.path == "/assets/health.js":
+                self._send(200, "application/javascript; charset=utf-8", health_script)
             elif parts.path.startswith("/api/gerenciador/"):
                 self._json(*manager.handle(self))
             elif parts.path in (
@@ -652,10 +657,15 @@ def make_server(
     class ManagerServer(ThreadingHTTPServer):
         def server_close(self) -> None:
             """Fecha também o executor limitado dos testes interativos."""
+            if manager.health_worker:
+                manager.health_worker.close()
             manager.jobs.close()
             super().server_close()
 
-    return ManagerServer((host, port), Handler)
+    server = ManagerServer((host, port), Handler)
+    if manager.health_worker:
+        manager.health_worker.start()
+    return server
 
 
 def _bounded(query: dict[str, list[str]], name: str, default: int, maximum: int) -> int:

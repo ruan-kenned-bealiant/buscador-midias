@@ -720,3 +720,39 @@ def test_source_address_change_preserves_but_invalidates_previous_test(catalog):
     assert not endpoint["test_config_current"]
     assert endpoint["last_test"]["usable_for_news"]  # Resultado histórico continua intacto.
     assert not catalog.endpoints(source["id"])["items"][0]["test_config_current"]
+
+
+def test_individual_functional_test_ignores_age_without_changing_search_settings(catalog):
+    import time
+
+    model = catalog.model_settings("rss")
+    catalog.save_model("rss", dict(version=model["version"], parameters={"lookback_days": 365}))
+    source = catalog.sources()["items"][0]
+    jobs = TestJobs(
+        catalog,
+        lambda roots, progress: FakeReader(
+            {ROOT + "old-feed": feed(), ARTICLE: article()}, progress
+        ),
+    )
+    try:
+        job = jobs.start(
+            dict(
+                source_id=source["id"],
+                url=ROOT + "old-feed",
+                kind="feed",
+                model="rss",
+                bright_data=False,
+            )
+        )
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            status = jobs.get(job["id"])
+            if status["state"] != "running":
+                break
+            time.sleep(0.01)
+        assert status["state"] == "completed"
+        assert status["result"]["usable_for_news"]
+        assert status["result"]["parameters"]["lookback_days"] == 0
+        assert catalog.model_settings("rss")["parameters"]["lookback_days"] == 365
+    finally:
+        jobs.close()
