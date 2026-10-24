@@ -19,6 +19,17 @@ def dispatch(
     if handler.command == "GET":
         if path == "/busca/historico":
             return 200, repository.jsonable(repository.archive_history())
+        if path == "/busca/fontes":
+            from buscador_midias.ingestion.progress import source_progress
+
+            return 200, repository.jsonable(
+                source_progress(
+                    repository,
+                    query.get("run_id", ""),
+                    int(query.get("offset", "0")),
+                    query.get("search", ""),
+                )
+            )
         if path == "/busca":
             return 200, repository.jsonable(
                 repository.overview(
@@ -26,6 +37,7 @@ def dispatch(
                     stage=query.get("stage", ""),
                     state=query.get("state", ""),
                     run_id=query.get("run_id", ""),
+                    source_id=int(query.get("source_id", "0")),
                 )
             )
         match = re.fullmatch(r"/busca/noticias/([a-f0-9]{64})", path)

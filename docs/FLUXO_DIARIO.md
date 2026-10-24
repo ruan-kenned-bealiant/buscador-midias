@@ -109,3 +109,29 @@ repostos: a próxima rodada cobre o dia desde 00h.
 
 O calendário está salvo, com novos agendamentos ainda pausados (`enabled=false`).
 A execução manual continua disponível sem consumir os horários automáticos.
+
+## Duas visões das rodadas
+
+No buscador há duas abas: **Por etapa** e **Por site**. A seleção de rodada é
+compartilhada. Na visão por site, a ausência de seleção usa a rodada mais recente.
+Há busca pelo nome do site, paginação e atualização automática a cada cinco
+segundos enquanto a página está visível.
+
+Cada site mostra links lidos, URLs únicas, resultados e uma barra de progresso.
+Durante a descoberta, a barra é indeterminada porque o total ainda pode crescer.
+Depois, contabiliza uma unidade por link descoberto e cinco por URL única:
+verificação no corpus, texto, contexto, evidência e gravação. Resultados terminais
+como notícia já conhecida, fora da janela ou falha resolvem as unidades restantes,
+sem afirmar que as etapas dispensadas foram executadas. A barra é progresso de
+processamento, não percentual de cobertura do site nem estimativa de tempo.
+
+Uma fonte chega a 100% quando não tem trabalho aberto na rodada. **Concluída com
+pendências** aparece em destaque quando houve falhas; 100% não significa ausência
+de falhas. Reabrir uma tarefa pode reduzir o progresso. A mesma URL encontrada
+em vários links do mesmo site é contada uma vez; tarefas compartilhadas entre
+fontes são visíveis nas origens correspondentes.
+
+**Detalhar etapas** exibe aguardando, processando, retentativa, concluídas, falhas
+e ignoradas. **Ver tarefas** abre a lista filtrada por rodada, site e etapa,
+permitindo consultar o diagnóstico e as tentativas. A visão geral também passa
+a respeitar a rodada e o site selecionados nos seus contadores.

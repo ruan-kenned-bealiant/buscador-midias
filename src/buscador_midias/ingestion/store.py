@@ -372,7 +372,7 @@ class IngestStore:
                 if (
                     since.tzinfo is None
                     or until.tzinfo is None
-                    or since > until
+                    or since >= until
                     or until > now + timedelta(minutes=1)
                 ):
                     raise ValueError()
@@ -880,7 +880,13 @@ class IngestStore:
             return dict(id=ident, state="retry")
 
     def overview(
-        self, *, offset: int = 0, stage: str = "", state: str = "", run_id: str = ""
+        self,
+        *,
+        offset: int = 0,
+        stage: str = "",
+        state: str = "",
+        run_id: str = "",
+        source_id: int = 0,
     ) -> dict[str, Any]:
         """Funil por notícia, filas por tarefa e paginação com os motivos individuais."""
         self.initialize()
@@ -891,12 +897,20 @@ class IngestStore:
             and state not in ("pending", "queued", "running", "retry", *TERMINAL)
         ):
             raise CatalogError("Filtro de fila inválido.")
-        if not 0 <= offset <= 1000000:
+        if not 0 <= offset <= 1000000 or source_id < 0:
             raise CatalogError("Paginação inválida.")
+        source_clause = (
+            "(%s=0 OR (p.snapshot->'source'->>'id')::bigint=%s OR EXISTS "
+            "(SELECT 1 FROM ingest_occurrences so JOIN ingest_polls sp ON sp.id=so.poll_id "
+            "WHERE so.hash=j.hash AND so.run_id=j.run_id "
+            "AND (sp.snapshot->'source'->>'id')::bigint=%s))"
+        )
         with self.connection() as db:
             queues = db.execute(
-                "SELECT stage,state,count(*) n,min(created_at) oldest FROM ingest_jobs"
-                " GROUP BY stage,state"
+                "SELECT j.stage,j.state,count(*) n,min(j.created_at) oldest FROM ingest_jobs j "
+                "JOIN ingest_polls p ON p.id=j.poll_id WHERE (%s='' OR j.run_id=%s) "
+                "AND " + source_clause + " GROUP BY j.stage,j.state",
+                (run_id, run_id, source_id, source_id, source_id),
             ).fetchall()
             workers = db.execute(
                 "SELECT * FROM ingest_workers WHERE heartbeat_at>now()-interval '1 "
@@ -911,10 +925,15 @@ class IngestStore:
                 "o.run_id=r.id) unique_articles "
                 "FROM ingest_runs r ORDER BY created_at DESC LIMIT 20"
             ).fetchall()
-            where = "(%s='' OR j.stage=%s) AND (%s='' OR j.state=%s) AND (%s='' OR j.run_id=%s)"
-            args = (stage, stage, state, state, run_id, run_id)
+            where = (
+                "(%s='' OR j.stage=%s) AND (%s='' OR j.state=%s) AND (%s='' OR j.run_id=%s) "
+                "AND " + source_clause
+            )
+            args = (stage, stage, state, state, run_id, run_id, source_id, source_id, source_id)
             count = db.execute(
-                "SELECT count(*) n FROM ingest_jobs j WHERE " + where, args
+                "SELECT count(*) n FROM ingest_jobs j JOIN ingest_polls p ON p.id=j.poll_id "
+                "WHERE " + where,
+                args,
             ).fetchone()["n"]
             jobs = db.execute(
                 "SELECT j.*,p.link_id,p.snapshot->'source'->>'name' source,a.url article_url "
@@ -929,9 +948,10 @@ class IngestStore:
                 ).fetchall()
             funnel = db.execute(
                 "SELECT a.status,count(DISTINCT a.hash) n FROM ingest_articles a "
-                "WHERE %s='' OR EXISTS(SELECT 1 FROM ingest_occurrences o WHERE "
-                "o.hash=a.hash AND o.run_id=%s) GROUP BY a.status",
-                (run_id, run_id),
+                "WHERE EXISTS(SELECT 1 FROM ingest_occurrences o JOIN ingest_polls p "
+                "ON p.id=o.poll_id WHERE o.hash=a.hash AND (%s='' OR o.run_id=%s) "
+                "AND (%s=0 OR (p.snapshot->'source'->>'id')::bigint=%s)) GROUP BY a.status",
+                (run_id, run_id, source_id, source_id),
             ).fetchall()
             metrics = db.execute(
                 "SELECT "
@@ -943,9 +963,9 @@ class IngestStore:
                 "avoided_article_requests,"
                 "sum(COALESCE((a.metrics->>'avoided_xml_requests')::int,0)) avoided_xml_requests,"
                 "sum((a.metrics->>'cost_usd')::numeric) cost_usd FROM ingest_attempts "
-                "a JOIN ingest_jobs j ON j.id=a.job_id "
-                "WHERE %s='' OR j.run_id=%s GROUP BY j.stage",
-                (run_id, run_id),
+                "a JOIN ingest_jobs j ON j.id=a.job_id JOIN ingest_polls p ON p.id=j.poll_id "
+                "WHERE (%s='' OR j.run_id=%s) AND " + source_clause + " GROUP BY j.stage",
+                (run_id, run_id, source_id, source_id, source_id),
             ).fetchall()
             return dict(
                 settings=self.settings(),

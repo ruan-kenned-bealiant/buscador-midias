@@ -50,6 +50,67 @@ def next_job(repo, stage):
     return repo.claim(row["id"], "test-worker")
 
 
+def test_manual_round_rejects_zero_length_window(ingest):
+    from datetime import UTC, datetime
+
+    instant = datetime.now(UTC).isoformat()
+    with pytest.raises(CatalogError):
+        ingest.create_run(dict(since=instant, until=instant))
+    with ingest.connection() as db:
+        assert db.execute("SELECT count(*) n FROM ingest_runs").fetchone()["n"] == 0
+
+
+def test_source_progress_follows_pipeline_and_deduplicates_links(ingest):
+    from buscador_midias.ingestion.progress import source_progress
+
+    ingest.store.save("endpoint", dict(url="https://jose.example/second", kind="feed"), source_id=1)
+    run = ingest.create_run({})
+    assert source_progress(ingest, run["id"])["sources"][0]["progress"] is None
+    for _ in range(2):
+        ingest.finish(
+            next_job(ingest, "discovery"),
+            dict(candidates=[dict(url="https://jose.example/noticia")]),
+        )
+    ingest.maintain()
+    item = source_progress(ingest, run["id"])["sources"][0]
+    assert item["links"] == 2 and item["articles"] == 1
+    before = item["progress"]
+    ingest.finish(next_job(ingest, "dedup"), dict(next="fetch"))
+    item = source_progress(ingest, run["id"])["sources"][0]
+    assert before < item["progress"] < 100
+    ingest.finish(next_job(ingest, "fetch"), dict(status="outside_window"))
+    ingest.maintain()
+    item = source_progress(ingest, run["id"])["sources"][0]
+    assert item["progress"] == 100 and item["state"] == "completed"
+    assert item["statuses"] == dict(outside_window=1)
+
+
+def test_shared_work_is_visible_for_both_source_origins(ingest):
+    from buscador_midias.ingestion.progress import source_progress
+
+    source = ingest.store.save("source", dict(name="Outra fonte", url="https://outra.example"))
+    ingest.store.save(
+        "endpoint", dict(url="https://outra.example/feed", kind="feed"), source_id=source["id"]
+    )
+    run = ingest.create_run({})
+    for _ in range(2):
+        ingest.finish(
+            next_job(ingest, "discovery"),
+            dict(candidates=[dict(url="https://shared.example/noticia")]),
+        )
+    ingest.maintain()
+    dedup = next_job(ingest, "dedup")
+    ingest.failure(dedup, "Falha simulada")
+    report = source_progress(ingest, run["id"])
+    assert len(report["sources"]) == 2
+    for item in report["sources"]:
+        assert item["articles"] == 1
+        assert any(r["stage"] == "dedup" and r["state"] == "retry" for r in item["stages"])
+        tasks = ingest.overview(source_id=item["id"], run_id=run["id"])
+        assert dedup["id"] in {j["id"] for j in tasks["jobs"]}
+    assert source_progress(ingest, run["id"], search="Outra")["total"] == 1
+
+
 def test_daily_window_and_archive_link_exclusion(ingest):
     from datetime import datetime
 
