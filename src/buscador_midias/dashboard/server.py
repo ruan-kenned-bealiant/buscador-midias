@@ -17,7 +17,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import psycopg
 
-from buscador_midias.catalog.store import CatalogStore
+from buscador_midias.catalog.storage import open_catalog
 from buscador_midias.catalog.testing import ReaderFactory
 from buscador_midias.dashboard.access_audit import AccessAudit
 from buscador_midias.dashboard.catalog_api import CatalogAPI
@@ -95,11 +95,12 @@ def make_server(
         resources.files("buscador_midias.dashboard").joinpath("manager.html").read_bytes()
     )
     manager = CatalogAPI(
-        CatalogStore(
+        open_catalog(
             manager_db_path
             or Path(__file__).resolve().parents[3] / "var/gerenciador/catalogo.sqlite",
             functional.directory / "retrato.json",
             sites_path or Path(__file__).resolve().parents[3] / "data/sites.csv",
+            explicit_sqlite=manager_db_path is not None,
         )
     )
     if test_reader_factory is not None:

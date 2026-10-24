@@ -269,10 +269,11 @@ def test_api_crud_no_state_and_protected_writes(manager):
         manager,
         prefix + f"/mecanismos/{link['id']}",
         "PATCH",
-        dict(active=False, version=1),
+        dict(active=False, version=1, search_interval_seconds=7200),
         headers,
     )
     assert code == 200 and updated["active"] == 0
+    assert updated["search_interval_seconds"] == 7200
     assert (
         request(manager, prefix + f"/mecanismos/{link['id']}", "DELETE", dict(version=1), headers)[
             0

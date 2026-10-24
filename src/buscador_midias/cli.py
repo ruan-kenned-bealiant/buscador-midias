@@ -219,6 +219,14 @@ def build_parser() -> argparse.ArgumentParser:
     mechanisms.add_argument("--manual", type=Path, default=DEFAULT_MANUAL_RULES)
     mechanisms.add_argument("--out", type=Path, default=Path("var/mecanismos-busca"))
 
+    migration = commands.add_parser(
+        "migrate-catalog", help="Migra o gerenciador para Mídias PostgreSQL."
+    )
+    migration.add_argument("sqlite", type=Path)
+    migration.add_argument("--schema", default="midias_manager")
+    migration.add_argument("--check-only", action="store_true")
+    migration.add_argument("--activate", action="store_true")
+    migration.add_argument("--report", type=Path)
     dashboard = commands.add_parser(
         "dashboard",
         help="Painel web local (somente leitura) para acompanhar o fluxo em tempo real.",
@@ -658,6 +666,30 @@ def main(
         print(f"Inventário exportado em {args.out}: "
               f"{summary['functional_plan_sources']} fontes no plano funcional")
         return 0
+    if args.command == "migrate-catalog":
+        import json
+
+        from buscador_midias.catalog.migrate_postgres import migrate_catalog
+
+        try:
+            report = migrate_catalog(args.sqlite, args.schema, check_only=args.check_only)
+            if args.report:
+                args.report.parent.mkdir(parents=True, exist_ok=True)
+                args.report.write_text(json.dumps(report, indent=2) + "\n")
+            if args.activate:
+                config = args.sqlite.parent / "storage.json"
+                pending = config.with_suffix(".tmp")
+                pending.write_text(json.dumps(dict(backend="postgres", schema=args.schema)) + "\n")
+                pending.replace(config)
+            print(json.dumps(report, indent=2))
+            return 0
+        except (ValueError, OSError, psycopg.Error) as error:
+            # O driver pode incluir dados de conexão: a mensagem completa não vai ao terminal.
+            print(
+                f"Migração interrompida ({type(error).__name__}); nenhum corte aplicado.",
+                file=sys.stderr,
+            )
+            return 2
     if args.command == "dashboard":
         return _dashboard(args, serve)
 

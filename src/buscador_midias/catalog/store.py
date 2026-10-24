@@ -19,6 +19,7 @@ from buscador_midias.catalog.mechanisms import get_mechanism
 from buscador_midias.catalog.models import get_model, list_models
 from buscador_midias.catalog.schema import (
     archive_test,
+    create_search_intervals,
     create_test_history,
     enforce_relations,
     rename_legacy_tables,
@@ -230,6 +231,7 @@ class CatalogStore:
                     self._event(db, "catalog", None, "import", None, provenance)
                 enforce_relations(db)
                 create_test_history(db)
+                create_search_intervals(db)
                 db.commit()
             except Exception:
                 db.rollback()
@@ -419,7 +421,16 @@ class CatalogStore:
         table = "sites" if entity == "source" else "links"
         allowed = {"name", "url", "country", "language", "notes", "active", "version"}
         if entity != "source":
-            allowed = {"url", "kind", "model", "label", "notes", "active", "version"}
+            allowed = {
+                "url",
+                "kind",
+                "model",
+                "label",
+                "notes",
+                "active",
+                "version",
+                "search_interval_seconds",
+            }
         if data.keys() - allowed:
             raise CatalogError("O cadastro contém campos desconhecidos.")
         try:
@@ -459,6 +470,12 @@ class CatalogStore:
                         model = "auto"
                     get_model(model, kind)
                     values["model"] = model
+                    interval = merged.get("search_interval_seconds", 14400)
+                    if type(interval) is not int or not 1 <= interval <= 9223372036854775807:
+                        raise CatalogError(
+                            "O intervalo de busca deve ser um número inteiro positivo de segundos."
+                        )
+                    values["search_interval_seconds"] = interval
                     # A prova pertence ao endereço e tipo que foram efetivamente testados.
                     if before and (
                         values["url"] != before["url"]

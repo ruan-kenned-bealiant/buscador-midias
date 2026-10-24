@@ -13,6 +13,8 @@ from socketserver import TCPServer
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+import psycopg
+
 from buscador_midias.catalog.batch import status as validation_status
 from buscador_midias.catalog.store import CatalogError, CatalogStore
 from buscador_midias.catalog.testing import TestJobs
@@ -44,7 +46,7 @@ class CatalogAPI:
             return error.status, dict(error=str(error))
         except (ValueError, UnicodeError, json.JSONDecodeError):
             return 400, dict(error="Requisição inválida.")
-        except (sqlite3.Error, OSError):
+        except (sqlite3.Error, psycopg.Error, OSError):
             _LOG.exception("Falha no cadastro local")
             return 503, dict(error="Cadastro indisponível. Tente novamente.")
 

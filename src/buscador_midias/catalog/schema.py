@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from datetime import UTC, datetime
 
@@ -120,4 +121,30 @@ def archive_test(db: sqlite3.Connection, link_id: int, result: dict[str, object]
             json.dumps(result.get("parameters", {})),
             json.dumps(result, ensure_ascii=False),
         ),
+    )
+
+
+def create_search_intervals(db: sqlite3.Connection) -> None:
+    """Inicializa uma vez; estimativas históricas nunca sobrescrevem escolhas do usuário."""
+    if db.execute("SELECT 1 FROM schema_migrations WHERE version=3").fetchone():
+        return
+    db.execute(
+        "ALTER TABLE links ADD COLUMN search_interval_seconds INTEGER NOT NULL "
+        "DEFAULT 14400 CHECK(typeof(search_interval_seconds)='integer' "
+        "AND search_interval_seconds>0)"
+    )
+    if db.execute("SELECT 1 FROM sqlite_master WHERE name='link_cadence'").fetchone():
+        for row in db.execute(
+            "SELECT c.link_id,c.interval_seconds FROM link_cadence c "
+            "JOIN links l ON l.id=c.link_id WHERE l.deleted_at IS NULL "
+            "AND c.status='estimated' AND c.interval_seconds>0"
+        ).fetchall():
+            if math.isfinite(row[1]):
+                db.execute(
+                    "UPDATE links SET search_interval_seconds=? WHERE id=?",
+                    (max(1, round(row[1])), row[0]),
+                )
+    db.execute(
+        "INSERT INTO schema_migrations(version,applied_at) VALUES(3,?)",
+        (datetime.now(UTC).isoformat(),),
     )

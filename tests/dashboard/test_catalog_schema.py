@@ -5,6 +5,7 @@ import sqlite3
 
 import pytest
 
+from buscador_midias.catalog.schema import LINK_COLUMNS
 from buscador_midias.catalog.store import CatalogStore
 
 
@@ -50,7 +51,7 @@ def legacy_database(catalog, *, invalid_model=False):
             created_at TEXT NOT NULL,updated_at TEXT NOT NULL,evidence TEXT NOT NULL,
             origin TEXT NOT NULL,model TEXT NOT NULL,last_test TEXT NOT NULL,
             UNIQUE(source_id,url))""")
-        db.execute("INSERT INTO endpoints SELECT * FROM links_old")
+        db.execute(f"INSERT INTO endpoints SELECT {LINK_COLUMNS} FROM links_old")
         db.execute("DROP TABLE links_old")
         db.execute("ALTER TABLE sites RENAME TO sources")
         db.execute("ALTER TABLE mechanisms RENAME TO mechanism_settings")
@@ -73,7 +74,7 @@ def test_legacy_migration_is_lossless_and_idempotent(catalog):
                 assert [tuple(r) for r in db.execute(f"SELECT * FROM {table} ORDER BY 1")] == rows
             assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
             assert not list(db.execute("PRAGMA foreign_key_check"))
-            assert db.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == 2
+            assert db.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == 3
             assert not list(
                 db.execute(
                     "SELECT name FROM sqlite_master WHERE type='table' "
@@ -158,3 +159,68 @@ def test_legacy_audit_tests_are_backfilled_without_reassigning_copied_proofs(cat
             for r in db.execute("SELECT test_id,result FROM link_test_results")
         }
     assert results == {"old": older, "latest": latest}
+
+
+def test_search_interval_defaults_edit_preserves_proof_and_restarts(catalog):
+    from buscador_midias.catalog.store import CatalogError
+
+    source = catalog.sources()["items"][0]
+    link = catalog.endpoints(source["id"])["items"][0]
+    assert link["search_interval_seconds"] == 14400
+    for value in (0, -1, True, "3600", 1.5, None, 2**63):
+        with pytest.raises(CatalogError):
+            catalog.save(
+                "endpoint", dict(version=link["version"], search_interval_seconds=value), link["id"]
+            )
+    saved = catalog.save(
+        "endpoint", dict(version=link["version"], search_interval_seconds=7200), link["id"]
+    )
+    with pytest.raises(CatalogError):
+        catalog.save(
+            "endpoint", dict(version=link["version"], search_interval_seconds=3600), link["id"]
+        )
+    restored = reopened(catalog).endpoints(source["id"])["items"][0]
+    assert restored["search_interval_seconds"] == 7200
+    assert restored["evidence"] == link["evidence"]
+    assert restored["last_test"] == link["last_test"]
+    assert restored["version"] == saved["version"]
+    new = catalog.save(
+        "endpoint",
+        dict(url="https://news.example/other.xml", kind="sitemap"),
+        source_id=source["id"],
+    )
+    assert new["search_interval_seconds"] == 14400
+
+
+def test_search_interval_migration_uses_cadence_once_and_retains_history(catalog):
+    source = catalog.sources()["items"][0]
+    first = catalog.endpoints(source["id"])["items"][0]
+    second = catalog.save(
+        "endpoint",
+        dict(url="https://news.example/other.xml", kind="sitemap"),
+        source_id=source["id"],
+    )
+    with catalog.connection() as db:
+        db.execute("ALTER TABLE links DROP COLUMN search_interval_seconds")
+        db.execute("DELETE FROM schema_migrations WHERE version=3")
+        db.execute(
+            "CREATE TABLE link_cadence (link_id INTEGER PRIMARY KEY, "
+            "status TEXT, interval_seconds REAL)"
+        )
+        db.execute("INSERT INTO link_cadence VALUES(?,'estimated',3600.4)", (first["id"],))
+        db.execute("INSERT INTO link_cadence VALUES(?,'unknown',NULL)", (second["id"],))
+        original = db.execute(
+            "SELECT evidence,last_test,version FROM links WHERE id=?", (first["id"],)
+        ).fetchone()
+    store = reopened(catalog)
+    links = {link["id"]: link for link in store.endpoints(source["id"])["items"]}
+    assert links[first["id"]]["search_interval_seconds"] == 3600
+    assert links[second["id"]]["search_interval_seconds"] == 14400
+    with store.connection() as db:
+        assert tuple(
+            db.execute(
+                "SELECT evidence,last_test,version FROM links WHERE id=?", (first["id"],)
+            ).fetchone()
+        ) == tuple(original)
+        db.execute("UPDATE link_cadence SET interval_seconds=60")
+    assert reopened(catalog).endpoint(first["id"])["search_interval_seconds"] == 3600

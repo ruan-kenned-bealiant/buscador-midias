@@ -44,7 +44,8 @@ chegar a uma decisão as provas/mecanismos são aplicados e os links não compro
 excluídos logicamente. Sites sem links restantes são inativados. O histórico da rodada
 12, evidências anteriores e cadastros excluídos continuam preservados.
 
-Controles de rede independentes são conferidos no início, periodicamente e antes de
+Até cinco controles de rede, incluindo três fontes distintas aprovadas recentemente
+na própria rodada e dois portais de referência, são conferidos no início, periodicamente e antes de
 aplicar as decisões. Indisponibilidade geral pausa a rodada, em vez de excluir a base
 por falha de infraestrutura. Falta de espaço também preserva a fila para retomada.
 Edições concorrentes do link/site/configuração são preservadas e marcadas como conflito;

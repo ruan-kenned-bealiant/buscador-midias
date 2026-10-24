@@ -3,6 +3,30 @@
 MVP local do gerenciador de fontes de notícias, com cadastro de sites, RSS/sitemaps,
 modelos de leitura e testes interativos. O mapeamento inicial alimenta o cadastro.
 
+## Banco atual do gerenciador
+
+O catálogo utiliza o **PostgreSQL de Mídias**, esquema **`midias_manager`**,
+com sites, links, mecanismos, testes, auditoria e histórico de validação.
+As tabelas e a migração foram criadas em Python para posterior transporte ao
+powerDD. O SQLite anterior foi preservado como retrato do corte. O painel não
+faz escrita dupla nem volta automaticamente ao SQLite em caso de falha.
+Veja [tabelas, migração e configuração](docs/MIGRACAO_POSTGRES_GERENCIADOR.md).
+
+## Intervalo de busca por link
+
+Cada link possui `links.search_interval_seconds`, inteiro positivo em segundos,
+armazenado internamente para preservar os valores existentes; editável em **Editar link → Buscar notícias a cada** (minutos, horas ou dias).
+Na migração inicial, os links preservados recebem a estimativa de intervalo entre
+publicações disponível em `link_cadence`, arredondada ao segundo mais próximo;
+sem estimativa válida, recebem **4 horas (14.400 segundos)**. Novos links também
+começam com 4 horas. Reiniciar o painel não sobrescreve configurações manuais.
+
+A estimativa de publicação continua preservada separadamente: é uma amostra do
+histórico, não uma garantia da frequência futura. Alterar o intervalo de busca
+mantém as provas de funcionamento e registra a edição na auditoria. Esta entrega
+configura a rotina futura; não inicia agendamento ou coleta automática. O campo
+acompanha a migração para o PostgreSQL de Mídias.
+
 ## MVP: gerenciador de sites
 
 Abra **http://127.0.0.1:8765/** (também em `/gerenciador`) após iniciar `scripts/bm.sh dashboard`.
@@ -12,7 +36,8 @@ O cadastro inicial importa as 1.294 fontes e os 40.445 links com XML comprovado 
 retrato funcional existente; as 258 fontes sem comprovação também ficam visíveis,
 sem inventar links. Canais de áudio identificados são importados inativos.
 
-Os dados editáveis ficam em **`var/gerenciador/catalogo.sqlite`**, com importação única,
+Antes do corte para PostgreSQL, os dados editáveis ficavam em
+`var/gerenciador/catalogo.sqlite`, com importação única,
 transações e registro anterior/posterior de cada alteração. Reiniciar o painel não
 sobrescreve edições nem recria registros excluídos. Inativar um site suspende todos os
 seus links; reativar preserva o estado individual de cada um. A exclusão é lógica:

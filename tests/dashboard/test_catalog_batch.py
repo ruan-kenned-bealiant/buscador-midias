@@ -288,3 +288,45 @@ def test_child_outside_scope_is_a_recorded_fetch_failure_not_a_batch_crash():
     result = reader.get("https://other.example/sitemap.xml")
     assert not result.ok and "fora dos domínios" in result.error
     assert reader.requests == 0
+
+
+def test_health_uses_recent_proven_sources_when_fixed_controls_fail(store, monkeypatch):
+    import buscador_midias.catalog.batch as module
+
+    add(store, "good")
+    ident = create_run(store)
+    batch = ValidationBatch(store, ident, workers=1, factory=Reader)
+    batch.collect()
+    batch.factory = None
+    visited = []
+
+    class HealthReader:
+        def __init__(self, roots, progress, **kwargs):
+            visited.append(roots)
+
+        def get(self, url):
+            if url == ROOT + "/good":
+                return FetchResult(url, 200, b"<rss><channel/></rss>", None, url, "text/xml")
+            return FetchResult(url, 503, b"", None, url, "text/html")
+
+    monkeypatch.setattr(module, "TestReader", HealthReader)
+    batch.health()
+    assert any(ROOT + "/good" in roots for roots in visited)
+
+
+def test_health_still_pauses_if_every_control_fails(store, monkeypatch):
+    import buscador_midias.catalog.batch as module
+
+    ident = create_run(store)
+    batch = ValidationBatch(store, ident)
+
+    class OfflineReader:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def get(self, url):
+            return FetchResult(url, None, b"", "network unavailable")
+
+    monkeypatch.setattr(module, "TestReader", OfflineReader)
+    with pytest.raises(OSError, match="Controles de rede indisponíveis"):
+        batch.health()

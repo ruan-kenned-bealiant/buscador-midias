@@ -1,8 +1,24 @@
 # Cadastro relacional e destino na base de Mídias
 
-O destino definitivo deste cadastro é o banco de Mídias. Nesta entrega, somente o
-SQLite local `var/gerenciador/catalogo.sqlite` é utilizado. Nenhuma conexão, tabela,
-credencial ou dado do banco de Mídias é alterado.
+O cadastro agora utiliza o PostgreSQL de Mídias, no esquema `midias_manager`.
+O SQLite local é preservado como retrato do corte. Veja o
+[procedimento e as tabelas PostgreSQL](MIGRACAO_POSTGRES_GERENCIADOR.md).
+As seções sobre a migração local abaixo documentam a evolução anterior.
+
+## Intervalo de busca por link
+
+Cada link possui `links.search_interval_seconds`, inteiro positivo em segundos,
+armazenado internamente para preservar os valores existentes; editável em **Editar link → Buscar notícias a cada** (minutos, horas ou dias).
+Na migração inicial, os links preservados recebem a estimativa de intervalo entre
+publicações disponível em `link_cadence`, arredondada ao segundo mais próximo;
+sem estimativa válida, recebem **4 horas (14.400 segundos)**. Novos links também
+começam com 4 horas. Reiniciar o painel não sobrescreve configurações manuais.
+
+A estimativa de publicação continua preservada separadamente: é uma amostra do
+histórico, não uma garantia da frequência futura. Alterar o intervalo de busca
+mantém as provas de funcionamento e registra a edição na auditoria. Esta entrega
+configura a rotina futura; não inicia agendamento ou coleta automática. O campo
+acompanha a migração para o PostgreSQL de Mídias.
 
 ## Entidades e cardinalidades
 
@@ -77,7 +93,7 @@ arquivos históricos; esta etapa não os importa integralmente para o cadastro r
 
 Implementação: `src/buscador_midias/catalog/schema.py` e `catalog/store.py`.
 
-## Migração futura para Mídias — etapa obrigatória posterior
+## Plano original de migração para Mídias — executado em Python
 
 Este SQLite é o armazenamento provisório do mesmo modelo de domínio. A futura
 migração não será apenas trocar a string de conexão: será necessário criar/adaptar
@@ -97,7 +113,9 @@ A etapa deverá:
 7. Fazer a troca controlada, preservando o backup local e definindo o ponto de corte
    para impedir duas bases divergentes recebendo alterações.
 
-Não existe sincronização, escrita dupla ou migração remota nesta entrega.
+A migração foi implementada em Python e o corte do painel é explícito; não existe
+sincronização ou escrita dupla. A adaptação da aplicação para o powerDD permanece
+uma etapa posterior, conforme o [procedimento atual](MIGRACAO_POSTGRES_GERENCIADOR.md).
 
 
 ## Qualificação operacional anterior à migração

@@ -7,9 +7,9 @@ o gerenciador em `/` e `/gerenciador`, com CRUD, estados ativo/inativo, filtros,
 evidências e teste interativo. A configuração dos mecanismos fica em `/mecanismos`. As demais telas foram removidas; os arquivos históricos
 e APIs de consulta são preservados. A busca completa será integrada depois.
 
-O cadastro editável usa SQLite independente em `var/gerenciador/catalogo.sqlite`,
-adequado ao MVP local sem depender do PostgreSQL do corpus. Importação transacional
-única do retrato funcional e catálogo CSV; IDs estáveis, vínculo fonte-mecanismo,
+O cadastro editável usa PostgreSQL de Mídias, esquema `midias_manager`.
+A migração transacional preservou o SQLite em `var/gerenciador/catalogo.sqlite`
+como retrato do corte. IDs estáveis, vínculo site-link-mecanismo,
 unicidade de endereço e revisão para evitar sobrescritas concorrentes. Cadastros
 novos não recebem comprovação automaticamente. Alterar URL/tipo invalida a prova
 atual; a auditoria conserva os valores anteriores. Inativação da fonte é herdada
@@ -71,20 +71,23 @@ Resultados atuais e evidência histórica são apresentados separadamente.
 
 ## Modelo relacional destinado a Mídias
 
-O cadastro utiliza tabelas físicas `sites`, `links` e `mechanisms` no SQLite local.
+O cadastro utiliza tabelas físicas `sites`, `links` e `mechanisms` no esquema
+`midias_manager` do PostgreSQL.
 `links.source_id → sites.id` e `links.model → mechanisms.model` são FKs obrigatórias.
 Um site tem vários links; cada link seleciona um mecanismo reutilizável.
 `link_test_results` referencia link/mecanismo e preserva parâmetros, revisão e resultado
 dos testes salvos; `links.last_test` é cache compatível com a API atual. Auditoria e
 exclusões lógicas preservam origem, versões e evidências. Parâmetros e snapshots são
-JSON em colunas; entidades e relações têm tabelas e constraints reais.
+JSONB em colunas; entidades e relações têm tabelas e constraints reais.
 
 `catalog/schema.py` migra transacionalmente os nomes antigos, estabelece FKs e recupera
 os testes já salvos na auditoria local. `schema_migrations` torna a operação idempotente.
-A estrutura atual é provisória: o destino definitivo é o banco de Mídias, cuja conexão
-não é utilizada aqui. Adaptador, DDL nativo, transporte, conversão de tipos e validação
-completa antes da troca são trabalho posterior obrigatório. Ver
-[modelo relacional e roteiro de migração](docs/MODELO_RELACIONAL_CATALOGO.md).
+O repositório `catalog/postgres.py` reutiliza as regras do cadastro e adapta as
+consultas para PostgreSQL; datas e JSON têm tipos nativos. Escritas são transacionais,
+com trava consultiva e revisão otimista. Não há escrita dupla ou fallback ao SQLite.
+O DDL fica em `catalog/postgres_schema.py`, e o importador confere contagens e hashes
+antes de confirmar a transação. A aplicação poderá ser transportada ao powerDD
+posteriormente. Ver [migração aplicada](docs/MIGRACAO_POSTGRES_GERENCIADOR.md).
 
 ## Validação completa anterior à migração
 

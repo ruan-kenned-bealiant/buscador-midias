@@ -56,6 +56,9 @@ CREATE TABLE IF NOT EXISTS link_cadence (
 
 def initialize_batch(store: CatalogStore) -> None:
     """Cria as relações operacionais sem alterar as fontes ou as provas existentes."""
+    if getattr(store, "backend", "sqlite") == "postgres":
+        store.initialize()
+        return
     with store.connection() as db:
         for statement in _SCHEMA.split(";"):
             if statement.strip():
@@ -268,19 +271,43 @@ class ValidationBatch:
         """Suspende decisões se controles de rede independentes ficarem todos inacessíveis."""
         if self.factory is not None:
             return
-        controls = [
-            "https://canaltech.com.br/smap/sitemap-news.xml",
-            "https://www.theguardian.com/uk/rss",
-        ]
-        for url in controls:
+        with self.store.connection() as db:
+            controls = [
+                (r[0], r[1])
+                for r in db.execute(
+                    "SELECT source_url,url FROM (SELECT s.url source_url,e.url,"
+                    "a.created_at,ROW_NUMBER() OVER (PARTITION BY t.host "
+                    "ORDER BY a.created_at DESC) n "
+                    "FROM catalog_validation_attempts a JOIN catalog_validation_links t "
+                    "ON t.run_id=a.run_id AND t.link_id=a.link_id JOIN links e ON e.id=a.link_id "
+                    "JOIN sites s ON s.id=e.source_id WHERE a.run_id=? AND a.usable=1) "
+                    "WHERE n=1 ORDER BY created_at DESC LIMIT 3",
+                    (self.run_id,),
+                )
+            ]
+        controls.extend(
+            [
+                ("https://canaltech.com.br", "https://canaltech.com.br/smap/sitemap-news.xml"),
+                ("https://www.theguardian.com", "https://www.theguardian.com/uk/rss"),
+            ]
+        )
+
+        def check(control: tuple[str, str]) -> bool:
+            source, url = control
             try:
-                reader = TestReader([url], lambda _: None, seconds=15, requests=8)
+                reader = TestReader([source, url], lambda _: None, seconds=15, requests=8)
                 response = reader.get(url)
                 if response.ok:
                     parse_document(response.content, response.final_url or url)
-                    return
+                    return True
             except (OSError, ValueError, CatalogError, TestLimitError):
-                continue
+                pass
+            return False
+
+        # Fontes distintas e recentes impedem que dois portais específicos pausem toda a fila.
+        with ThreadPoolExecutor(max_workers=5, thread_name_prefix="validation-health") as pool:
+            if any(pool.map(check, controls)):
+                return
         raise OSError(
             "Controles de rede indisponíveis; rodada pausada, sem excluir por falha geral."
         )
