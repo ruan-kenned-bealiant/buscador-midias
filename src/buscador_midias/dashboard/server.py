@@ -22,6 +22,7 @@ from buscador_midias.catalog.testing import ReaderFactory
 from buscador_midias.dashboard.access_audit import AccessAudit
 from buscador_midias.dashboard.catalog_api import CatalogAPI
 from buscador_midias.dashboard.functional import FunctionalView
+from buscador_midias.dashboard.guide import render_guide
 from buscador_midias.dashboard.mapping import mapping_catalog, mapping_mechanisms, mapping_sections
 from buscador_midias.dashboard.round_view import round_links, round_summary
 from buscador_midias.dashboard.selection import CATEGORIES, DOWNLOADS, SelectionView
@@ -94,6 +95,7 @@ def make_server(
     manager_page = (
         resources.files("buscador_midias.dashboard").joinpath("manager.html").read_bytes()
     )
+    guide_page = render_guide()
     health_script = resources.files("buscador_midias.dashboard").joinpath("health.js").read_bytes()
     manager = CatalogAPI(
         open_catalog(
@@ -133,6 +135,8 @@ def make_server(
             parts = urlsplit(self.path)
             if parts.path in ("/", "/gerenciador", "/mecanismos", "/saude"):
                 self._send(200, "text/html; charset=utf-8", manager_page)
+            elif parts.path == "/guia":
+                self._send(200, "text/html; charset=utf-8", guide_page)
             elif parts.path == "/assets/health.js":
                 self._send(200, "application/javascript; charset=utf-8", health_script)
             elif parts.path.startswith("/api/gerenciador/"):

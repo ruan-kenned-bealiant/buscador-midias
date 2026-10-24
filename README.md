@@ -38,6 +38,14 @@ mantém as provas de funcionamento e registra a edição na auditoria. Esta entr
 configura a rotina futura; não inicia agendamento ou coleta automática. O campo
 acompanha a migração para o PostgreSQL de Mídias.
 
+## Guia de uso e interpretação
+
+Abra **http://127.0.0.1:8765/guia** ou use **Guia e dicionário** no menu.
+A tela permite pesquisar resultados dos testes, dados do catálogo, mecanismos,
+parâmetros e rotinas de saúde, com descrições, exemplos e orientações de leitura.
+Os padrões e limites dos modelos vêm do registro de mecanismos; as configurações
+salvas continuam disponíveis na tela Mecanismos de busca.
+
 ## MVP: gerenciador de sites
 
 Abra **http://127.0.0.1:8765/** (também em `/gerenciador`) após iniciar `scripts/bm.sh dashboard`.
