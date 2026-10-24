@@ -50,6 +50,58 @@ def next_job(repo, stage):
     return repo.claim(row["id"], "test-worker")
 
 
+def test_corpus_articles_are_scoped_to_source_run_and_real_records(ingest):
+    from buscador_midias.ingestion.progress import corpus_articles
+
+    source = ingest.store.save("source", dict(name="Outra", url="https://outra.example"))
+    ingest.store.save(
+        "endpoint", dict(url="https://outra.example/feed", kind="feed"), source_id=source["id"]
+    )
+    ingest.store.save("endpoint", dict(url="https://jose.example/second", kind="feed"), source_id=1)
+    run = ingest.create_run({})
+    shared = "https://shared.example/noticia"
+    for _ in range(3):
+        job = next_job(ingest, "discovery")
+        extra = (
+            "https://outra.example/only"
+            if job["snapshot"]["source"]["id"] == source["id"]
+            else "https://jose.example/not-registered"
+        )
+        ingest.finish(job, dict(candidates=[dict(url=shared), dict(url=extra)]))
+    with ingest.connection() as db:
+        db.execute(
+            "CREATE TABLE midias_ia_articles(id bigint,titulo text,url text,"
+            "published_at timestamptz,evidencia_status text,evidencia_path text)"
+        )
+        db.execute(
+            "INSERT INTO midias_ia_articles VALUES(1,'Compartilhada',%s,now(),'captured',"
+            "'midias-ia/evidencias/test.html'),"
+            "(2,'Outra notícia','https://outra.example/only',now(),'captured','midias-ia/evidencias/other.html')",
+            (shared,),
+        )
+        db.execute(
+            "UPDATE ingest_articles SET article_id=CASE WHEN url=%s THEN 1 "
+            "WHEN url='https://outra.example/only' THEN 2 ELSE 999 END",
+            (shared,),
+        )
+    result = corpus_articles(ingest, 1, run["id"], corpus_schema=ingest.store.schema)
+    assert result["total"] == 1
+    assert result["articles"][0]["title"] == "Compartilhada"
+    assert result["articles"][0]["evidence_url"].startswith("/evidencias/corpus/")
+    other = corpus_articles(ingest, source["id"], run["id"], corpus_schema=ingest.store.schema)
+    assert other["total"] == 2
+    assert (
+        len(
+            corpus_articles(ingest, source["id"], run["id"], 1, corpus_schema=ingest.store.schema)[
+                "articles"
+            ]
+        )
+        == 1
+    )
+    with pytest.raises(CatalogError):
+        corpus_articles(ingest, 1, "f" * 32, corpus_schema=ingest.store.schema)
+
+
 def test_manual_round_rejects_zero_length_window(ingest):
     from datetime import UTC, datetime
 

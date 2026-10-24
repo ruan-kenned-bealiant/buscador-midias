@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import logging
+import re
 import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -18,6 +19,7 @@ from urllib.parse import parse_qs, urlsplit
 import psycopg
 
 from buscador_midias.catalog.storage import open_catalog
+from buscador_midias.catalog.store import CatalogError
 from buscador_midias.catalog.testing import ReaderFactory
 from buscador_midias.dashboard.access_audit import AccessAudit
 from buscador_midias.dashboard.catalog_api import CatalogAPI
@@ -145,6 +147,25 @@ def make_server(
                 self._send(200, "text/html; charset=utf-8", guide_page)
             elif parts.path == "/assets/health.js":
                 self._send(200, "application/javascript; charset=utf-8", health_script)
+            elif parts.path.startswith("/evidencias/corpus/"):
+                from buscador_midias.ingestion.evidence_view import read_evidence
+
+                match = re.fullmatch(r"/evidencias/corpus/([a-f0-9]{64})", parts.path)
+                if not match or manager.ingestion is None:
+                    self._json(404, {"error": "Evidência não encontrada."})
+                    return
+                try:
+                    content_type, data = read_evidence(manager.ingestion, match[1])
+                    self._send(
+                        200,
+                        content_type,
+                        data,
+                        csp="sandbox; script-src 'none'; object-src 'none'; form-action 'none'",
+                    )
+                except CatalogError as error:
+                    self._json(error.status, {"error": str(error)})
+                except (OSError, psycopg.Error, ValueError):
+                    self._json(503, {"error": "Evidência indisponível. Tente novamente."})
             elif parts.path.startswith("/api/gerenciador/"):
                 self._json(*manager.handle(self))
             elif parts.path in (
@@ -630,14 +651,14 @@ def make_server(
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
             self._send(status, "application/json; charset=utf-8", body)
 
-        def _send(self, status: int, content_type: str, body: bytes) -> None:
+        def _send(self, status: int, content_type: str, body: bytes, *, csp: str = _CSP) -> None:
             """Envia a resposta com cabeçalhos de segurança e sem cache."""
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
-            self.send_header("Content-Security-Policy", _CSP)
+            self.send_header("Content-Security-Policy", csp)
             self.end_headers()
             self.wfile.write(body)
 

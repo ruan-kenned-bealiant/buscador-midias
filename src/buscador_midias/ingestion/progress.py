@@ -6,11 +6,67 @@ import re
 from collections import Counter, defaultdict
 from typing import Any
 
+from psycopg import sql
+
 from buscador_midias.catalog.store import CatalogError
 from buscador_midias.ingestion.schema import STAGES
 
 ACTIVE = {"pending", "fetch", "context", "evidence", "persist"}
 STEPS = dict(pending=0, fetch=1, context=2, evidence=3, persist=4)
+
+
+def corpus_articles(
+    repository: Any,
+    source_id: int,
+    run_id: str,
+    offset: int = 0,
+    *,
+    corpus_schema: str = "public",
+) -> dict[str, Any]:
+    """Lista somente registros reais do corpus encontrados pelo site na rodada indicada."""
+    if source_id < 1 or not re.fullmatch(r"[a-f0-9]{32}", run_id) or not 0 <= offset <= 1000000:
+        raise CatalogError("Fonte, rodada ou paginação inválida.")
+    repository.initialize()
+    with repository.connection() as db:
+        source = db.execute(
+            "SELECT snapshot->'source'->>'name' name FROM ingest_polls "
+            "WHERE run_id=%s AND (snapshot->'source'->>'id')::bigint=%s LIMIT 1",
+            (run_id, source_id),
+        ).fetchone()
+        if not source:
+            raise CatalogError("Site não encontrado nesta rodada.", 404)
+        relation = sql.SQL(
+            "FROM ingest_articles a JOIN {}.midias_ia_articles c ON c.id=a.article_id "
+            "WHERE EXISTS(SELECT 1 FROM ingest_occurrences o JOIN ingest_polls p "
+            "ON p.id=o.poll_id WHERE o.hash=a.hash AND o.run_id=%s "
+            "AND (p.snapshot->'source'->>'id')::bigint=%s)"
+        ).format(sql.Identifier(corpus_schema))
+        total = db.execute(
+            sql.SQL("SELECT count(DISTINCT c.id) n ") + relation, (run_id, source_id)
+        ).fetchone()["n"]
+        rows = db.execute(
+            sql.SQL(
+                "SELECT DISTINCT ON(c.id) c.id,a.hash,c.titulo title,c.url,c.published_at,"
+                "c.evidencia_status evidence_status,c.evidencia_path "
+            )
+            + relation
+            + sql.SQL(" ORDER BY c.id DESC,a.hash LIMIT 25 OFFSET %s"),
+            (run_id, source_id, offset),
+        ).fetchall()
+        for row in rows:
+            row["evidence_url"] = (
+                "/evidencias/corpus/" + row["hash"]
+                if row["evidence_status"] == "captured" and row["evidencia_path"]
+                else None
+            )
+    return dict(
+        source_id=source_id,
+        source=source["name"],
+        run_id=run_id,
+        articles=rows,
+        total=total,
+        offset=offset,
+    )
 
 
 def summarize(

@@ -17,6 +17,18 @@ def dispatch(
     if not isinstance(repository, IngestStore):
         raise CatalogError("O buscador requer o catálogo PostgreSQL.", 503)
     if handler.command == "GET":
+        source_corpus = re.fullmatch(r"/busca/fontes/([1-9][0-9]*)/corpus", path)
+        if source_corpus:
+            from buscador_midias.ingestion.progress import corpus_articles
+
+            return 200, repository.jsonable(
+                corpus_articles(
+                    repository,
+                    int(source_corpus[1]),
+                    query.get("run_id", ""),
+                    int(query.get("offset", "0")),
+                )
+            )
         if path == "/busca/historico":
             return 200, repository.jsonable(repository.archive_history())
         if path == "/busca/fontes":

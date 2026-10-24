@@ -58,7 +58,7 @@ async function loadSources(){
       for(const n of [(counts.pending||0)+(counts.queued||0),counts.running,counts.retry,counts.succeeded,counts.failed,(counts.skipped||0)+(counts.cancelled||0)])tr.append(el('td',fmt(n)));
       const action=el('td');action.append(button('Ver tarefas',()=>chooseSource(source,stage)));tr.append(action);tbody.append(tr);
     }table.append(tbody);wrap.append(table);detail.append(wrap,el('p','Notícias já conhecidas ou descartadas podem dispensar as etapas seguintes. Tarefas compartilhadas aparecem para cada site de origem.','muted'));card.append(detail);
-    card.append(button('Ver todas as tarefas deste site',()=>chooseSource(source)));$('source-cards').append(card);
+    const actions=el('div',undefined,'actions');const run=sourceRun;actions.append(button('Ver notícias no corpus',()=>showSourceCorpus(source,run)),button('Ver todas as tarefas deste site',()=>chooseSource(source)));card.append(actions);$('source-cards').append(card);
   }
   if(!data.sources.length)$('source-cards').append(el('p','Nenhum site encontrado nesta rodada.','empty'));
   $('source-page').textContent=sourceTotal?`${sourceOffset+1}–${Math.min(sourceOffset+25,sourceTotal)} de ${fmt(sourceTotal)} sites`:'0 sites';
@@ -68,3 +68,24 @@ $('view-stages').onclick=()=>setView('stages');$('view-sources').onclick=()=>set
 $('source-search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{sourceOffset=0;load()},300)};
 $('source-prev').onclick=()=>{sourceOffset=Math.max(0,sourceOffset-25);load()};
 $('source-next').onclick=()=>{sourceOffset+=25;load()};
+
+async function showSourceCorpus(source,run,offset=0){
+  $('detail-title').textContent=source.name+' · notícias no corpus';
+  const body=$('detail-body');body.replaceChildren(el('p','Carregando notícias…','muted'));
+  if(!$('detail').open)$('detail').showModal();
+  try{
+    const data=await api('/busca/fontes/'+source.id+'/corpus?'+new URLSearchParams({run_id:run,offset}));
+    body.replaceChildren(el('p',fmt(data.total)+' notícia(s) registrada(s) no corpus e encontrada(s) na rodada selecionada. Inclui registros já existentes.','muted'));
+    for(const article of data.articles){
+      const section=el('article');section.append(el('h3',article.title||'Notícia sem título'),el('p','Publicação: '+date(article.published_at)));
+      if(/^https?:\/\//i.test(article.url)){const original=el('a','Abrir notícia no site');original.href=article.url;original.target='_blank';original.rel='noopener noreferrer';section.append(original)}
+      const actions=el('div',undefined,'actions');
+      if(article.evidence_url){const evidence=el('a','Abrir evidência');evidence.href=article.evidence_url;evidence.target='_blank';evidence.rel='noopener noreferrer';actions.append(evidence)}else actions.append(el('span','Evidência ainda não disponível.','muted'));
+      section.append(actions);body.append(section);
+    }
+    if(!data.articles.length)body.append(el('p','Nenhuma notícia deste site está registrada no corpus para esta rodada.','empty'));
+    const pagination=el('div',undefined,'pager'),previous=button('Anterior',()=>showSourceCorpus(source,run,Math.max(0,offset-25))),next=button('Próxima',()=>showSourceCorpus(source,run,offset+25));
+    previous.disabled=offset===0;next.disabled=offset+25>=data.total;
+    pagination.append(previous,el('span',data.total?`${offset+1}–${Math.min(offset+25,data.total)} de ${fmt(data.total)}`:'0 notícias'),next);body.append(pagination);
+  }catch(error){body.replaceChildren(el('p',error.message,'error'))}
+}
