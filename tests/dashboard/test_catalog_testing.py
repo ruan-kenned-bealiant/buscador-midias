@@ -200,7 +200,8 @@ def test_budget_after_valid_xml_keeps_partial_result():
 
 
 def test_model_validation():
-    assert len(list_models()) == 5
+    assert len(list_models()) == 6
+    assert get_model("g1_daily")["id"] == "g1_daily"
     for value in [None, [], "unknown"]:
         with pytest.raises(CatalogError):
             get_model(value)

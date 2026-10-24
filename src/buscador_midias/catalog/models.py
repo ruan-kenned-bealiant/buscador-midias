@@ -11,5 +11,5 @@ def get_model(value: object, kind: str | None = None) -> dict[str, Any]:
 
 
 def list_models() -> list[dict[str, Any]]:
-    """Expõe as definições dos cinco mecanismos implementados em arquivos separados."""
+    """Expõe as definições dos mecanismos implementados em arquivos separados."""
     return [m.descriptor() for m in MECHANISMS.values()]

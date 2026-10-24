@@ -62,6 +62,13 @@ RESULTS = (
 )
 
 MODEL_EXAMPLES = {
+    "g1_daily": (
+        "Estratégia de coleta específica para o calendário do índice oficial do g1. "
+        "Seleciona todos os arquivos dos dias da janela e da sobreposição. "
+        "Caminhos desconhecidos ficam sinalizados para revisão; não inicia varredura histórica.",
+        "Índice com milhares de dias → XMLs dos dias selecionados → URLs → hashes em lote. "
+        "O teste de saúde continua avaliando acesso e texto sem impor idade à notícia.",
+    ),
     "auto": (
         "Quando você ainda não conhece o formato do endereço. Reconhece feed, lista ou"
         " índice e segue filhos declarados; não descobre URLs arbitrárias.",
@@ -90,6 +97,30 @@ MODEL_EXAMPLES = {
 }
 
 PARAMETER_HELP = {
+    "updates_overlap_days": (
+        "Margem da seleção explícita do índice diário do g1, usada na coleta. "
+        "Preserva todas as páginas de cada dia escolhido. O nome do arquivo define "
+        "a partição a consultar, sem comprovar a publicação de cada notícia.",
+        "Janela de 24/10 e margem de 1 dia: consultar partições de 23 a 25/10 presentes no índice.",
+    ),
+    "updates_timezone": (
+        "Calendário das partições do índice. A janela do usuário mantém seu fuso "
+        "e é convertida para selecionar os documentos; não modifica a data das notícias.",
+        "Uma janela próxima da meia-noite em Brasília pode alcançar dois dias UTC.",
+    ),
+    "learn_temporal_routes": (
+        "Na coleta, usa famílias de caminhos calibradas contra publicações reais das "
+        "amostras mapeadas. Exige várias provas e datas distintas; contraexemplos "
+        "invalidam a família. 0 desliga essas inferências. Testes de saúde não usam este corte.",
+        "Um arquivo diário antigo pode ser dispensado após aprender a relação entre "
+        "sua rota e publicações. Isso é inferência registrada, não garantia de cobertura total.",
+    ),
+    "archive_overlap_days": (
+        "Acrescenta uma margem antes e depois da partição temporal aprendida na coleta. "
+        "Não transforma lastmod ou nomes de arquivos em datas comprovadas de publicação.",
+        "Com margem de 2 dias, um arquivo próximo da janela continua sendo lido. "
+        "Caminhos sem regra validada também continuam elegíveis.",
+    ),
     "lookback_days": (
         "0 aceita qualquer data; 365 representa um ano. Nos testes individuais e de "
         "saúde usamos 0 para avaliar funcionamento, independentemente da idade.",

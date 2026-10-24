@@ -7,7 +7,7 @@ name = "buscador-midias"
 version = "0.1.0"
 description = "POC: varredura proativa de sitemaps de fontes confiáveis para alimentar o corpus de Mídias IA."
 requires-python = ">=3.12"
-dependencies = ["httpx>=0.27", "lxml>=5", "psycopg[binary]>=3.1", "unidecode>=1.3"]
+dependencies = ["httpx>=0.27", "lxml>=5", "psycopg[binary]>=3.1", "unidecode>=1.3", "pika>=1.3.2,<2"]
 
 [project.optional-dependencies]
 # Armazenamento da evidência em S3/MinIO; import tardio em evidence/s3_storage.py.
@@ -20,7 +20,7 @@ dev = ["pytest>=8", "ruff>=0.5", "mypy>=1.10", "lxml-stubs>=0.5", "openpyxl>=3.1
 where = ["src"]
 
 [tool.setuptools.package-data]
-"buscador_midias.dashboard" = ["manager.html", "health.js", "guide.html"]
+"buscador_midias.dashboard" = ["manager.html", "health.js", "guide.html", "search.html", "search.js"]
 "buscador_midias.labeling" = ["index.html"]
 
 [tool.pytest.ini_options]
@@ -61,3 +61,7 @@ ignore_missing_imports = true  # extra opcional "s3", sem stubs
 [[tool.mypy.overrides]]
 module = ["openpyxl", "openpyxl.*"]
 ignore_missing_imports = true  # extra opcional "xlsx", sem stubs
+
+[[tool.mypy.overrides]]
+module = ["pika", "pika.*"]
+ignore_missing_imports = true

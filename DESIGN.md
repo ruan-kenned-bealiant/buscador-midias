@@ -883,6 +883,12 @@ não muda o cron nem inicia coleta/enriquecimento/corpus.
 
 ## Estrutura
 
+O MVP de ingestão está em `ingestion/`: DDL operacional aditivo (`schema.py`),
+checkpoints e outbox (`store.py`), transporte RabbitMQ (`broker.py`), seis executores
+(`engine.py`), serviço supervisionado (`runtime.py`) e API (`api.py`). Usa broker
+exclusivo e mantém o corpus compartilhado compatível com KyX/PowerDD. Detalhes de
+operação e limitações: [Buscador de notícias](docs/BUSCADOR_NOTICIAS.md).
+
 ```
 src/buscador_midias/
   domain/      modelos puros

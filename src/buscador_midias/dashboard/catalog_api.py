@@ -22,6 +22,7 @@ from buscador_midias.catalog.health_worker import HealthWorker
 from buscador_midias.catalog.postgres import PostgresCatalogStore
 from buscador_midias.catalog.store import CatalogError, CatalogStore
 from buscador_midias.catalog.testing import TestJobs
+from buscador_midias.ingestion.store import IngestStore
 
 _LOG = logging.getLogger(__name__)
 _BASE = "/api/gerenciador"
@@ -37,6 +38,7 @@ class CatalogAPI:
     store: CatalogStore
     token: str = field(default_factory=lambda: secrets.token_urlsafe(32))
     jobs: TestJobs = field(init=False)
+    ingestion: IngestStore | None = field(init=False, default=None)
     health: HealthStore | None = field(init=False, default=None)
     health_worker: HealthWorker | None = field(init=False, default=None)
 
@@ -44,6 +46,7 @@ class CatalogAPI:
         """Inicia o executor limitado de testes sob demanda."""
         self.jobs = TestJobs(self.store)
         if isinstance(self.store, PostgresCatalogStore):
+            self.ingestion = IngestStore(self.store)
             self.health = HealthStore(self.store)
             self.health_worker = HealthWorker(self.health)
 
@@ -66,6 +69,10 @@ class CatalogAPI:
         query = {k: v[0] for k, v in parse_qs(parts.query).items()}
         source, link = _SOURCE.fullmatch(path), _LINK.fullmatch(path)
         model = _MODEL.fullmatch(path)
+        if path.startswith("/busca"):
+            from buscador_midias.ingestion.api import dispatch
+
+            return dispatch(self, handler, path, query)
         if path.startswith("/saude"):
             if self.health is None:
                 raise CatalogError("Saúde das fontes requer o catálogo PostgreSQL.", 503)

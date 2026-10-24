@@ -1,7 +1,15 @@
 # buscador-midias
 
-MVP local do gerenciador de fontes de notícias, com cadastro de sites, RSS/sitemaps,
-modelos de leitura e testes interativos. O mapeamento inicial alimenta o cadastro.
+MVP local do gerenciador de fontes e buscador de notícias, com cadastro de sites,
+RSS/sitemaps, modelos de leitura e testes interativos. O mapeamento inicial alimenta o cadastro.
+
+## Buscador de notícias
+
+Abra **http://127.0.0.1:8765/buscador** para configurar a janela, executar rodadas
+e acompanhar as seis etapas de ingestão. O serviço contínuo usa **RabbitMQ próprio**,
+com filas de descoberta, deduplicação, extração, análise, evidência e persistência.
+O painel administrativo do broker fica em **http://127.0.0.1:15673**.
+Configuração, histórico, retomada e comandos: [operação do buscador](docs/BUSCADOR_NOTICIAS.md).
 
 ## Banco atual do gerenciador
 
@@ -35,8 +43,8 @@ começam com 4 horas. Reiniciar o painel não sobrescreve configurações manuai
 A estimativa de publicação continua preservada separadamente: é uma amostra do
 histórico, não uma garantia da frequência futura. Alterar o intervalo de busca
 mantém as provas de funcionamento e registra a edição na auditoria. Esta entrega
-configura a rotina futura; não inicia agendamento ou coleta automática. O campo
-acompanha a migração para o PostgreSQL de Mídias.
+configura a periodicidade consumida pelo agendador da tela Buscador de notícias;
+a edição do intervalo não inicia a coleta por si só.
 
 ## Guia de uso e interpretação
 
@@ -2007,6 +2015,12 @@ Todo o estado (URLs vistas, rodadas, análises, evidências, gravações) vive n
 
 ## Rodada dirigida dos veículos prioritários
 
+Piloto de seleção diária do g1, medições e bloqueio do teste ao vivo:
+[PILOTO_G1_ATUALIZACOES.md](docs/PILOTO_G1_ATUALIZACOES.md).
+
+Teste ao vivo em dez fontes, com tempos por etapa e amostras textuais:
+[PILOTO_10_FONTES.md](docs/PILOTO_10_FONTES.md).
+
 A rodada fechada de 60 veículos foi concluída em 24/10/2026.
 Relatório por fonte: `var/gerenciador/mapeamento-prioritario/RELATORIO.md`.
 Os arquivos `fontes.csv`, `links-confirmados.csv` e `resultado.json` registram
@@ -2016,3 +2030,8 @@ pesquisa foram preservadas nas subpastas da rodada.
 Foram 96 links novos e cinco restaurados, em 24 fontes; BBC News Brasil,
 BBC News e A Crítica foram reativadas após prova textual. Arquivos datados,
 webstories e duplicações identificadas na rodada ficaram fora das novas inclusões.
+
+## Busca diária de notícias
+
+Janela do dia, validação completa, separação do backlog e primeira rodada acompanhada:
+[FLUXO_DIARIO.md](docs/FLUXO_DIARIO.md).

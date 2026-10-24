@@ -100,7 +100,9 @@ def parse_feed(xml: bytes) -> FeedSummary | None:
     return FeedSummary(kind, len(items), max(dates) if dates else None)
 
 
-def parse_feed_entries(xml: bytes, base_url: str) -> tuple[FeedEntry, ...]:
+def parse_feed_entries(
+    xml: bytes, base_url: str, *, publication_only: bool = False
+) -> tuple[FeedEntry, ...]:
     """Itens de um feed RSS 2.0, Atom ou RSS 1.0, na ordem em que o feed os lista.
 
     No Atom vale o ``<link rel="alternate">`` (ou o primeiro ``<link>`` sem ``rel``); no RSS, o
@@ -110,6 +112,7 @@ def parse_feed_entries(xml: bytes, base_url: str) -> tuple[FeedEntry, ...]:
     Args:
         xml: Corpo da resposta.
         base_url: Endereço do feed, para resolver links relativos.
+        publication_only: Usa somente published/pubDate, sem confundir updated com publicação.
 
     Returns:
         Os itens; vazio se o conteúdo não for um feed.
@@ -127,7 +130,11 @@ def parse_feed_entries(xml: bytes, base_url: str) -> tuple[FeedEntry, ...]:
         url = urljoin(base_url, link)
         if urlsplit(url).scheme not in ("http", "https"):
             continue
-        entries.append(FeedEntry(url, _child_text(item, "title"), _item_date(item)))
+        entries.append(
+            FeedEntry(
+                url, _child_text(item, "title"), _item_date(item, publication_only=publication_only)
+            )
+        )
     return tuple(entries)
 
 
@@ -182,11 +189,12 @@ def _local(element: etree._Element) -> str:
     return etree.QName(element).localname.lower()
 
 
-def _item_date(item: etree._Element) -> datetime | None:
+def _item_date(item: etree._Element, *, publication_only: bool = False) -> datetime | None:
     """Data de publicação de um item (a mais nova entre as que ele declara), em UTC."""
     dates = []
+    names = {"pubdate", "published"} if publication_only else _DATE_NAMES
     for child in item:
-        if isinstance(child.tag, str) and _local(child) in _DATE_NAMES:
+        if isinstance(child.tag, str) and _local(child) in names:
             parsed = _parse_date((child.text or "").strip())
             if parsed is not None:
                 dates.append(parsed)

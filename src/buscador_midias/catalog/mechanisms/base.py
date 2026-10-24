@@ -4,10 +4,21 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from typing import Any
 
 from buscador_midias.catalog.mechanisms.parsing import Document, parse_document
 from buscador_midias.catalog.store_errors import CatalogError
+
+
+@dataclass(frozen=True)
+class CollectionPlan:
+    """Escolha explícita de documentos para uma janela, separada do teste de saúde."""
+
+    children: tuple[str, ...]
+    skipped: int = 0
+    unrecognized: tuple[str, ...] = ()
+    strategy: str = "declared_children"
 
 
 @dataclass(frozen=True)
@@ -41,6 +52,23 @@ class Parameter:
 
 
 COMMON_PARAMETERS = (
+    Parameter(
+        "learn_temporal_routes",
+        "Usar rotas temporais aprendidas",
+        1,
+        "1 usa padrões calibrados pelas publicações das amostras mapeadas; 0 faz leitura integral. "
+        "Inferências ficam registradas e não garantem cobertura total.",
+        0,
+        1,
+    ),
+    Parameter(
+        "archive_overlap_days",
+        "Sobreposição das rotas temporais (dias)",
+        2,
+        "Margem adicional ao período aprendido para evitar cortes próximos da janela.",
+        1,
+        7,
+    ),
     Parameter(
         "lookback_days",
         "Janela de notícias (dias)",
@@ -135,6 +163,12 @@ class Mechanism(ABC):
     def children(self, document: Document) -> list[str]:
         """Modelos diretos não expandem referências a filhos."""
         return []
+
+    def plan_collection(
+        self, document: Document, since: datetime, until: datetime, settings: dict[str, Any]
+    ) -> CollectionPlan:
+        """Modelos genéricos preservam as referências declaradas, sem inferir calendários."""
+        return CollectionPlan(tuple(self.children(document)))
 
     def requested_kind(self, declared: str, document: Document) -> str:
         """Mantém o tipo declarado; automático pode ajustar o tipo detectado."""

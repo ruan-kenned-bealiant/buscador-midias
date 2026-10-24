@@ -1,0 +1,23 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: buscador-midias-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5673:5672"
+      - "127.0.0.1:15673:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?Defina o usuário do buscador}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Defina a senha do buscador}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-buscador}
+    volumes:
+      - rabbit_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+volumes:
+  rabbit_data:
+    external: true
+    name: buscador_midias_rabbit_data

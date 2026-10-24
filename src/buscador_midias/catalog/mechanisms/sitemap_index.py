@@ -1,6 +1,11 @@
 """Mecanismo de navegação por índices aninhados de sitemaps."""
 
-from buscador_midias.catalog.mechanisms.base import COMMON_PARAMETERS, TREE_PARAMETERS, Mechanism
+from buscador_midias.catalog.mechanisms.base import (
+    COMMON_PARAMETERS,
+    TREE_PARAMETERS,
+    Mechanism,
+    Parameter,
+)
 from buscador_midias.catalog.mechanisms.parsing import Document
 
 
@@ -12,7 +17,7 @@ class SitemapIndexMechanism(Mechanism):
     description = "Segue índices e sitemaps filhos, com deduplicação e até 10 níveis."
     kind = "sitemap"
     expand = True
-    parameters = COMMON_PARAMETERS + TREE_PARAMETERS
+    parameters: tuple[Parameter, ...] = COMMON_PARAMETERS + TREE_PARAMETERS
 
     def accepts(self, document: Document) -> bool:
         """Aceita tanto um índice como uma folha urlset."""

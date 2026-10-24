@@ -1,0 +1,16 @@
+[Unit]
+Description=Buscador de mídias - agendador e seis filas RabbitMQ
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ruan-aliant/Documentos/Projetos/buscador-midias
+EnvironmentFile=/home/ruan-aliant/Documentos/Projetos/buscador-midias/var/ingestion/rabbit.env
+ExecStart=/home/ruan-aliant/Documentos/Projetos/buscador-midias/scripts/bm.sh ingest serve
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=150
+KillMode=control-group
+
+[Install]
+WantedBy=default.target

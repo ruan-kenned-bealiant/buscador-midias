@@ -62,6 +62,9 @@ def test_fallback_requests_json_and_uses_target_status(setup, monkeypatch):
         (FetchResult(URL, 403, b"", None), True),
         (FetchResult(URL, 429, b"", None), True),
         (FetchResult(URL, 407, b"", None), True),
+        (FetchResult(URL, 503, b"", None), True),
+        (FetchResult(URL, 502, b"", None), True),
+        (FetchResult(URL, 504, b"", None), True),
         (FetchResult(URL, 200, b"<title>Client Challenge</title>", None), True),
         (FetchResult(URL, 200, b'<script src="/_fs-ch-123/challenge.js"></script>', None), True),
         (FetchResult(URL, 200, b"<rss><channel/></rss>", None), False),
@@ -90,6 +93,17 @@ def test_http_200_from_api_does_not_hide_target_block(setup, monkeypatch):
         lambda req: httpx.Response(200, json=dict(status_code=403, headers={}, body="denied")),
     )
     assert instance.get(URL).status == 403
+
+
+def test_proxy_auth_failure_is_provider_error(setup, monkeypatch):
+    instance = reader(
+        monkeypatch,
+        lambda req: httpx.Response(200, json=dict(status_code=407, headers={}, body="")),
+    )
+    result = instance.get(URL)
+    assert result.status is None
+    assert instance.bright_provider_error
+    assert "proxy HTTP 407" in result.error
 
 
 def test_fallback_budget_stops_paid_calls(setup, monkeypatch):

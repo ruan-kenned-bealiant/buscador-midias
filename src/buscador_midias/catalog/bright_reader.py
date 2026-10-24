@@ -29,7 +29,7 @@ def should_fallback(result: FetchResult) -> bool:
         for word in ("robots_", "não pública", "nao publica", "fora dos domínios", "url pública")
     ):
         return False
-    if result.status in (403, 407, 429):
+    if result.status in (403, 407, 429, 500, 502, 503, 504):
         return True
     if result.status == 401:
         return False  # Autenticação real não pode ser suprida por um proxy.

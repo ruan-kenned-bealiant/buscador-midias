@@ -36,6 +36,8 @@ class FetchResult:
     final_url: str | None = None
     content_type: str | None = None
     redirect_url: str | None = None
+    etag: str | None = None
+    last_modified: str | None = None
 
     @property
     def ok(self) -> bool:

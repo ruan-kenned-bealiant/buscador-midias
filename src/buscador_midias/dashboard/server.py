@@ -96,6 +96,8 @@ def make_server(
         resources.files("buscador_midias.dashboard").joinpath("manager.html").read_bytes()
     )
     guide_page = render_guide()
+    search_page = resources.files("buscador_midias.dashboard").joinpath("search.html").read_bytes()
+    search_script = resources.files("buscador_midias.dashboard").joinpath("search.js").read_bytes()
     health_script = resources.files("buscador_midias.dashboard").joinpath("health.js").read_bytes()
     manager = CatalogAPI(
         open_catalog(
@@ -135,6 +137,10 @@ def make_server(
             parts = urlsplit(self.path)
             if parts.path in ("/", "/gerenciador", "/mecanismos", "/saude"):
                 self._send(200, "text/html; charset=utf-8", manager_page)
+            elif parts.path == "/buscador":
+                self._send(200, "text/html; charset=utf-8", search_page)
+            elif parts.path == "/assets/search.js":
+                self._send(200, "application/javascript; charset=utf-8", search_script)
             elif parts.path == "/guia":
                 self._send(200, "text/html; charset=utf-8", guide_page)
             elif parts.path == "/assets/health.js":

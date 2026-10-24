@@ -2,6 +2,7 @@
 
 from buscador_midias.catalog.mechanisms.automatic import AutomaticMechanism
 from buscador_midias.catalog.mechanisms.base import Mechanism
+from buscador_midias.catalog.mechanisms.g1_daily import G1DailyMechanism
 from buscador_midias.catalog.mechanisms.news_sitemap import NewsSitemapMechanism
 from buscador_midias.catalog.mechanisms.rss import RssMechanism
 from buscador_midias.catalog.mechanisms.sitemap import SitemapMechanism
@@ -16,6 +17,7 @@ MECHANISMS: dict[str, Mechanism] = {
         SitemapMechanism(),
         SitemapIndexMechanism(),
         NewsSitemapMechanism(),
+        G1DailyMechanism(),
     )
 }
 

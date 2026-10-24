@@ -83,7 +83,7 @@ def test_migration_preserves_all_rows_and_is_idempotent(local, schema):
     assert pg.sources(q="sao jose")["total"] == 1
     assert pg.endpoints(1, q="FEED")["total"] == 1
     assert pg.endpoint(1)["search_interval_seconds"] == 14400
-    assert len(pg.models()) == 5
+    assert len(pg.models()) == 6
     assert status(pg)["attempts"] == 1
     with pg.connection() as db:
         assert (

@@ -29,13 +29,14 @@ def parse_document(body: bytes, url: str, max_bytes: int = MAX_BYTES) -> Documen
         raise ValueError(f"XML acima de {max_bytes // (1024 * 1024)} MiB")
     if not body.startswith(b"PK") and parse_feed(body) is not None:
         feed_entries = parse_feed_entries(body, url)
+        publications = parse_feed_entries(body, url, publication_only=True)
         return Document(
             kind="feed",
             entries=list(dict.fromkeys(e.url for e in feed_entries)),
             children=[],
             index=False,
             news=False,
-            dates={e.url: e.published.isoformat() for e in feed_entries if e.published is not None},
+            dates={e.url: e.published.isoformat() for e in publications if e.published is not None},
             child_dates={},
             hints={e.url: e.published.isoformat() for e in feed_entries if e.published is not None},
         )

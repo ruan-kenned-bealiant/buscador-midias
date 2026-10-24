@@ -130,6 +130,8 @@ class BrightDataFetcher:
                 return FetchResult(
                     url, None, b"", "bright_data_api_error: resposta sem status do destino"
                 )
+            if payload["status_code"] == 407:
+                return FetchResult(url, None, b"", "bright_data_api_error: proxy HTTP 407")
             body = payload.get("body", "")
             if not isinstance(body, str):
                 raise ValueError("Corpo inválido")
@@ -150,6 +152,8 @@ class BrightDataFetcher:
                 final if isinstance(final, str) else url,
                 headers.get("content-type"),
                 headers.get("location"),
+                headers.get("etag"),
+                headers.get("last-modified"),
             )
         except httpx.TimeoutException:
             return FetchResult(url, None, b"", "bright_data_limit: tempo de acesso esgotado")

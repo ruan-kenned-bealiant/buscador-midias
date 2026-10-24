@@ -307,7 +307,7 @@ def test_model_configuration_api_is_protected_and_persistent(manager):
     _, summary = request(manager, prefix + "/resumo")
     headers = {"X-Catalog-Token": summary["csrf_token"]}
     _, models = request(manager, prefix + "/modelos")
-    assert len(models["items"]) == 5
+    assert len(models["items"]) == 6
     rss = next(m for m in models["items"] if m["id"] == "rss")
     assert "max_depth" not in rss["parameters"]
     body = dict(version=rss["version"], parameters=dict(article_samples=1))

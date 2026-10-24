@@ -76,6 +76,7 @@ class TestReader:
         requests: int = 24,
         max_bytes: int = MAX_BYTES,
         before_request: Callable[[str], None] | None = None,
+        policy_cache: dict[str, tuple[float, RobotsPolicy]] | None = None,
     ) -> None:
         """Define escopo explícito e orçamento por teste."""
         self.deadline = time.monotonic() + seconds
@@ -87,6 +88,8 @@ class TestReader:
         self.hosts = [(urlsplit(u).hostname or "").removeprefix("www.") for u in roots]
         self.policies: dict[str, RobotsPolicy | None] = {}
         self.last: dict[str, float] = {}
+        self.policy_cache = policy_cache if policy_cache is not None else {}
+        self.conditional_headers: dict[str, dict[str, str]] = {}
 
     def _check(self) -> float:
         remaining = self.deadline - time.monotonic()
@@ -104,6 +107,9 @@ class TestReader:
     def _allowed(self, url: str) -> tuple[bool, str]:
         parts = urlsplit(url)
         origin = f"{parts.scheme}://{parts.netloc}"
+        cached = self.policy_cache.get(origin)
+        if origin not in self.policies and cached and cached[0] > time.monotonic():
+            self.policies[origin] = cached[1]
         if origin not in self.policies:
             self.progress(
                 dict(stage="robots", message="Conferindo robots.txt", url=origin + "/robots.txt")
@@ -116,6 +122,8 @@ class TestReader:
             else:
                 policy = None
             self.policies[origin] = policy
+            if policy is not None:
+                self.policy_cache[origin] = (time.monotonic() + 300, policy)
         policy = self.policies[origin]
         if policy is None:
             return False, "robots_unavailable: não foi possível obter a política de acesso"
@@ -170,13 +178,25 @@ class TestReader:
             timer.daemon = True
             timer.start()
             try:
+                conditional = {
+                    k: v
+                    for k, v in self.conditional_headers.get(url, {}).items()
+                    if k in ("If-None-Match", "If-Modified-Since")
+                    and len(v) <= 1024
+                    and "\r" not in v
+                    and "\n" not in v
+                }
                 connection.request(
                     "GET",
                     quote(parts.path or "/", safe="/%:@!$&'()*+,;=-._~")
                     + (
                         "?" + quote(parts.query, safe="/%?:@!$&'()*+,;=-._~") if parts.query else ""
                     ),
-                    headers={"User-Agent": USER_AGENT, "Accept-Encoding": "identity"},
+                    headers={
+                        "User-Agent": USER_AGENT,
+                        "Accept-Encoding": "identity",
+                        **conditional,
+                    },
                 )
                 response = connection.getresponse()
                 status = response.status
@@ -208,7 +228,16 @@ class TestReader:
                 body = b"".join(chunks)
                 if response.getheader("Content-Encoding", "").lower() == "gzip":
                     body = unpack_gzip(body, self.max_bytes)
-                return FetchResult(original, status, body, None, url, mime)
+                return FetchResult(
+                    original,
+                    status,
+                    body,
+                    None,
+                    url,
+                    mime,
+                    etag=response.getheader("ETag"),
+                    last_modified=response.getheader("Last-Modified"),
+                )
             finally:
                 timer.cancel()
                 self.last[host] = time.monotonic()
