@@ -344,7 +344,7 @@ class IngestStore:
                 slot = clock_slot(
                     now,
                     config.get("timezone", "America/Sao_Paulo"),
-                    config.get("schedule_hours", [6, 12, 16]),
+                    config.get("schedule_hours", [1, 6, 12, 16]),
                 )
                 if (
                     slot is None

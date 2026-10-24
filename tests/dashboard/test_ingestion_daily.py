@@ -28,6 +28,9 @@ def test_utc_timezone_and_naive_dates():
 @pytest.mark.parametrize(
     "stamp,hour",
     [
+        ("2026-10-24T00:59:59-03:00", None),
+        ("2026-10-24T01:00:00-03:00", 1),
+        ("2026-10-24T01:15:00-03:00", None),
         ("2026-10-24T05:59:59-03:00", None),
         ("2026-10-24T06:00:00-03:00", 6),
         ("2026-10-24T06:14:59-03:00", 6),
@@ -38,5 +41,5 @@ def test_utc_timezone_and_naive_dates():
     ],
 )
 def test_clock_slots_do_not_replay_missed_runs(stamp, hour):
-    slot = clock_slot(datetime.fromisoformat(stamp), "America/Sao_Paulo", [6, 12, 16])
+    slot = clock_slot(datetime.fromisoformat(stamp), "America/Sao_Paulo", [1, 6, 12, 16])
     assert (slot.hour if slot else None) == hour

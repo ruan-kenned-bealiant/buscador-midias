@@ -93,9 +93,9 @@ As tarefas com leases remanescentes foram recuperadas após parar o processo;
 a mesma rodada foi retomada. A distribuição por host foi ajustada para reduzir
 as disputas observadas no início. Nenhuma fila antiga foi purgada.
 
-## Calendário de três rodadas
+## Calendário de quatro rodadas
 
-O modo `clock` está configurado para **6h, 12h e 16h**, no fuso de Brasília.
+O modo `clock` está configurado para **1h, 6h, 12h e 16h**, no fuso de Brasília.
 Cada rodada considera publicações desde 00h até sua execução. A deduplicação
 reaproveita as notícias concluídas nas rodadas anteriores. A coluna de intervalo
 individual de cada link é preservada para uso futuro; nesse modo não determina
