@@ -61,6 +61,7 @@ class IngestStore:
                 count = db.execute(
                     "SELECT count(*) n FROM (SELECT 1 FROM ingest_jobs "
                     "WHERE stage=%s AND state IN ('pending','queued','retry','running') "
+                    "AND NOT (failures>0 OR payload @> '{\"recovery\":true}') "
                     "LIMIT %s) q",
                     (downstream, limit),
                 ).fetchone()["n"]
@@ -466,12 +467,16 @@ class IngestStore:
                 )
             return dict(run, links=len(rows))
 
-    def claim(self, ident: str, owner: str) -> dict[str, Any] | None:
+    def claim(
+        self, ident: str, owner: str, *, recovery: bool | None = None
+    ) -> dict[str, Any] | None:
         """Reserva apenas a revisão disponível da tarefa; mensagens duplicadas são inócuas."""
-        rows = self.claim_many([ident], owner)
+        rows = self.claim_many([ident], owner, recovery=recovery)
         return rows[0] if rows else None
 
-    def claim_many(self, identifiers: list[str], owner: str) -> list[dict[str, Any]]:
+    def claim_many(
+        self, identifiers: list[str], owner: str, *, recovery: bool | None = None
+    ) -> list[dict[str, Any]]:
         """Reserva um lote e carrega seus metadados com consultas em conjunto."""
         if not identifiers:
             return []
@@ -480,8 +485,9 @@ class IngestStore:
                 "UPDATE ingest_jobs SET state='running',owner=%s,attempts=attempts+1,"
                 "lease_until=now()+interval '5 minutes',started_at=now(),updated_at=now() "
                 "WHERE id=ANY(%s) AND state IN ('pending','queued','retry') AND "
-                "available_at<=now() RETURNING *",
-                (owner, identifiers),
+                "available_at<=now() AND (%s::boolean IS NULL OR "
+                "(failures>0 OR payload @> '{\"recovery\":true}')=%s) RETURNING *",
+                (owner, identifiers, recovery, recovery),
             ).fetchall()
             if not rows:
                 return []
@@ -534,6 +540,7 @@ class IngestStore:
         busy: bool = False,
         metrics: dict[str, Any] | None = None,
         defer_seconds: int = 5,
+        recovery: bool = False,
     ) -> str:
         """Espera crescente e limite de tentativas; contenção de host não reprova a fonte."""
         with self.connection() as db:
@@ -567,7 +574,8 @@ class IngestStore:
                 "UPDATE ingest_jobs SET state=%s,outcome=%s,result=%s,lease_until=NULL,"
                 "available_at=now()+%s*interval '1 second',finished_at=CASE WHEN %s "
                 "THEN now() ELSE NULL END,"
-                "dispatch=dispatch+1,failures=failures+%s,updated_at=now() WHERE id=%s",
+                "dispatch=dispatch+1,failures=failures+%s, "
+                "payload=payload || %s,updated_at=now() WHERE id=%s",
                 (
                     state,
                     reason[:500],
@@ -575,6 +583,7 @@ class IngestStore:
                     delay,
                     exhausted,
                     0 if busy else 1,
+                    Jsonb({"recovery": True} if recovery else {}),
                     job["id"],
                 ),
             )
@@ -917,7 +926,14 @@ class IngestStore:
                 "day' ORDER BY role"
             ).fetchall()
             runs = db.execute(
-                "SELECT r.*,(SELECT count(*) FROM ingest_polls p WHERE p.run_id=r.id) links,"
+                "SELECT r.*, "
+                "(SELECT count(*) FROM ingest_jobs j WHERE j.run_id=r.id AND "
+                "j.state IN ('pending','queued','retry','running') AND "
+                "NOT (j.failures>0 OR j.payload @> '{\"recovery\":true}')) primary_pending,"
+                "(SELECT count(*) FROM ingest_jobs j WHERE j.run_id=r.id AND "
+                "j.state IN ('pending','queued','retry','running') AND "
+                "(j.failures>0 OR j.payload @> '{\"recovery\":true}')) recovery_pending,"
+                "(SELECT count(*) FROM ingest_polls p WHERE p.run_id=r.id) links,"
                 "(SELECT count(*) FROM ingest_polls p WHERE p.run_id=r.id AND "
                 "p.discovery_done) links_done,"
                 "(SELECT count(*) FROM ingest_occurrences o WHERE o.run_id=r.id) occurrences,"

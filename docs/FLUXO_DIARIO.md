@@ -135,3 +135,26 @@ fontes são visíveis nas origens correspondentes.
 e ignoradas. **Ver tarefas** abre a lista filtrada por rodada, site e etapa,
 permitindo consultar o diagnóstico e as tentativas. A visão geral também passa
 a respeitar a rodada e o site selecionados nos seus contadores.
+
+
+As repetições após falhas usam seis filas adicionais com sufixo `.recovery`,
+uma por etapa, com um worker de recuperação por etapa. As filas principais
+recebem tarefas sem falha anterior; contenção de host não consome tentativas
+nem transfere uma tarefa para recuperação. Falhas de provedor adiadas também
+seguem para recuperação, preservando o orçamento de tentativas. O limite de
+tentativas, a pausa por indisponibilidade e a exclusão mútua por domínio seguem
+valendo nas duas filas. As etapas seguintes de uma tarefa recuperada voltam à
+fila principal para sua primeira tentativa.
+
+O painel mostra separadamente tarefas principais e de recuperação pendentes.
+A rodada só termina quando ambas escoarem; “Recuperação em andamento” indica
+que apenas as repetições estão pendentes naquele instante. Elas ainda podem
+descobrir notícias e gerar novas tarefas principais. Nenhuma nova rodada é
+criada para recuperar falhas.
+
+A configuração operacional de análise passou de três para seis workers
+principais, mais um de recuperação. A chave OpenRouter foi consultada antes da
+mudança (ativa, sem teto configurado); limites do provedor continuam sujeitos
+a respostas 429 e à pausa automática do serviço. Essa concorrência é editável
+no gerenciador. Aumentar a concorrência aumenta a velocidade de consumo dos
+créditos, sem alterar o modelo ou criar análises duplicadas intencionalmente.

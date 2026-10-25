@@ -631,7 +631,26 @@ def test_full_pipeline_using_real_rabbit_queues(ingest, tmp_path, monkeypatch):
 
             message = json.loads(body)
             assert set(message) == {"job_id"}
-            assert service.process(message["job_id"], "rabbit-test", channel)
+            if stage == "fetch":
+                job = ingest.claim(message["job_id"], "rabbit-first", recovery=False)
+                ingest.failure(job, "HTTP 503 simulado")
+                channel.basic_ack(method.delivery_tag)
+                with ingest.connection() as db:
+                    db.execute(
+                        "UPDATE ingest_jobs SET available_at=now() WHERE id=%s", (job["id"],)
+                    )
+                    db.execute(
+                        "UPDATE ingest_outbox SET ready_at=now() WHERE job_id=%s", (job["id"],)
+                    )
+                assert service.publish_once(channel, stage) == 0
+                assert service.publish_once(channel, stage, recovery=True) == 1
+                method, props, body = channel.basic_get(
+                    queue=broker.queue_name(stage, recovery=True), auto_ack=False
+                )
+                assert method and props.delivery_mode == 2
+                assert service.process(json.loads(body)["job_id"], "rabbit-recovery", recovery=True)
+            else:
+                assert service.process(message["job_id"], "rabbit-test", channel)
             channel.basic_ack(method.delivery_tag)
         ingest.maintain()
         assert ingest.overview()["runs"][0]["state"] == "completed"
@@ -639,6 +658,7 @@ def test_full_pipeline_using_real_rabbit_queues(ingest, tmp_path, monkeypatch):
         for stage in ["discovery", "dedup", "fetch", "context", "evidence", "persist"]:
             channel.queue_delete(queue=broker.queue_name(stage))
             channel.queue_delete(queue=broker.queue_name(stage) + ".failed")
+            channel.queue_delete(queue=broker.queue_name(stage, recovery=True))
         connection.close()
 
 
@@ -996,3 +1016,64 @@ def test_heartbeat_failure_does_not_kill_worker_or_hide_checkpoint_error(ingest,
             db.execute("SELECT state FROM ingest_jobs WHERE id=%s", (ident,)).fetchone()["state"]
             == "succeeded"
         )
+
+
+def test_recovery_is_published_and_claimed_only_on_its_lane(ingest, monkeypatch):
+    """Falhas saem da fila principal sem perder tarefa, histórico ou orçamento."""
+    from buscador_midias.ingestion import broker
+
+    ingest.create_run({})
+    job = next_job(ingest, "discovery")
+    ingest.failure(job, "HTTP 503")
+    with ingest.connection() as db:
+        db.execute("UPDATE ingest_jobs SET available_at=now() WHERE id=%s", (job["id"],))
+        db.execute("UPDATE ingest_outbox SET ready_at=now()")
+    sent = []
+    monkeypatch.setattr(broker, "publish", lambda *args, **kw: sent.append(kw))
+    service = Service(ingest)
+    assert service.publish_once(None, "discovery") == 0
+    assert service.publish_once(None, "discovery", recovery=True) == 1
+    assert sent == [dict(failed=False, recovery=True)]
+    assert ingest.claim(job["id"], "main", recovery=False) is None
+    recovered = ingest.claim(job["id"], "recovery", recovery=True)
+    assert recovered["failures"] == 1
+    assert recovered["attempts"] == 2
+    ingest.finish(recovered, {})
+    assert service.publish_once(None, "discovery", recovery=True) == 0
+
+
+def test_provider_deferral_is_recovery_without_spending_retry_budget(ingest, monkeypatch):
+    from buscador_midias.ingestion import broker
+
+    ingest.create_run({})
+    job = next_job(ingest, "discovery")
+    ingest.failure(job, "Provedor indisponível", busy=True, recovery=True)
+    counts = ingest.overview()["runs"][0]
+    assert counts["primary_pending"] == 0
+    assert counts["recovery_pending"] == 1
+    with ingest.connection() as db:
+        db.execute("UPDATE ingest_jobs SET available_at=now() WHERE id=%s", (job["id"],))
+        db.execute("UPDATE ingest_outbox SET ready_at=now()")
+    monkeypatch.setattr(broker, "publish", lambda *args, **kw: None)
+    assert Service(ingest).publish_once(None, "discovery", recovery=True) == 1
+    recovered = ingest.claim(job["id"], "recovery", recovery=True)
+    assert recovered["failures"] == 0
+    ingest.failure(recovered, "Host ocupado", busy=True)
+    with ingest.connection() as db:
+        row = db.execute("SELECT payload FROM ingest_jobs WHERE id=%s", (job["id"],)).fetchone()
+        assert row["payload"]["recovery"] is True
+
+
+def test_recovery_backlog_does_not_throttle_primary_producers(ingest, monkeypatch):
+    from buscador_midias.ingestion.flow import BACKLOG_LIMITS
+
+    monkeypatch.setitem(BACKLOG_LIMITS, "fetch", 1)
+    ingest.create_run({})
+    ingest.finish(
+        next_job(ingest, "discovery"), dict(candidates=[dict(url="https://jose.example/a")])
+    )
+    ingest.finish(next_job(ingest, "dedup"), dict(next="fetch"))
+    assert not ingest.capacity("dedup")[0]
+    job = next_job(ingest, "fetch")
+    ingest.failure(job, "HTTP 503")
+    assert ingest.capacity("dedup")[0]

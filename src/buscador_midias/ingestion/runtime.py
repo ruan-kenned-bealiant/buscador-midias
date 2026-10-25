@@ -60,12 +60,19 @@ class Service:
                 self.config_until = time.monotonic() + 2
             return self.cached_config
 
-    def publish_once(self, channel: Any, stage: str | None = None) -> int:
+    def publish_once(
+        self, channel: Any, stage: str | None = None, *, recovery: bool = False
+    ) -> int:
         """Confirma publicação antes de marcar a outbox; reentrega é idempotente."""
-        allowance = 100
+        allowance = 1 if recovery else 100
         if stage is not None and channel is not None:
-            ready = channel.queue_declare(queue=broker.queue_name(stage), passive=True)
-            allowance = min(allowance, max(0, QUEUE_LIMITS[stage] - ready.method.message_count))
+            ready = channel.queue_declare(
+                queue=broker.queue_name(stage, recovery=recovery), passive=True
+            )
+            allowance = min(
+                allowance,
+                max(0, (1 if recovery else QUEUE_LIMITS[stage]) - ready.method.message_count),
+            )
         if not allowance:
             return 0
         with self.repository.connection() as db:
@@ -104,8 +111,10 @@ class Service:
                 "AND o.dispatch=j.dispatch AND ((o.kind='work' AND j.state IN ('pending','retry')) "
                 "OR (o.kind='failed' AND j.state='failed')) "
                 "AND (%s::text IS NULL OR o.stage=%s) "
+                "AND (o.kind='failed' AND NOT %s OR o.kind='work' AND "
+                "(j.failures>0 OR j.payload @> '{\"recovery\":true}')=%s) "
                 "ORDER BY o.ready_at,o.id LIMIT %s FOR UPDATE OF o SKIP LOCKED",
-                (stage, stage, 1000 if network else allowance),
+                (stage, stage, recovery, recovery, 1000 if network else allowance),
             ).fetchall()
             published = 0
             for row in rows:
@@ -116,7 +125,13 @@ class Service:
                     if host in occupied:
                         continue
                     occupied.add(host)
-                broker.publish(channel, row["stage"], row["job_id"], failed=row["kind"] == "failed")
+                broker.publish(
+                    channel,
+                    row["stage"],
+                    row["job_id"],
+                    failed=row["kind"] == "failed",
+                    recovery=recovery,
+                )
                 published += 1
                 db.execute("UPDATE ingest_outbox SET published_at=now() WHERE id=%s", (row["id"],))
                 db.execute(
@@ -158,9 +173,11 @@ class Service:
                 self.heartbeat(owner, "window_filter", "error", type(error).__name__)
                 self.stop.wait(5)
 
-    def process_many(self, identifiers: list[str], owner: str) -> None:
+    def process_many(
+        self, identifiers: list[str], owner: str, *, recovery: bool | None = None
+    ) -> None:
         """Compara um lote no corpus e confirma checkpoints em uma transação."""
-        jobs = self.repository.claim_many(identifiers, owner)
+        jobs = self.repository.claim_many(identifiers, owner, recovery=recovery)
         if not jobs:
             return
         try:
@@ -174,9 +191,11 @@ class Service:
         finally:
             self.heartbeat(owner, "dedup", "online")
 
-    def process(self, ident: str, owner: str, channel: Any = None) -> bool:
+    def process(
+        self, ident: str, owner: str, channel: Any = None, *, recovery: bool | None = None
+    ) -> bool:
         """Confirma mensagem apenas após resultado/transição persistidos no banco."""
-        job = self.repository.claim(ident, owner)
+        job = self.repository.claim(ident, owner, recovery=recovery)
         if not job:
             return False
         try:
@@ -193,6 +212,7 @@ class Service:
                 busy=True,
                 metrics=error.metrics,
                 defer_seconds=300,
+                recovery=True,
             )
         except RetryableError as error:
             self.repository.failure(job, str(error), metrics=error.metrics)
@@ -221,9 +241,9 @@ class Service:
                 self.heartbeat(owner, "scheduler", "error", type(error).__name__)
             self.stop.wait(10)
 
-    def publisher(self, stage: str) -> None:
+    def publisher(self, stage: str, recovery: bool = False) -> None:
         """Retoma eventos da outbox quando o broker volta, sem descartar trabalho."""
-        owner = self.instance + ":publisher:" + stage
+        owner = self.instance + ":publisher:" + stage + (":recovery" if recovery else "")
         while not self.stop.is_set():
             connection = None
             try:
@@ -232,7 +252,7 @@ class Service:
                 broker.declare(channel)
                 heartbeat_at = 0.0
                 while not self.stop.is_set():
-                    published = self.publish_once(channel, stage)
+                    published = self.publish_once(channel, stage, recovery=recovery)
                     if time.monotonic() >= heartbeat_at:
                         self.heartbeat(owner, "publisher", "online")
                         heartbeat_at = time.monotonic() + 10
@@ -250,9 +270,9 @@ class Service:
                     with suppress(Exception):
                         connection.close()
 
-    def worker(self, stage: str, number: int) -> None:
+    def worker(self, stage: str, number: int, recovery: bool = False) -> None:
         """Consome sua fila independente, com pausa por configuração e heartbeat."""
-        owner = f"{self.instance}:{stage}:{number}"
+        owner = f"{self.instance}:{stage}:{number}" + (":recovery" if recovery else "")
         while not self.stop.is_set():
             connection = None
             try:
@@ -290,7 +310,7 @@ class Service:
                         self.stop.wait(1)
                         continue
                     method, _, body = channel.basic_get(
-                        queue=broker.queue_name(stage), auto_ack=False
+                        queue=broker.queue_name(stage, recovery=recovery), auto_ack=False
                     )
                     if method:
                         try:
@@ -305,7 +325,8 @@ class Service:
                             identifiers, tags = [ident], [method.delivery_tag]
                             for _ in range(DEDUP_BATCH - 1):
                                 extra, _, content = channel.basic_get(
-                                    queue=broker.queue_name(stage), auto_ack=False
+                                    queue=broker.queue_name(stage, recovery=recovery),
+                                    auto_ack=False,
                                 )
                                 if not extra:
                                     break
@@ -318,11 +339,11 @@ class Service:
                                     continue
                                 identifiers.append(item)
                                 tags.append(extra.delivery_tag)
-                            self.process_many(identifiers, owner)
+                            self.process_many(identifiers, owner, recovery=recovery)
                             for tag in tags:
                                 channel.basic_ack(tag)
                         else:
-                            self.process(ident, owner, channel)
+                            self.process(ident, owner, channel, recovery=recovery)
                             channel.basic_ack(method.delivery_tag)
                     else:
                         if time.monotonic() >= heartbeat_at:
@@ -352,10 +373,12 @@ class Service:
         if role in ("all", "publisher"):
             for selected in STAGES:
                 targets.append((self.publisher, (selected,)))
+                targets.append((self.publisher, (selected, True)))
         if role in ("all", "worker"):
             config = self.repository.settings()["config"]
             for selected in [stage] if stage else STAGES:
                 # Alterar concorrência exige reiniciar o serviço se ultrapassar os slots abertos.
+                targets.append((self.worker, (selected, 0, True)))
                 for number in range(config["workers"][selected]):
                     targets.append((self.worker, (selected, number)))
         for target, args in targets:
