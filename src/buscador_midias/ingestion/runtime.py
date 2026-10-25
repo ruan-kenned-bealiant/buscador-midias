@@ -17,6 +17,7 @@ from psycopg import InterfaceError, OperationalError
 
 from buscador_midias.catalog.postgres import PostgresCatalogStore
 from buscador_midias.ingestion import broker
+from buscador_midias.ingestion.admission import network_candidates
 from buscador_midias.ingestion.engine import (
     Engine,
     HostBusyError,
@@ -85,7 +86,7 @@ class Service:
                 if not admitted["acquired"]:
                     return 0
                 occupied = {
-                    urlsplit(r["url"] or "").hostname
+                    (urlsplit(r["url"] or "").hostname or "").rstrip(".")
                     for r in db.execute(
                         "SELECT COALESCE(a.url,j.payload->>'url') url FROM ingest_jobs j "
                         "LEFT JOIN ingest_articles a ON a.hash=j.hash "
@@ -102,25 +103,29 @@ class Service:
                 "FROM obsolete x WHERE o.id=x.id",
                 (stage, stage),
             )
-            rows = db.execute(
-                "SELECT o.id,o.job_id,o.kind,o.stage,COALESCE(a.url,j.payload->>'url') url "
-                "FROM ingest_outbox o "
-                "JOIN ingest_jobs j ON j.id=o.job_id "
-                "LEFT JOIN ingest_articles a ON a.hash=j.hash "
-                "WHERE o.published_at IS NULL AND o.discarded_at IS NULL AND o.ready_at<=now() "
-                "AND o.dispatch=j.dispatch AND ((o.kind='work' AND j.state IN ('pending','retry')) "
-                "OR (o.kind='failed' AND j.state='failed')) "
-                "AND (%s::text IS NULL OR o.stage=%s) "
-                "AND (o.kind='failed' AND NOT %s OR o.kind='work' AND "
-                "(j.failures>0 OR j.payload @> '{\"recovery\":true}')=%s) "
-                "ORDER BY o.ready_at,o.id LIMIT %s FOR UPDATE OF o SKIP LOCKED",
-                (stage, stage, recovery, recovery, 1000 if network else allowance),
-            ).fetchall()
+            if network:
+                rows = network_candidates(db, str(stage), recovery, occupied, allowance)
+            else:
+                rows = db.execute(
+                    "SELECT o.id,o.job_id,o.kind,o.stage,COALESCE(a.url,j.payload->>'url') url "
+                    "FROM ingest_outbox o "
+                    "JOIN ingest_jobs j ON j.id=o.job_id "
+                    "LEFT JOIN ingest_articles a ON a.hash=j.hash "
+                    "WHERE o.published_at IS NULL AND o.discarded_at IS NULL AND o.ready_at<=now() "
+                    "AND o.dispatch=j.dispatch AND ((o.kind='work' "
+                    "AND j.state IN ('pending','retry')) "
+                    "OR (o.kind='failed' AND j.state='failed')) "
+                    "AND (%s::text IS NULL OR o.stage=%s) "
+                    "AND (o.kind='failed' AND NOT %s OR o.kind='work' AND "
+                    "(j.failures>0 OR j.payload @> '{\"recovery\":true}')=%s) "
+                    "ORDER BY o.ready_at,o.id LIMIT %s FOR UPDATE OF o SKIP LOCKED",
+                    (stage, stage, recovery, recovery, 1000 if network else allowance),
+                ).fetchall()
             published = 0
             for row in rows:
                 if published >= allowance:
                     break
-                host = urlsplit(row["url"] or "").hostname
+                host = (urlsplit(row["url"] or "").hostname or "").rstrip(".")
                 if network and row["kind"] == "work":
                     if host in occupied:
                         continue
@@ -133,6 +138,12 @@ class Service:
                     recovery=recovery,
                 )
                 published += 1
+                if network and row["kind"] == "work":
+                    db.execute(
+                        "INSERT INTO ingest_host_admission(host,last_admitted) VALUES(%s,now()) "
+                        "ON CONFLICT(host) DO UPDATE SET last_admitted=excluded.last_admitted",
+                        (host,),
+                    )
                 db.execute("UPDATE ingest_outbox SET published_at=now() WHERE id=%s", (row["id"],))
                 db.execute(
                     "UPDATE ingest_jobs SET state='queued',updated_at=now() WHERE id=%s "

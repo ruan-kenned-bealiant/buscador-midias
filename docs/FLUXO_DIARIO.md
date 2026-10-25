@@ -167,3 +167,22 @@ Cada tarefa permite no máximo três tentativas totais (inicial + duas repetiç�
 sem uma camada adicional de retries HTTP. O painel permite reduzir esse limite.
 Contenção de host, sem execução da chamada, continua sendo adiada sem gastar
 o orçamento. Os contadores históricos de Bright Data permanecem preservados.
+
+A admissão de HTTP escolhe a primeira tarefa elegível de **cada hostname antes
+ de limitar o lote**. Hosts com tarefa já publicada/em execução ficam fora da
+seleção. Entre os restantes, têm preferência os que receberam trabalho há mais
+tempo (ou ainda não receberam); dentro de um host, mantém-se a ordem das tarefas.
+O instante de admissão é persistido em `ingest_host_admission` e compartilhado
+entre descoberta, acesso a notícias e recuperação, inclusive após reinícios.
+Uma trava transacional coordena publicadores simultâneos. A proteção de acesso
+por hostname e os limites das filas continuam valendo. A seleção não descarta
+nem limita o total de URLs da rodada.
+
+ETag/Last-Modified já são usados por documento na descoberta diária. Respostas
+304 reaproveitam o XML interpretado; documentos com os mesmos bytes também
+reaproveitam a interpretação. Um índice inalterado ainda pode apontar para filhos
+que mudaram, portanto 304 do índice não autoriza pular todos os filhos. A seleção
+das rotas relevantes usa o mecanismo e os perfis mapeados. A comparação em lote
+com o corpus ocorre antes do download das notícias; registros completos evitam
+acesso, nova análise e nova evidência, enquanto registros incompletos podem ser
+complementados.

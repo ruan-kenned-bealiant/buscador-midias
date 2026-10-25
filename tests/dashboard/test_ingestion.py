@@ -1117,3 +1117,82 @@ def test_worker_configuration_accepts_requested_concurrency(ingest):
         ingest.configure(
             dict(version=updated["version"], config=dict(workers=dict(workers, fetch=33)))
         )
+
+
+def seed_unbalanced_discovery(ingest):
+    """Mil e uma URLs de um site antes de uma URL de outro site."""
+    run = ingest.create_run({})
+    root = next_job(ingest, "discovery")
+    ingest.finish(root, {})
+    with ingest.connection() as db:
+        db.execute(
+            "INSERT INTO ingest_jobs(id,stage,subject,run_id,poll_id,payload) "
+            "SELECT md5('fair-'||n),'discovery','fair-'||n,%s,%s,"
+            "jsonb_build_object('url',CASE WHEN n<=1001 THEN "
+            "'https://jose.example/map-'||n ELSE 'https://other.example/map' END) "
+            "FROM generate_series(1,1002) n",
+            (run["id"], root["poll_id"]),
+        )
+        db.execute(
+            "INSERT INTO ingest_outbox(job_id,dispatch,stage,ready_at) "
+            "SELECT id,dispatch,stage,now()-interval '1 hour' FROM ingest_jobs "
+            "WHERE subject LIKE 'fair-%%' ORDER BY substring(subject from 6)::int"
+        )
+    return root
+
+
+def test_network_admission_sees_hosts_beyond_first_thousand_jobs(ingest, monkeypatch):
+    from buscador_midias.ingestion import broker
+
+    seed_unbalanced_discovery(ingest)
+    sent = []
+    monkeypatch.setattr(broker, "publish", lambda ch, stage, ident, **kw: sent.append(ident))
+    assert Service(ingest).publish_once(None, "discovery") == 2
+    with ingest.connection() as db:
+        urls = db.execute(
+            "SELECT payload->>'url' url FROM ingest_jobs WHERE id=ANY(%s)", (sent,)
+        ).fetchall()
+    assert {u["url"].split("/")[2] for u in urls} == {"jose.example", "other.example"}
+
+
+def test_network_admission_excludes_busy_hosts_before_limiting(ingest, monkeypatch):
+    from buscador_midias.ingestion import broker
+
+    seed_unbalanced_discovery(ingest)
+    with ingest.connection() as db:
+        db.execute("UPDATE ingest_jobs SET state='queued' WHERE subject='fair-1'")
+    sent = []
+    monkeypatch.setattr(broker, "publish", lambda ch, stage, ident, **kw: sent.append(ident))
+    assert Service(ingest).publish_once(None, "discovery") == 1
+    with ingest.connection() as db:
+        url = db.execute(
+            "SELECT payload->>'url' url FROM ingest_jobs WHERE id=%s", (sent[0],)
+        ).fetchone()["url"]
+    assert url == "https://other.example/map"
+
+
+def test_network_admission_rotates_hosts_before_repeating_large_source(ingest, monkeypatch):
+    from types import SimpleNamespace
+
+    from buscador_midias.ingestion import broker
+    from buscador_midias.ingestion.flow import QUEUE_LIMITS
+
+    seed_unbalanced_discovery(ingest)
+    monkeypatch.setitem(QUEUE_LIMITS, "discovery", 1)
+    channel = SimpleNamespace(
+        queue_declare=lambda **kw: SimpleNamespace(method=SimpleNamespace(message_count=0))
+    )
+    sent = []
+    monkeypatch.setattr(broker, "publish", lambda ch, stage, ident, **kw: sent.append(ident))
+    service = Service(ingest)
+    assert service.publish_once(channel, "discovery") == 1
+    ingest.finish(ingest.claim(sent[0], "test"), {})
+    assert service.publish_once(channel, "discovery") == 1
+    with ingest.connection() as db:
+        urls = [
+            db.execute(
+                "SELECT payload->>'url' url FROM ingest_jobs WHERE id=%s", (ident,)
+            ).fetchone()["url"]
+            for ident in sent
+        ]
+    assert urls == ["https://jose.example/map-1", "https://other.example/map"]
