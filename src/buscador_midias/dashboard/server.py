@@ -143,16 +143,6 @@ def make_server(
             parts = urlsplit(self.path)
             if parts.path in ("/", "/gerenciador", "/mecanismos", "/saude"):
                 self._send(200, "text/html; charset=utf-8", manager_page)
-            elif parts.path == "/sandbox/evidencias":
-                self._send(
-                    200,
-                    "text/html; charset=utf-8",
-                    evidence_assets["evidence.html"],
-                    csp="default-src 'none'; script-src 'self'; "
-                    "style-src 'unsafe-inline' http: https:; "
-                    "connect-src 'self'; frame-src 'self' blob:; img-src http: https: data:; "
-                    "font-src http: https: data:; base-uri http: https:; form-action 'none'",
-                )
             elif parts.path in ("/assets/evidence.js", "/assets/evidence_prepare.js"):
                 self._send(
                     200,
@@ -168,7 +158,7 @@ def make_server(
             elif parts.path == "/assets/health.js":
                 self._send(200, "application/javascript; charset=utf-8", health_script)
             elif parts.path.startswith("/evidencias/corpus/"):
-                from buscador_midias.ingestion.evidence_view import preview_html, read_evidence
+                from buscador_midias.ingestion.evidence_view import read_evidence
 
                 match = re.fullmatch(r"/evidencias/corpus/([a-f0-9]{64})", parts.path)
                 if not match or manager.ingestion is None:
@@ -178,7 +168,17 @@ def make_server(
                     content_type, data = read_evidence(manager.ingestion, match[1])
                     original = parse_qs(parts.query).get("original") == ["1"]
                     if content_type == "text/html" and not original:
-                        data = preview_html(data, match[1])
+                        self._send(
+                            200,
+                            "text/html; charset=utf-8",
+                            evidence_assets["evidence.html"],
+                            csp="default-src 'none'; script-src 'self'; "
+                            "style-src 'unsafe-inline' http: https:; connect-src 'self'; "
+                            "frame-src 'self'; img-src http: https: data:; "
+                            "font-src http: https: data:; base-uri http: https:; "
+                            "form-action 'none'",
+                        )
+                        return
                     self._send(
                         200,
                         content_type,

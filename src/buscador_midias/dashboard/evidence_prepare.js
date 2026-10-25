@@ -25,27 +25,6 @@ export function prepareEvidenceHtml(html){
   return {html:'<!doctype html>'+doc.documentElement.outerHTML,restored};
 }
 
-/** Cópia de leitura independente de CSS e imagens externos. */
-export function readingEvidenceHtml(html){
-  const doc=new DOMParser().parseFromString(html,'text/html');
-  doc.querySelectorAll('nav,header,footer,aside,script,style,noscript,form,iframe').forEach(n=>n.remove());
-  let scopes=[...doc.querySelectorAll('article')];
-  if(!scopes.length)scopes=[...doc.querySelectorAll('.prose')];
-  if(!scopes.length)scopes=[...doc.querySelectorAll('main')];
-  if(!scopes.length)scopes=[doc.body];
-  const candidates=scopes.map(scope=>[...scope.querySelectorAll('p')].filter(p=>p.textContent.trim().length>=25&&!p.closest('[hidden]')).map(p=>p.textContent.trim()));
-  const paragraphs=candidates.sort((a,b)=>b.join('').length-a.join('').length)[0]||[];
-  const result=document.implementation.createHTMLDocument(doc.querySelector('h1')?.textContent||doc.title||'Evidência');
-  const meta=result.createElement('meta');meta.setAttribute('charset','utf-8');result.head.prepend(meta);
-  const style=result.createElement('style');style.textContent='body{max-width:760px;margin:30px auto;padding:0 24px;font:18px/1.75 system-ui;color:#192e29;background:white}h1{font-size:28px;line-height:1.3}aside{font-size:13px;padding:12px;background:#edf4ee}';result.head.append(style);
-  const notice=result.createElement('aside');notice.textContent='Visualização de leitura gerada do HTML capturado. O arquivo original foi preservado.';result.body.append(notice);
-  const article=result.createElement('article'),heading=result.createElement('h1');heading.textContent=result.title;article.append(heading);
-  for(const text of paragraphs){const p=result.createElement('p');p.textContent=text;article.append(p)}
-  if(!paragraphs.length){const p=result.createElement('p');p.textContent='Não foi encontrado texto em parágrafos nesta captura. Experimente a opção Layout do site.';article.append(p)}
-  result.body.append(article);return '<!doctype html>'+result.documentElement.outerHTML;
-}
-
-
 /** As referências CSS de $RR são JSON; não é necessário avaliar código JS. */
 function restoreStyles(doc,tail){
   const start=tail.search(/\S/);if(start<0||tail[start]!=='[')return;

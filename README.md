@@ -2036,9 +2036,8 @@ webstories e duplicações identificadas na rodada ficaram fora das novas inclus
 Janela do dia, validação completa, separação do backlog e primeira rodada acompanhada:
 [FLUXO_DIARIO.md](docs/FLUXO_DIARIO.md).
 
-O [sandbox de evidências](http://127.0.0.1:8765/sandbox/evidencias) permite
-carregar uma captura HTML pelo hash/link do corpus ou por arquivo local e comparar
-original e visualização preparada. O padrão é **Layout do site**, usando também as referências CSS declaradas
-no streaming React. Desmarque a opção para usar o modo de leitura. O layout
-pode depender de estilos, fontes e imagens externos. Os iframes não executam scripts da notícia. O download mantém
-o HTML original, sem alterar evidências armazenadas nem disparar coleta ou análise.
+Ao clicar em **Abrir evidência**, o HTML capturado é exibido diretamente em um
+iframe isolado, com o layout do site e os estilos declarados nos blocos de React.
+Nenhum script da notícia é executado. Imagens, fontes e CSS externos dependem da
+disponibilidade do site. O arquivo armazenado permanece intacto; `?original=1`
+no link da evidência permite baixar os bytes originais.
