@@ -163,6 +163,52 @@ def test_shared_work_is_visible_for_both_source_origins(ingest):
     assert source_progress(ingest, run["id"], search="Outra")["total"] == 1
 
 
+def test_source_identifies_inherited_failure_without_inventing_current_failed_task(ingest):
+    from buscador_midias.ingestion.progress import source_progress
+
+    settings = ingest.settings()
+    ingest.configure(dict(version=settings["version"], config=dict(max_attempts=1)))
+    previous = ingest.create_run({})
+    url = "https://jose.example/noticia"
+    ingest.finish(next_job(ingest, "discovery"), dict(candidates=[dict(url=url)]))
+    ingest.finish(next_job(ingest, "dedup"), dict(next="fetch"))
+    failed = next_job(ingest, "fetch")
+    ingest.failure(failed, "bright_data_api_error: proxy HTTP 407")
+    ingest.maintain()
+    old = source_progress(ingest, previous["id"])["sources"][0]
+    assert old["current_errors"] == 1 and old["historical_errors"] == 0
+    assert old["statuses"] == {"failed": 1}
+    assert old["inherited_failures"] == []
+
+    current = ingest.create_run({})
+    ingest.finish(next_job(ingest, "discovery"), dict(candidates=[dict(url=url), dict(url=url)]))
+    ingest.maintain()
+    item = source_progress(ingest, current["id"])["sources"][0]
+    assert item["progress"] == 100 and item["state"] == "partial"
+    assert item["articles"] == 1
+    assert item["statuses"] == {"previous_failed": 1}
+    assert item["current_errors"] == 0 and item["historical_errors"] == 1
+    assert item["stages"] == [dict(stage="discovery", state="succeeded", n=1)]
+    issue = item["inherited_failures"][0]
+    assert issue["run_id"] == previous["id"]
+    assert issue["job_id"] == failed["id"] and issue["stage"] == "fetch"
+    assert issue["url"] == url and "407" in issue["outcome"]
+    # A consulta não dispara reprocessamento nem reescreve o resultado anterior.
+    with ingest.connection() as db:
+        assert (
+            db.execute(
+                "SELECT count(*) n FROM ingest_jobs WHERE run_id=%s", (current["id"],)
+            ).fetchone()["n"]
+            == 1
+        )
+        assert (
+            db.execute("SELECT state FROM ingest_jobs WHERE id=%s", (failed["id"],)).fetchone()[
+                "state"
+            ]
+            == "failed"
+        )
+
+
 def test_daily_window_and_archive_link_exclusion(ingest):
     from datetime import datetime
 

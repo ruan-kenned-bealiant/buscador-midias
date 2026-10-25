@@ -1,6 +1,6 @@
 'use strict';
 const $=id=>document.getElementById(id),stages={discovery:'Descoberta',dedup:'Verificação no corpus',fetch:'Extração textual',context:'Análise de contexto',evidence:'Evidência',persist:'Gravação no corpus'},states={pending:'Aguardando',queued:'Na fila',running:'Processando',retry:'Nova tentativa',succeeded:'Concluída',failed:'Falha',skipped:'Ignorada',cancelled:'Cancelada',completed:'Concluída',partial:'Concluída com pendências'};
-const outcomes={pending:'Aguardando',dedup:'Verificando corpus',fetch:'Aguardando extração',context:'Aguardando análise',evidence:'Aguardando evidência',persist:'Aguardando gravação',known:'Já existe no corpus',known_incomplete:'Existente com pendências',no_text:'Sem texto confirmado',outside_window:'Fora da janela',date_unknown:'Data desconhecida',no_entities:'Sem entidade identificável',persisted:'Gravada com evidência',evidence_pending:'Gravada com evidência pendente',failed:'Falha de processamento'};
+const outcomes={pending:'Aguardando',dedup:'Verificando corpus',fetch:'Aguardando extração',context:'Aguardando análise',evidence:'Aguardando evidência',persist:'Aguardando gravação',known:'Já existe no corpus',known_incomplete:'Existente com pendências',no_text:'Sem texto confirmado',outside_window:'Fora da janela',date_unknown:'Data desconhecida',no_entities:'Sem entidade identificável',persisted:'Gravada com evidência',evidence_pending:'Gravada com evidência pendente',failed:'Falha de processamento nesta rodada',previous_failed:'Falha em rodada anterior'};
 let token='',version=0,config=null,offset=0,total=0,busy=false,rows=[],timer;
 let currentView='stages',sourceOffset=0,sourceTotal=0,sourceRun='',searchTimer;
 const fmt=n=>new Intl.NumberFormat('pt-BR').format(n||0),date=value=>value?new Date(value).toLocaleString('pt-BR'):'—';
@@ -49,6 +49,15 @@ async function loadSources(){
     const statuses=el('div',undefined,'source-status');
     for(const [status,n]of Object.entries(source.statuses))statuses.append(el('span',(outcomes[status]||status)+': '+fmt(n)));
     card.append(statuses);
+    if(source.historical_errors){
+      const history=el('details');history.append(el('summary',fmt(source.historical_errors)+' pendência(s) de rodadas anteriores'));
+      history.append(el('p','Estas notícias já tinham falhado e não foram reprocessadas nesta rodada. A tabela abaixo mostra as tarefas da rodada selecionada. Exibimos até cinco exemplos.','muted'));
+      for(const issue of source.inherited_failures||[]){
+        const row=el('article'),link=el('a',issue.url);link.href=issue.url;link.target='_blank';link.rel='noopener noreferrer';
+        row.append(link,el('p',(stages[issue.stage]||issue.stage)+' · '+date(issue.run_created_at)+' · Rodada '+issue.run_id.slice(0,8)),el('p',issue.outcome||'Motivo não registrado'));history.append(row);
+      }
+      card.append(history);
+    }
     const detail=el('details');detail.dataset.source=String(source.id);detail.open=expanded.has(String(source.id));detail.append(el('summary','Detalhar etapas'));
     const wrap=el('div',undefined,'table-wrap'),table=el('table',undefined,'source-table'),head=el('thead'),hr=el('tr');
     for(const text of ['Etapa','Aguardando','Processando','Retentativa','Concluídas','Falhas','Ignoradas',''])hr.append(el('th',text));head.append(hr);table.append(head);

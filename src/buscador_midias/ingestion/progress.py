@@ -83,9 +83,11 @@ def summarize(
     open_jobs = sum(
         int(q["n"]) for q in queues if q["state"] in ("pending", "queued", "running", "retry")
     )
-    errors = max(
+    current_errors = max(
         statuses.get("failed", 0), sum(int(q["n"]) for q in queues if q["state"] == "failed")
     )
+    historical_errors = statuses.get("previous_failed", 0)
+    errors = current_errors + historical_errors
     closed = not in_discovery and waiting == 0 and open_jobs == 0
     progress = min(99, int(done * 100 / total)) if total and not closed else 100 if closed else 0
     return dict(
@@ -94,6 +96,8 @@ def summarize(
         statuses=statuses,
         stages=queues,
         errors=errors,
+        current_errors=current_errors,
+        historical_errors=historical_errors,
         active_articles=waiting,
         discovery_complete=not in_discovery,
         progress=None if in_discovery else progress,
@@ -134,13 +138,15 @@ def source_progress(
             "FROM ingest_jobs WHERE run_id=%s AND hash IS NOT NULL ORDER BY hash,generation "
             "DESC,CASE stage WHEN 'persist' THEN 6 WHEN 'evidence' THEN 5 WHEN 'context' THEN 4 "
             "WHEN 'fetch' THEN 3 ELSE 2 END DESC,created_at DESC) "
-            "SELECT o.source_id,CASE WHEN j.state IN ('failed','cancelled','skipped') THEN j.state "
+            "SELECT o.source_id,CASE WHEN j.hash IS NULL AND a.status='failed' "
+            "AND a.run_id<>%s THEN 'previous_failed' "
+            "WHEN j.state IN ('failed','cancelled','skipped') THEN j.state "
             "WHEN j.state='succeeded' THEN "
             "COALESCE(j.result->>'status',j.result->>'next',a.status) "
             "WHEN j.stage='dedup' THEN 'pending' ELSE COALESCE(j.stage,a.status) END status,"
             "count(*) n FROM origins o JOIN ingest_articles a ON a.hash=o.hash "
             "LEFT JOIN latest j ON j.hash=o.hash GROUP BY 1,2",
-            (ident, ident),
+            (ident, ident, ident),
         ).fetchall()
         queues = db.execute(
             "WITH origins AS (SELECT DISTINCT (p.snapshot->'source'->>'id')::bigint source_id,"
@@ -154,6 +160,20 @@ def source_progress(
             "GROUP BY 1,2,3 ORDER BY j.stage,j.state",
             (ident, ident),
         ).fetchall()
+        inherited = db.execute(
+            "WITH origins AS (SELECT DISTINCT (p.snapshot->'source'->>'id')::bigint source_id,"
+            "o.hash FROM ingest_occurrences o JOIN ingest_polls p ON p.id=o.poll_id "
+            "WHERE o.run_id=%s), ranked AS (SELECT o.source_id,a.url,j.id job_id,j.stage,"
+            "j.run_id,j.outcome,j.finished_at,r.created_at run_created_at,"
+            "row_number() OVER(PARTITION BY o.source_id ORDER BY j.finished_at DESC,j.id) pos "
+            "FROM origins o JOIN ingest_articles a ON a.hash=o.hash JOIN LATERAL "
+            "(SELECT id,stage,run_id,outcome,finished_at FROM ingest_jobs WHERE hash=o.hash "
+            "AND state='failed' ORDER BY generation DESC,finished_at DESC,id LIMIT 1) j "
+            "ON true JOIN ingest_runs r ON r.id=j.run_id WHERE a.status='failed' "
+            "AND a.run_id<>%s AND NOT EXISTS(SELECT 1 FROM ingest_jobs local "
+            "WHERE local.hash=o.hash AND local.run_id=%s)) SELECT * FROM ranked WHERE pos<=5",
+            (ident, ident, ident),
+        ).fetchall()
     by_source: dict[int, dict[str, int]] = defaultdict(dict)
     stage_rows: dict[int, list[Any]] = defaultdict(list)
     for row in statuses:
@@ -162,7 +182,17 @@ def source_progress(
         stage_rows[row["source_id"]].append(
             dict(stage=row["stage"], state=row["state"], n=row["n"])
         )
-    rows = [summarize(dict(s), by_source[s["id"]], stage_rows[s["id"]]) for s in sources]
+    inherited_by_source: dict[int, list[Any]] = defaultdict(list)
+    for issue in inherited:
+        inherited_by_source[issue["source_id"]].append(dict(issue))
+    rows = [
+        summarize(
+            dict(s, inherited_failures=inherited_by_source[s["id"]]),
+            by_source[s["id"]],
+            stage_rows[s["id"]],
+        )
+        for s in sources
+    ]
     summary = dict(Counter(row["state"] for row in rows))
     filtered = sorted(
         (r for r in rows if search.casefold() in r["name"].casefold()),
