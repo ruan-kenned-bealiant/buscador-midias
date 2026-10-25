@@ -100,6 +100,10 @@ def make_server(
     guide_page = render_guide()
     search_page = resources.files("buscador_midias.dashboard").joinpath("search.html").read_bytes()
     search_script = resources.files("buscador_midias.dashboard").joinpath("search.js").read_bytes()
+    evidence_assets = {
+        name: resources.files("buscador_midias.dashboard").joinpath(name).read_bytes()
+        for name in ("evidence.html", "evidence.js", "evidence_prepare.js")
+    }
     health_script = resources.files("buscador_midias.dashboard").joinpath("health.js").read_bytes()
     manager = CatalogAPI(
         open_catalog(
@@ -139,6 +143,22 @@ def make_server(
             parts = urlsplit(self.path)
             if parts.path in ("/", "/gerenciador", "/mecanismos", "/saude"):
                 self._send(200, "text/html; charset=utf-8", manager_page)
+            elif parts.path == "/sandbox/evidencias":
+                self._send(
+                    200,
+                    "text/html; charset=utf-8",
+                    evidence_assets["evidence.html"],
+                    csp="default-src 'none'; script-src 'self'; "
+                    "style-src 'unsafe-inline' http: https:; "
+                    "connect-src 'self'; frame-src 'self' blob:; img-src http: https: data:; "
+                    "font-src http: https: data:; base-uri http: https:; form-action 'none'",
+                )
+            elif parts.path in ("/assets/evidence.js", "/assets/evidence_prepare.js"):
+                self._send(
+                    200,
+                    "application/javascript; charset=utf-8",
+                    evidence_assets[parts.path.rsplit("/", 1)[-1]],
+                )
             elif parts.path == "/buscador":
                 self._send(200, "text/html; charset=utf-8", search_page)
             elif parts.path == "/assets/search.js":
@@ -148,7 +168,7 @@ def make_server(
             elif parts.path == "/assets/health.js":
                 self._send(200, "application/javascript; charset=utf-8", health_script)
             elif parts.path.startswith("/evidencias/corpus/"):
-                from buscador_midias.ingestion.evidence_view import read_evidence
+                from buscador_midias.ingestion.evidence_view import preview_html, read_evidence
 
                 match = re.fullmatch(r"/evidencias/corpus/([a-f0-9]{64})", parts.path)
                 if not match or manager.ingestion is None:
@@ -156,11 +176,15 @@ def make_server(
                     return
                 try:
                     content_type, data = read_evidence(manager.ingestion, match[1])
+                    original = parse_qs(parts.query).get("original") == ["1"]
+                    if content_type == "text/html" and not original:
+                        data = preview_html(data, match[1])
                     self._send(
                         200,
                         content_type,
                         data,
                         csp="sandbox; script-src 'none'; object-src 'none'; form-action 'none'",
+                        download=original,
                     )
                 except CatalogError as error:
                     self._json(error.status, {"error": str(error)})
@@ -651,7 +675,15 @@ def make_server(
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
             self._send(status, "application/json; charset=utf-8", body)
 
-        def _send(self, status: int, content_type: str, body: bytes, *, csp: str = _CSP) -> None:
+        def _send(
+            self,
+            status: int,
+            content_type: str,
+            body: bytes,
+            *,
+            csp: str = _CSP,
+            download: bool = False,
+        ) -> None:
             """Envia a resposta com cabeçalhos de segurança e sem cache."""
             self.send_response(status)
             self.send_header("Content-Type", content_type)
@@ -659,6 +691,8 @@ def make_server(
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Content-Security-Policy", csp)
+            if download:
+                self.send_header("Content-Disposition", "attachment")
             self.end_headers()
             self.wfile.write(body)
 

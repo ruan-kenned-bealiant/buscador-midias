@@ -80,7 +80,7 @@ async function showSourceCorpus(source,run,offset=0){
       const section=el('article');section.append(el('h3',article.title||'Notícia sem título'),el('p','Publicação: '+date(article.published_at)));
       if(/^https?:\/\//i.test(article.url)){const original=el('a','Abrir notícia no site');original.href=article.url;original.target='_blank';original.rel='noopener noreferrer';section.append(original)}
       const actions=el('div',undefined,'actions');
-      if(article.evidence_url){const evidence=el('a','Abrir evidência');evidence.href=article.evidence_url;evidence.target='_blank';evidence.rel='noopener noreferrer';actions.append(evidence)}else actions.append(el('span','Evidência ainda não disponível.','muted'));
+      if(article.evidence_url){const evidence=el('a','Abrir evidência');evidence.href=article.evidence_url;evidence.target='_blank';evidence.rel='noopener noreferrer';actions.append(evidence);const sandbox=el('a','Ver no sandbox');sandbox.href='/sandbox/evidencias?hash='+article.evidence_url.split('/').pop();sandbox.target='_blank';sandbox.rel='noopener noreferrer';actions.append(sandbox)}else actions.append(el('span','Evidência ainda não disponível.','muted'));
       section.append(actions);body.append(section);
     }
     if(!data.articles.length)body.append(el('p','Nenhuma notícia deste site está registrada no corpus para esta rodada.','empty'));
