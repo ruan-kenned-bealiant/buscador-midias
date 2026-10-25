@@ -227,6 +227,8 @@ class IngestStore:
         patch = data.get("config")
         if not isinstance(patch, dict) or patch.keys() - DEFAULTS.keys():
             raise CatalogError("Parâmetros de busca desconhecidos.")
+        if patch.get("bright_data") is True:
+            raise CatalogError("O fallback Bright Data está desativado na busca de notícias.")
         for key, value in patch.items():
             if key in (
                 "enabled",
@@ -270,7 +272,7 @@ class IngestStore:
             else:
                 bounds = {
                     "lookback_minutes": (1, 5256000),
-                    "max_attempts": (1, 10),
+                    "max_attempts": (1, 3),
                     "retry_minutes": (1, 1440),
                     "analysis_text_chars": (1000, 30000),
                 }
@@ -549,7 +551,9 @@ class IngestStore:
             ).fetchone()
             if current["state"] != "running" or current["owner"] != job["owner"]:
                 return "stale"
-            exhausted = not busy and current["failures"] + 1 >= job["run"]["config"]["max_attempts"]
+            exhausted = not busy and current["failures"] + 1 >= min(
+                3, job["run"]["config"]["max_attempts"]
+            )
             state = "failed" if exhausted else "retry"
             delay = (
                 defer_seconds
@@ -756,7 +760,7 @@ class IngestStore:
                 "WHERE j.state='running' AND j.lease_until<now() FOR UPDATE OF j SKIP LOCKED"
             ).fetchall()
             for row in abandoned:
-                failed = row["failures"] + 1 >= row["config"]["max_attempts"]
+                failed = row["failures"] + 1 >= min(3, row["config"]["max_attempts"])
                 db.execute(
                     "UPDATE ingest_jobs SET "
                     "state=%s,failures=failures+1,owner=NULL,lease_until=NULL,"

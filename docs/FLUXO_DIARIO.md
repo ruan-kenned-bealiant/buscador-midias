@@ -158,3 +158,12 @@ mudança (ativa, sem teto configurado); limites do provedor continuam sujeitos
 a respostas 429 e à pausa automática do serviço. Essa concorrência é editável
 no gerenciador. Aumentar a concorrência aumenta a velocidade de consumo dos
 créditos, sem alterar o modelo ou criar análises duplicadas intencionalmente.
+
+
+O fallback Bright Data está desativado na busca de notícias, inclusive para
+reprocessamentos que referenciem configurações antigas. O acesso aos documentos
+e às notícias usa apenas HTTP direto; a evidência reaproveita o HTML salvo.
+Cada tarefa permite no máximo três tentativas totais (inicial + duas repetições),
+sem uma camada adicional de retries HTTP. O painel permite reduzir esse limite.
+Contenção de host, sem execução da chamada, continua sendo adiada sem gastar
+o orçamento. Os contadores históricos de Bright Data permanecem preservados.

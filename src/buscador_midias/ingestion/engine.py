@@ -18,7 +18,6 @@ from psycopg import sql
 from buscador_midias.analysis.context import AnalysisItem, OpenRouterContextAnalyzer
 from buscador_midias.analysis.openrouter import OpenRouterChat
 from buscador_midias.analysis.prompt import PROMPT_VERSION
-from buscador_midias.catalog.bright_reader import BrightTestReader
 from buscador_midias.catalog.mechanisms import get_mechanism
 from buscador_midias.catalog.reader import TestReader
 from buscador_midias.corpus.article import build_corpus_article
@@ -98,7 +97,7 @@ class Engine:
 
     @contextmanager
     def reader(self, job: dict[str, Any], roots: list[str]) -> Iterator[Any]:
-        """Trava por host real entre processos e contabiliza HTTP e fallback."""
+        """Trava por host real entre processos; usa somente HTTP direto."""
         if self.reader_factory:
             yield self.reader_factory(roots, lambda _: None)
             return
@@ -115,9 +114,7 @@ class Engine:
                     raise HostBusyError()
                 acquired.add(host)
 
-            config = job["run"]["config"]
-            cls = BrightTestReader if config["bright_data"] else TestReader
-            reader = cls(
+            reader = TestReader(
                 roots,
                 lambda _: None,
                 seconds=60,
@@ -572,8 +569,7 @@ class Engine:
             data.get("content_type"),
             data.get("final_url"),
         )
-        # O capturador compartilha critérios com o enriquecimento legado. Transporte pago
-        # passa pelo mesmo leitor seguro, com robots e escopo do mecanismo.
+        # O capturador reaproveita o HTML HTTP já salvo. Transporte pago está desativado.
         with self.reader(job, [site.url, job["snapshot"]["url"]]) as reader:
             finding = FindingUrl(
                 data.get("existing_hash", key),
@@ -585,14 +581,14 @@ class Engine:
             )
             capturer = EvidenceCapturer(
                 store,
-                bright_data=reader if config["bright_data"] else None,
+                bright_data=None,
                 reuse=True,
                 now=lambda: datetime.now(UTC),
             )
             captured = capturer.capture(finding, page, expected_headline=data.get("title") or "")
             record = asdict(captured)
             metrics = self.metrics(reader)
-        if captured.status != "captured" and job["attempts"] < config["max_attempts"]:
+        if captured.status != "captured" and job["attempts"] < min(3, config["max_attempts"]):
             raise RetryableError("Evidência não confirmada; texto e análise preservados", metrics)
         return dict(
             next="persist",

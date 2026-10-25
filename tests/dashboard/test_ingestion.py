@@ -1077,3 +1077,32 @@ def test_recovery_backlog_does_not_throttle_primary_producers(ingest, monkeypatc
     job = next_job(ingest, "fetch")
     ingest.failure(job, "HTTP 503")
     assert ingest.capacity("dedup")[0]
+
+
+def test_ingestion_disables_paid_fallback_and_limits_attempt_configuration(ingest):
+    setting = ingest.settings()
+    assert setting["config"]["bright_data"] is False
+    for patch in (dict(bright_data=True), dict(max_attempts=4)):
+        with pytest.raises(CatalogError):
+            ingest.configure(dict(version=setting["version"], config=patch))
+
+
+def test_old_config_cannot_exceed_three_failed_attempts(ingest):
+    from psycopg.types.json import Jsonb
+
+    run = ingest.create_run({})
+    with ingest.connection() as db:
+        db.execute(
+            "UPDATE ingest_runs SET config=config||%s WHERE id=%s",
+            (Jsonb(dict(max_attempts=10, bright_data=True)), run["id"]),
+        )
+    for attempt in range(3):
+        job = next_job(ingest, "discovery")
+        with Engine(ingest).reader(job, ["https://jose.example"]) as reader:
+            from buscador_midias.catalog.reader import TestReader
+
+            assert type(reader) is TestReader
+        assert ingest.failure(job, "HTTP 503") == ("failed" if attempt == 2 else "retry")
+        with ingest.connection() as db:
+            db.execute("UPDATE ingest_jobs SET available_at=now() WHERE id=%s", (job["id"],))
+    assert ingest.claim(job["id"], "fourth") is None
