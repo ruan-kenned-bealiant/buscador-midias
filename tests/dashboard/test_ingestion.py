@@ -1106,3 +1106,14 @@ def test_old_config_cannot_exceed_three_failed_attempts(ingest):
         with ingest.connection() as db:
             db.execute("UPDATE ingest_jobs SET available_at=now() WHERE id=%s", (job["id"],))
     assert ingest.claim(job["id"], "fourth") is None
+
+
+def test_worker_configuration_accepts_requested_concurrency(ingest):
+    setting = ingest.settings()
+    workers = dict(setting["config"]["workers"], discovery=9, fetch=18, context=18)
+    updated = ingest.configure(dict(version=setting["version"], config=dict(workers=workers)))
+    assert updated["config"]["workers"] == workers
+    with pytest.raises(CatalogError):
+        ingest.configure(
+            dict(version=updated["version"], config=dict(workers=dict(workers, fetch=33)))
+        )

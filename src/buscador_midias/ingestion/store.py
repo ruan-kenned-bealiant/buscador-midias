@@ -261,9 +261,9 @@ class IngestStore:
                 if (
                     not isinstance(value, dict)
                     or set(value) != set(STAGES)
-                    or any(type(v) is not int or not 1 <= v <= 16 for v in value.values())
+                    or any(type(v) is not int or not 1 <= v <= 32 for v in value.values())
                 ):
-                    raise CatalogError("Informe 1 a 16 workers por etapa.")
+                    raise CatalogError("Informe 1 a 32 workers por etapa.")
             elif key == "model":
                 if not isinstance(value, str) or not re.fullmatch(
                     r"[A-Za-z0-9_./:-]{1,150}", value
