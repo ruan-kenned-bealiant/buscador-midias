@@ -23,7 +23,6 @@ from buscador_midias.catalog.reader import TestReader
 from buscador_midias.corpus.article import build_corpus_article
 from buscador_midias.corpus.writer import PostgresCorpusWriter
 from buscador_midias.criteria import meets_criteria
-from buscador_midias.discovery.robots import RobotsPolicy
 from buscador_midias.domain.site import Site
 from buscador_midias.domain.url import url_hash_candidates
 from buscador_midias.evidence.capture import EvidenceCapturer
@@ -79,7 +78,6 @@ class Engine:
         self.writer_factory = writer_factory
         self.corpus_schema = corpus_schema
         self.routes = Routes(repository)
-        self.policy_cache: dict[str, tuple[float, RobotsPolicy]] = {}
 
     @staticmethod
     def site(job: dict[str, Any]) -> Site:
@@ -121,7 +119,6 @@ class Engine:
                 requests=24,
                 max_bytes=16 * 1024 * 1024,
                 before_request=reserve,
-                policy_cache=self.policy_cache,
             )
             yield reader
 

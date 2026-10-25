@@ -45,7 +45,7 @@ RESULTS = (
         "access_error",
         "Falha de acesso",
         "Não foi possível acessar o RSS/sitemap ou uma notícia necessária à comprovação.",
-        "HTTP 403/429, endereço inexistente (404), timeout, DNS, SSL ou restrição de robots.txt.",
+        "HTTP 403/429, endereço inexistente (404), timeout, DNS, SSL ou falha no destino.",
         "Confira se a falha ocorreu no XML ou no artigo. Bright Data pode ajudar em "
         "alguns bloqueios e falhas de rede, sem garantia de resolver todos.",
     ),
@@ -128,16 +128,15 @@ PARAMETER_HELP = {
         "a frequência de execução.",
     ),
     "timeout_seconds": (
-        "Orçamento total do teste, incluindo política de acesso, XMLs e artigos. O "
+        "Orçamento total do teste, incluindo XMLs e artigos. O "
         "teste individual e a saúde usam 60 segundos quando Bright Data está ligado.",
         "Com 45 segundos, um índice lento pode consumir o orçamento antes de abrir um "
         "artigo; isso pode deixar o resultado inconclusivo.",
     ),
     "max_requests": (
-        "Limita as requisições realizadas no teste, incluindo robots.txt e "
+        "Limita as requisições realizadas no teste, incluindo XMLs, artigos e "
         "redirecionamentos. Funciona junto com os outros limites.",
-        "24 requisições não significam 24 notícias: parte é usada em XMLs, política de"
-        " acesso e redirecionamentos.",
+        "24 requisições não significam 24 notícias: parte é usada em XMLs e redirecionamentos.",
     ),
     "article_samples": (
         "Quantidade máxima de páginas de notícias a conferir. 0 verifica apenas XML e "
@@ -263,7 +262,7 @@ FIELDS = (
         "alternativa paga para determinados bloqueios e falhas de rede.",
         "HTTP direto 403 → fallback → XML e artigo → extração textual.",
         "Não é usado para ausência de texto, áudio, XML vazio, 404 ou autenticação "
-        "401. Restrições obtidas em robots.txt continuam respeitadas. Chamadas são "
+        "401. O acesso é direto, sem consulta a robots.txt. Chamadas são "
         "contadas; o painel não calcula a fatura.",
     ),
 )

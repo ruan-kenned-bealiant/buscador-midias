@@ -230,17 +230,59 @@ def test_no_dns_rebinding_second_lookup(monkeypatch):
     assert len(calls) == 1
 
 
-def test_robots_disallow_stops_before_xml(monkeypatch):
-    reader = TestReader([ROOT], lambda step: None)
-    # Obter a política pode ser simulado isoladamente; a URL do XML não é requisitada.
+@pytest.mark.parametrize("mode", ["direct", "batch", "bright"])
+def test_http_goes_directly_to_xml_and_article_ignoring_old_robots_cache(monkeypatch, mode):
+    from buscador_midias.catalog.batch_reader import BatchCache, BatchReader
+    from buscador_midias.catalog.bright_reader import BrightTestReader
+    from buscador_midias.catalog.mechanisms import get_mechanism
     from buscador_midias.discovery.robots import RobotsPolicy
 
+    steps, calls = [], []
+    if mode == "batch":
+        reader = BatchReader(
+            [ROOT, ROOT + "map.xml"], steps.append, BatchCache(), get_mechanism("rss").defaults(), 1
+        )
+    else:
+        cls = BrightTestReader if mode == "bright" else TestReader
+        reader = cls([ROOT], steps.append)
+    # Uma política antiga em memória não deve bloquear nem disparar outra consulta.
     reader.policies["https://news.example"] = RobotsPolicy.parse("User-agent: *\nDisallow: /")
-    monkeypatch.setattr(
-        "buscador_midias.catalog.reader.public_ip", lambda *args: pytest.fail("Não deve conectar")
-    )
-    assert "robots_disallowed" in reader.get(ROOT + "map.xml").error
-    assert reader.requests == 0
+    reader.policy_cache["https://news.example"] = (time.monotonic() + 300, None)
+    monkeypatch.setattr("buscador_midias.catalog.reader.public_ip", lambda *args: "93.184.216.34")
+
+    class Response:
+        status = 200
+
+        def __init__(self):
+            self.body = b"<rss/>"
+
+        def getheader(self, name, default=None):
+            return "application/xml" if name == "Content-Type" else default
+
+        def read1(self, size):
+            body, self.body = self.body, b""
+            return body
+
+    class Connection:
+        def __init__(self, *args):
+            pass
+
+        def request(self, method, path, **kwargs):
+            calls.append(path)
+
+        def getresponse(self):
+            return Response()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("buscador_midias.catalog.reader._PinnedConnection", Connection)
+    assert reader.get(ROOT + "map.xml").ok
+    assert reader.get(ARTICLE).ok
+    assert calls == ["/map.xml", "/noticia/acontecimentos-na-cidade"]
+    assert reader.requests == 2
+    assert not any(step.get("stage") == "robots" for step in steps)
+    assert getattr(reader, "bright_requests", 0) == 0
 
 
 def test_redirect_to_private_or_unrelated_host_rejected_before_connect(monkeypatch):

@@ -1,4 +1,4 @@
-"""Fallback do gerenciador preserva política, escopo, orçamento e status do destino."""
+"""Fallback do gerenciador preserva escopo, orçamento e status do destino."""
 
 import json
 
@@ -128,21 +128,18 @@ def test_provider_redirect_cannot_access_private_network(setup, monkeypatch):
     assert not response.ok and instance.bright_requests == 1
 
 
-def test_robots_fallback_recovers_policy_but_respects_disallow(setup, monkeypatch):
-    def direct(self, url, *, robots=False):
-        if robots:
-            return FetchResult(url, 403, b"", None, url)
-        allowed, reason = self._allowed(url)
-        return FetchResult(url, 403 if allowed else None, b"", None if allowed else reason, url)
+def test_fallback_fetches_requested_url_without_robots(setup, monkeypatch):
+    direct_calls, provider_calls = [], []
+
+    def direct(self, url, **kwargs):
+        direct_calls.append(url)
+        return FetchResult(url, 403, b"", None, url)
 
     monkeypatch.setattr(TestReader, "_fetch", direct)
-    calls = []
 
     def handler(request):
-        calls.append(json.loads(request.content)["url"])
-        return httpx.Response(
-            200, json=dict(status_code=200, headers={}, body="User-agent: *\nDisallow: /\n")
-        )
+        provider_calls.append(json.loads(request.content)["url"])
+        return httpx.Response(200, json=dict(status_code=200, headers={}, body="<rss/>"))
 
     instance = BrightTestReader(
         [URL],
@@ -152,8 +149,9 @@ def test_robots_fallback_recovers_policy_but_respects_disallow(setup, monkeypatc
         ),
     )
     result = instance.get(URL)
-    assert not result.ok and "robots_disallowed" in result.error
-    assert calls == ["https://public.example/robots.txt"]
+    assert result.ok
+    assert direct_calls == provider_calls == [URL]
+    assert instance.bright_requests == 1
 
 
 def test_structured_provider_response_has_size_limit(setup, monkeypatch):

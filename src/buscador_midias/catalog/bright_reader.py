@@ -71,7 +71,7 @@ def should_fallback(result: FetchResult) -> bool:
 
 
 class BrightTestReader(TestReader):
-    """Tenta HTTP direto antes de cada fallback, inclusive ao recuperar robots.txt."""
+    """Tenta HTTP direto antes de cada fallback, sem consulta a robots.txt."""
 
     __test__ = False
 
@@ -109,8 +109,7 @@ class BrightTestReader(TestReader):
             self.bright_events.append(dict(url=url, error="Credenciais Bright Data indisponíveis"))
             return direct
         remaining = self._check()
-        # Valida novamente o destino antes de o enviar ao provedor. Política desconhecida
-        # ou proibitiva continua impedindo a leitura do conteúdo, mesmo com fallback.
+        # Valida escopo e IP público antes de enviar o destino ao provedor.
         url = self._scope(direct.final_url or url)
         public_ip(urlsplit(url).hostname or "", min(3, remaining))
         if not robots:

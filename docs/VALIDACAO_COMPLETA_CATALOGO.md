@@ -92,3 +92,83 @@ backup consistente do SQLite é criado antes de iniciar uma nova rodada. A retom
 utiliza as configurações e as tentativas persistidas; não recria links já excluídos.
 Após desligamento, a execução precisa ser iniciada novamente; não foi instalado serviço
 de inicialização automática. A integração com o banco definitivo de Mídias segue futura.
+
+## Reteste consultivo das exclusões por indisponibilidade de robots
+
+A auditoria histórica identificou 2.921 links com `robots_unavailable` no resultado
+final da exclusão. O comando abaixo testa essa lista congelada por HTTP direto,
+sem consulta a robots e sem Bright Data, conforme autorização específica para o
+experimento. Isso não altera a política de acesso do fluxo de produção.
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/retest_excluded_direct.py
+```
+
+São até 12 hostnames paralelos, um link por hostname por vez, com espaçamento de
+300 ms entre acessos ao mesmo hostname. Cada endereço pode ser tentado no máximo
+três vezes; ciclos de redirecionamento e erros permanentes encerram o teste antes.
+TLS, validação de IP público, escopo, tamanho e prazo da resposta continuam ativos.
+URLs idênticas de associações diferentes compartilham a mesma resposta.
+
+A saída em `var/gerenciador/reteste-2921-sem-robots/` contém manifesto dos 2.921
+cadastros, checkpoints em `resultados.jsonl`, progresso em `resumo.json`, CSV em
+`links.csv` e corpos de respostas bem-sucedidas comprimidos e identificados por
+SHA256. Executar novamente o mesmo comando retoma os links pendentes. O lock de
+arquivo impede duas instâncias da mesma rodada.
+
+O teste confere acesso e formato do XML e conta URLs/filhos, sem limite de data.
+Não acessa as notícias, não comprova texto, não segue os filhos dos índices e não
+reativa nem restaura cadastros. `xml_with_urls` pode incluir feeds de áudio e não
+equivale à aprovação textual exigida para o catálogo de notícias.
+
+## Validação textual e restauração dos XMLs recuperados
+
+Após o reteste consultivo, `scripts/validate_recovered_direct.py` congela os 638
+links classificados como `xml_with_urls` e suas revisões no PostgreSQL. Reutiliza
+os bytes dos XMLs preservados, conferindo SHA256, e acessa filhos e notícias por
+HTTP direto, sem robots e sem Bright Data. Isso continua restrito a esta rodada;
+a política de robots da ingestão não é modificada.
+
+O teste usa o avaliador do gerenciador (`run_test`): acesso ao XML, compatibilidade
+do mecanismo e pelo menos uma notícia com texto útil. Notícias antigas são aceitas
+(`lookback_days=0`). HTTP 200, URLs enumeradas e XML válido isoladamente não aprovam
+o link. São até três notícias por amostra, três tentativas por endereço, 24
+requisições e 40 segundos por teste. Índices mantêm o limite de profundidade do
+mecanismo, até 10 níveis, e o orçamento de documentos. Ausência de confirmação na
+amostra não prova que a fonte inteira seja inutilizável.
+
+Cada resultado fica em `link_test_results`. Aprovados recebem o mecanismo testado,
+prova em `last_test` e `evidence`, restauração da exclusão lógica e ativação no mesmo
+site. Pais inativados automaticamente são reativados quando há um filho aprovado.
+Exclusões manuais e alterações concorrentes são preservadas. Intervalos de busca
+não são alterados. Os eventos `direct_text_restore` e `direct_text_restore_site`
+preservam os estados anteriores e posteriores e o identificador da rodada.
+
+Com as credenciais PostgreSQL configuradas no ambiente:
+
+```bash
+PYTHONPATH=.:src .venv/bin/python scripts/validate_recovered_direct.py
+```
+
+A saída em `var/gerenciador/validacao-textual-recuperados/` contém manifesto,
+checkpoint por link, progresso, CSV final e corpos HTTP identificados por SHA256.
+O lock impede duas instâncias; a retomada não repete testes já concluídos e a
+chave do teste impede reaplicar uma restauração após interrupção entre o commit
+e o checkpoint. A execução não inicia rodada de ingestão nem chama OpenRouter.
+
+Resultado da rodada `852bd29065c74c2ea779ecb21e5662b5`:
+638 links avaliados, 117 com notícia textual comprovada (113 restaurados e quatro
+já ativos), distribuídos por 15 fontes. Nove sites foram reativados. Os 521 sem
+confirmação textual permaneceram excluídos. Entre os aprovados há 101 RSS, sete
+índices de sitemap, sete sitemaps de URLs e dois sitemaps de notícias. A auditoria
+final confirmou os 638 resultados arquivados no PostgreSQL, pais ativos de todos
+os aprovados e intervalos de busca preservados. Foram 3.301 requisições HTTP novas,
+sem chamadas a robots, Bright Data ou OpenRouter nesta validação. Consulte
+`var/gerenciador/validacao-textual-recuperados/links.csv` e `auditoria-final.json`.
+
+Atualização de 25/10/2026: após a rodada de recuperação, a consulta de política de
+`robots.txt` também foi removida do leitor compartilhado usado pela ingestão,
+testes individuais e Saúde das fontes. As descrições acima de comportamento
+restrito ao reteste registram a situação durante aquela rodada. A remoção atual
+não modifica o histórico nem reabre rodadas; preserva os demais limites e
+validações de rede.

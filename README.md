@@ -207,11 +207,11 @@ XML funcional com artigos bloqueados continua distinguido de falha no XML. Índi
 referenciam filhos, que não são contados como notícias. Com janela 0, datas antigas não reprovam o link; na rodada anual, publicações conhecidas fora dos 365 dias não servem como prova.
 
 Cada teste é uma **amostra finita**. Os padrões são até 12 XMLs nos modelos com expansão,
-3 notícias, 24 GETs incluindo robots e redirecionamentos, 8 MiB por resposta/XML,
+3 notícias, 24 GETs incluindo XMLs, artigos e redirecionamentos, 8 MiB por resposta/XML,
 profundidade 10 e orçamento de 45 segundos. Os parâmetros da tela de mecanismos ajustam
 esses valores dentro dos intervalos definidos acima; modelos diretos leem apenas um XML.
 Ao encontrar notícias, prioriza as amostras e informa que não leu os demais filhos.
-Robots, escopo da fonte e limites são explícitos; não há tentativas infinitas ou cobrança
+O leitor acessa diretamente XMLs e artigos, sem consultar robots.txt. Escopo da fonte e limites são explícitos; não há tentativas infinitas ou cobrança
 externa. O leitor valida IPs públicos e fixa o IP da conexão, preservando Host/SNI/TLS;
 revalida cada redirecionamento e recusa destinos privados ou fora dos domínios permitidos.
 
@@ -2041,3 +2041,16 @@ iframe isolado, com o layout do site e os estilos declarados nos blocos de React
 Nenhum script da notícia é executado. Imagens, fontes e CSS externos dependem da
 disponibilidade do site. O arquivo armazenado permanece intacto; `?original=1`
 no link da evidência permite baixar os bytes originais.
+
+
+### HTTP direto no gerenciador e na busca de notícias
+
+O leitor compartilhado (`catalog/reader.py`) acessa os links cadastrados e suas
+notícias diretamente, sem consultar ou aplicar regras de `robots.txt`. Isso vale
+para a ingestão, o botão Testar e as rotinas de Saúde das fontes. A indisponibilidade
+de robots não impede mais esses fluxos. Domínio, IP público, TLS, redirecionamentos,
+intervalo por host, tamanho e duração continuam validados; a busca mantém o limite
+de até três tentativas e Bright Data desabilitado. As rotinas históricas de
+mapeamento podem ainda ler robots para descobrir endereços de sitemaps; os relatos
+históricos de erros de robots permanecem preservados. A alteração não inicia uma
+nova rodada nem reprocessa automaticamente falhas antigas.

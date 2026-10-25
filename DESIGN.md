@@ -39,7 +39,7 @@ atomicamente a revisão global e a revisão/configuração do endpoint.
 
 O tamanho configurado é aplicado ao transporte e à descompressão/parsing. Duração e
 requisições limitam a rede; quantidade de XMLs, profundidade, ordem e quantidade de
-amostras controlam o executor. Regras de robots, domínio/IP público e TLS são invariantes.
+amostras controlam o executor. Domínio/IP público e TLS são invariantes; o leitor não consulta robots.txt.
 
 ### Modelos e validação sob demanda
 
@@ -63,7 +63,7 @@ ou lista vazia não conferem a confirmação de busca textual. O selo verde é e
 dessa comprovação com a revisão atual. Resultados antigos não são reescritos; a UI pede
 um novo teste quando a avaliação completa não foi registrada.
 
-Rede direta: robots antes do destino, DNS público fixado na conexão com Host/SNI originais,
+Rede direta: sem consulta a robots.txt, DNS público fixado na conexão com Host/SNI originais,
 redirecionamentos validados, sem cookies/credenciais/proxies de outros serviços. Persistência
 separada de rede: nenhum lock de banco fica aberto durante downloads. Provas são aplicadas
 somente à configuração e revisão que originaram o teste; rascunhos persistem ao salvar.

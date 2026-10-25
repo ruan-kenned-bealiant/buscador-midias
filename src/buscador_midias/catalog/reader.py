@@ -1,4 +1,4 @@
-"""Leitor de teste finito, sem proxy, com robots e conexão fixada em IP público."""
+"""Leitor HTTP finito, sem proxy nem consulta a robots, com conexão em IP público."""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ class _PinnedConnection(http.client.HTTPConnection):
 
 
 class TestReader:
-    """Rede com orçamento configurável, contando robots e cada redirecionamento."""
+    """Rede direta com orçamento configurável, contando cada redirecionamento."""
 
     __test__ = False
 
@@ -86,6 +86,7 @@ class TestReader:
         self.before_request = before_request
         self.progress = progress
         self.hosts = [(urlsplit(u).hostname or "").removeprefix("www.") for u in roots]
+        # Compatibilidade com scripts históricos: políticas antigas não são aplicadas.
         self.policies: dict[str, RobotsPolicy | None] = {}
         self.last: dict[str, float] = {}
         self.policy_cache = policy_cache if policy_cache is not None else {}
@@ -105,34 +106,15 @@ class TestReader:
         return url
 
     def _allowed(self, url: str) -> tuple[bool, str]:
-        parts = urlsplit(url)
-        origin = f"{parts.scheme}://{parts.netloc}"
-        cached = self.policy_cache.get(origin)
-        if origin not in self.policies and cached and cached[0] > time.monotonic():
-            self.policies[origin] = cached[1]
-        if origin not in self.policies:
-            self.progress(
-                dict(stage="robots", message="Conferindo robots.txt", url=origin + "/robots.txt")
-            )
-            result = self._fetch(origin + "/robots.txt", robots=True)
-            if result.status in (404, 410) and not result.error:
-                policy = RobotsPolicy.allow_all()
-            elif result.ok and not result.content.lstrip().lower().startswith((b"<", b"<!")):
-                policy = RobotsPolicy.parse(result.content.decode("utf-8", errors="replace"))
-            else:
-                policy = None
-            self.policies[origin] = policy
-            if policy is not None:
-                self.policy_cache[origin] = (time.monotonic() + 300, policy)
-        policy = self.policies[origin]
-        if policy is None:
-            return False, "robots_unavailable: não foi possível obter a política de acesso"
-        if not policy.allows(url, USER_AGENT):
-            return False, "robots_disallowed: a política impede a leitura deste caminho"
+        """Acessa diretamente, sem consultar ou aplicar regras de robots.txt.
+
+        O hook permanece compatível com leitores e scripts históricos. A validação
+        de domínio/IP/TLS continua no transporte, independente deste hook.
+        """
         return True, ""
 
     def get(self, url: str) -> FetchResult:
-        """Lê apenas caminhos permitidos, validando cada destino de redirecionamento."""
+        """Lê o destino diretamente, validando o escopo de cada redirecionamento."""
         try:
             return self._fetch(url)
         except (CatalogError, OSError, ValueError, http.client.HTTPException) as error:

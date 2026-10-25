@@ -179,23 +179,6 @@ def test_third_attempt_uses_detected_sitemap_type_and_remains_bounded(store):
     assert store.source(link["source_id"])["active"] == 0
 
 
-def test_negative_robots_cache_expiry_is_not_extended_by_reads():
-    import time
-
-    from buscador_midias.catalog.batch_reader import BatchCache, BatchReader
-    from buscador_midias.catalog.mechanisms import get_mechanism
-
-    cache = BatchCache()
-    expires = time.monotonic() + 10
-    cache.policies[ROOT] = (expires, None)
-    reader = BatchReader(
-        [ROOT, ROOT + "/good"], lambda _: None, cache, get_mechanism("rss").defaults(), 1
-    )
-    assert not reader._allowed(ROOT + "/good")[0]
-    assert not reader._allowed(ROOT + "/good")[0]
-    assert cache.policies[ROOT][0] == expires
-
-
 def test_source_count_contract_remains_numeric_for_dashboard(store):
     add(store, "good")
     source = store.sources()["items"][0]

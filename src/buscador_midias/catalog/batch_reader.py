@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import threading
 import time
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import urlsplit
 
 from buscador_midias.catalog.reader import TestReader
 from buscador_midias.catalog.store import CatalogError
@@ -22,8 +21,6 @@ class BatchCache:
         self.lock = threading.Lock()
         self.responses: OrderedDict[str, tuple[float, FetchResult]] = OrderedDict()
         self.size = 0
-        self.policies: dict[str, tuple[float, Any]] = {}
-        self.policy_locks: defaultdict[str, threading.Lock] = defaultdict(threading.Lock)
         self.host_next: dict[str, float] = {}
         self.hits = 0
 
@@ -86,20 +83,6 @@ class BatchReader(TestReader):
         )
         self.cache, self.attempt, self.root = cache, attempt, roots[1]
         self.cache_hits = 0
-
-    def _allowed(self, url: str) -> tuple[bool, str]:
-        parts = urlsplit(url)
-        origin = f"{parts.scheme}://{parts.netloc}"
-        with self.cache.policy_locks[origin]:
-            cached = self.cache.policies.get(origin)
-            if cached is not None and cached[0] > time.monotonic():
-                self.policies[origin] = cached[1]
-                return super()._allowed(url)
-            self.policies.pop(origin, None)
-            result = super()._allowed(url)
-            policy = self.policies.get(origin)
-            self.cache.policies[origin] = (time.monotonic() + (600 if policy else 15), policy)
-            return result
 
     def get(self, url: str) -> FetchResult:
         """Cache respeita o escopo de cada associação; tentativas repetem a raiz na rede."""
