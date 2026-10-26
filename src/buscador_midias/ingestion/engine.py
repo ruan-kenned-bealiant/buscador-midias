@@ -35,8 +35,14 @@ from buscador_midias.extraction.html import decode_html, extract_article
 from buscador_midias.extraction.reliability import PageSnapshot
 from buscador_midias.extraction.sample_audit import audit_page
 from buscador_midias.ingestion.artifacts import Artifacts
+from buscador_midias.ingestion.content_filter import (
+    category_exclusion,
+    title_exclusion,
+    url_exclusion,
+)
 from buscador_midias.ingestion.flow import publication_outside
 from buscador_midias.ingestion.routes import Routes, partition
+from buscador_midias.ingestion.schema import DEFAULTS
 from buscador_midias.ingestion.store import IngestStore
 from buscador_midias.state.store import CorpusCandidate, FindingUrl
 
@@ -470,6 +476,19 @@ class Engine:
         article = job["article"]
         url = article["url"]
         site = self.site(job)
+        mode = job["run"]["config"].get("content_filter", "shadow")
+        # Artigo já no corpus só precisa de reparo de evidência: nada a excluir aqui.
+        filtering = mode != "off" and not article["payload"].get("existing_hash")
+        flag = None
+        if filtering and (found := url_exclusion(url)):
+            if mode == "enforce":
+                return dict(
+                    outcome="conteudo_sem_interesse",
+                    status="excluded_content",
+                    article=dict(exclusion=asdict(found)),
+                    metrics=dict(avoided_article_requests=1),
+                )
+            flag = asdict(found)
         with self.reader(job, [site.url, job["snapshot"]["url"]]) as reader:
             response = reader.get(url)
             metrics = self.metrics(reader)
@@ -534,6 +553,18 @@ class Engine:
                     article=patch,
                     metrics=metrics,
                 )
+            if filtering and (found := title_exclusion(url, patch.get("title"))):
+                if mode == "enforce":
+                    patch.pop("body", None)
+                    return dict(
+                        outcome="conteudo_sem_interesse",
+                        status="excluded_content",
+                        article=dict(patch, exclusion=asdict(found)),
+                        metrics=metrics,
+                    )
+                flag = flag or asdict(found)
+            if flag:
+                patch["shadow_exclusion"] = flag
             self.artifacts.put(article["hash"], response.content)
             return dict(
                 next="evidence" if article["payload"].get("analysis") else "context",
@@ -591,6 +622,20 @@ class Engine:
                     status="no_entities",
                     outcome="sem_entidade_identificavel",
                     article=dict(analysis=verdict, body=None),
+                    metrics=usage,
+                )
+            blocked = config.get(
+                "blocked_content_categories", DEFAULTS["blocked_content_categories"]
+            )
+            found = category_exclusion(
+                verdict.get("content_category"), bool(verdict["finding"]), blocked
+            )
+            if found and not data.get("existing_hash"):
+                self.artifacts.remove(job["hash"])
+                return dict(
+                    status="excluded_content",
+                    outcome="categoria_sem_interesse",
+                    article=dict(analysis=verdict, body=None, exclusion=asdict(found)),
                     metrics=usage,
                 )
             return dict(

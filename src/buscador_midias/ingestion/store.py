@@ -21,8 +21,20 @@ from buscador_midias.catalog.health_store import HealthStore
 from buscador_midias.catalog.postgres import WRITE_LOCK
 from buscador_midias.catalog.store import CatalogError
 from buscador_midias.domain.url import url_hash
-from buscador_midias.ingestion.flow import BACKLOG_LIMITS, RESERVE_BYTES, clock_slot, today_start
-from buscador_midias.ingestion.schema import DDL, DEFAULTS, STAGES
+from buscador_midias.ingestion.flow import (
+    BACKLOG_LIMITS,
+    RESERVE_BYTES,
+    clock_slot,
+    day_window,
+    today_start,
+)
+from buscador_midias.ingestion.schema import (
+    BLOCKABLE_CATEGORIES,
+    CONTENT_FILTER_MODES,
+    DDL,
+    DEFAULTS,
+    STAGES,
+)
 
 TERMINAL = ("succeeded", "failed", "skipped", "cancelled")
 
@@ -187,6 +199,11 @@ class IngestStore:
                 "INSERT INTO ingest_settings(id,config) VALUES(1,%s) ON CONFLICT DO NOTHING",
                 (Jsonb(DEFAULTS),),
             )
+            # Instalações anteriores ganham as chaves novas; valores já salvos prevalecem.
+            db.execute(
+                "UPDATE ingest_settings SET config=%s::jsonb || config WHERE id=1",
+                (Jsonb(DEFAULTS),),
+            )
         self.ready = True
 
     def settings(self) -> dict[str, Any]:
@@ -264,6 +281,16 @@ class IngestStore:
                     or any(type(v) is not int or not 1 <= v <= 32 for v in value.values())
                 ):
                     raise CatalogError("Informe 1 a 32 workers por etapa.")
+            elif key == "content_filter":
+                if value not in CONTENT_FILTER_MODES:
+                    raise CatalogError("Selecione o modo do filtro de conteúdo válido.")
+            elif key == "blocked_content_categories":
+                if (
+                    not isinstance(value, list)
+                    or any(v not in BLOCKABLE_CATEGORIES for v in value)
+                    or len(set(value)) != len(value)
+                ):
+                    raise CatalogError("Informe categorias de conteúdo bloqueáveis e distintas.")
             elif key == "model":
                 if not isinstance(value, str) or not re.fullmatch(
                     r"[A-Za-z0-9_./:-]{1,150}", value
@@ -324,7 +351,7 @@ class IngestStore:
     def create_run(self, data: dict[str, Any], *, scheduled: bool = False) -> dict[str, Any] | None:
         """Congela links e janela; o agendamento só seleciona vencidos e nunca sobrepõe leituras."""
         self.initialize()
-        if set(data) - {"link_ids", "since", "until"}:
+        if set(data) - {"link_ids", "since", "until", "day"}:
             raise CatalogError("Opções da rodada desconhecidas.")
         ids = data.get("link_ids", [])
         if (
@@ -357,19 +384,30 @@ class IngestStore:
                 ):
                     return None
             try:
-                until = datetime.fromisoformat(data["until"]) if data.get("until") else now
-                since = (
-                    datetime.fromisoformat(data["since"])
-                    if data.get("since")
-                    else (
-                        today_start(until, config.get("timezone", "America/Sao_Paulo"))
-                        if config.get("window_mode", "today") == "today"
-                        else until - timedelta(minutes=config["lookback_minutes"])
+                if "day" in data and (data.get("since") or data.get("until")):
+                    raise ValueError("Escolha o dia ou um período, não os dois.")
+                if "day" in data:
+                    since, until = day_window(
+                        data["day"], now, config.get("timezone", "America/Sao_Paulo")
                     )
-                )
-                if config.get("window_mode", "today") == "today" and (
-                    since < today_start(now, config.get("timezone", "America/Sao_Paulo"))
-                    or until < today_start(now, config.get("timezone", "America/Sao_Paulo"))
+                else:
+                    until = datetime.fromisoformat(data["until"]) if data.get("until") else now
+                    since = (
+                        datetime.fromisoformat(data["since"])
+                        if data.get("since")
+                        else (
+                            today_start(until, config.get("timezone", "America/Sao_Paulo"))
+                            if config.get("window_mode", "today") == "today"
+                            else until - timedelta(minutes=config["lookback_minutes"])
+                        )
+                    )
+                if (
+                    "day" not in data
+                    and config.get("window_mode", "today") == "today"
+                    and (
+                        since < today_start(now, config.get("timezone", "America/Sao_Paulo"))
+                        or until < today_start(now, config.get("timezone", "America/Sao_Paulo"))
+                    )
                 ):
                     raise ValueError()
                 if (
@@ -379,9 +417,11 @@ class IngestStore:
                     or until > now + timedelta(minutes=1)
                 ):
                     raise ValueError()
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as error:
                 raise CatalogError(
-                    "Informe datas válidas, com fuso e início anterior ao fim."
+                    str(error)
+                    if "day" in data and str(error)
+                    else "Informe datas válidas, com fuso e início anterior ao fim."
                 ) from None
             db.execute(
                 "INSERT INTO ingest_schedule(link_id) SELECT l.id FROM links l JOIN sites s "

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -17,6 +17,30 @@ def today_start(now: datetime, timezone: str = "America/Sao_Paulo") -> datetime:
     if now.tzinfo is None:
         raise ValueError("O instante precisa conter fuso horário.")
     return now.astimezone(ZoneInfo(timezone)).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+MAX_DAY_AGE = 30
+
+
+def day_window(
+    day: str, now: datetime, timezone: str = "America/Sao_Paulo"
+) -> tuple[datetime, datetime]:
+    """Janela de um dia civil inteiro; o dia corrente termina agora, nunca no futuro.
+
+    O limite de 30 dias evita varrer arquivos antigos, cujos feeds já não listam o dia.
+    """
+    try:
+        civil = date.fromisoformat(day)
+    except (TypeError, ValueError):
+        raise ValueError("Informe o dia no formato AAAA-MM-DD.") from None
+    zone = ZoneInfo(timezone)
+    today = now.astimezone(zone).date()
+    if civil > today:
+        raise ValueError("O dia não pode estar no futuro.")
+    if (today - civil).days > MAX_DAY_AGE:
+        raise ValueError(f"O dia deve estar nos últimos {MAX_DAY_AGE} dias.")
+    since = datetime.combine(civil, time.min, zone)
+    return since, min(datetime.combine(civil + timedelta(days=1), time.min, zone), now)
 
 
 def clock_slot(now: datetime, timezone: str, hours: list[int]) -> datetime | None:

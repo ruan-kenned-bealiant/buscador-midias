@@ -1,6 +1,9 @@
 """DDL aditivo da ingestão, separado do corpus e das rodadas históricas."""
 
 STAGES = ("discovery", "dedup", "fetch", "context", "evidence", "persist")
+CONTENT_FILTER_MODES = ("off", "shadow", "enforce")
+# Notícia e opinião nunca são bloqueadas: o restante é rotina sem interesse para o corpus.
+BLOCKABLE_CATEGORIES = ("weather", "cooking", "sports", "entertainment", "lifestyle", "horoscope")
 DEFAULTS = dict(
     enabled=False,
     workers_enabled=True,
@@ -17,6 +20,8 @@ DEFAULTS = dict(
     retry_minutes=1,
     model="openai/gpt-4.1-mini",
     analysis_text_chars=12000,
+    content_filter="shadow",
+    blocked_content_categories=["horoscope", "weather", "cooking", "sports"],
     workers=dict(discovery=2, dedup=1, fetch=2, context=1, evidence=1, persist=1),
 )
 DDL = """

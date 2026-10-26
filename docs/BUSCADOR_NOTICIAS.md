@@ -52,7 +52,12 @@ journalctl --user -u buscador-midias-ingest.service -n 50
 O agendamento nasce pausado. Ative-o na tela após o piloto e a verificação de
 capacidade. Pausar agendamentos mantém tarefas existentes; pausar workers impede
 o consumo delas. A janela inicial é 2880 minutos, independente da periodicidade
-de cada link. Rodadas manuais aceitam datas fixas e IDs de links.
+de cada link. Rodadas manuais escolhem apenas o **dia** (`day`, AAAA-MM-DD) e opcionalmente
+IDs de links. A janela é o dia civil inteiro no fuso configurado, 00h a 24h; para o dia de hoje,
+termina no instante da criação. São aceitos até 30 dias para trás, pois feeds e sitemaps nem
+sempre listam dias antigos. `day` não se combina com `since`/`until`, que seguem aceitos pela API
+para os pilotos. Notícias já gravadas no corpus (`known`) não são analisadas de novo; as sem data
+confirmada ficam fora, salvo a opção explícita.
 
 ## Interpretação dos resultados
 
@@ -61,6 +66,8 @@ de cada link. Rodadas manuais aceitam datas fixas e IDs de links.
 - `outside_window`: publicação fora da janela congelada da rodada.
 - `date_unknown`: data não confirmada; inclusão requer a opção explícita da tela.
 - `no_entities`: texto analisado sem entidade identificável, fora do critério atual.
+- `excluded_content`: conteúdo rotineiro descartado (horóscopo, loteria, previsão do tempo, receita,
+  logística de jogo ou categoria barrada pela análise). A regra e a etapa ficam em `payload.exclusion`.
 - `evidence_pending`: notícia gravada com evidência pendente; não é prova completa.
 - `failed`: tentativas esgotadas. O detalhe preserva diagnóstico e permite reprocessar.
 - `partial`: rodada encerrada com falhas, limites de profundidade ou pendências.
@@ -180,3 +187,43 @@ continuações XML, publicação independente, filtros temporais, parâmetros do
 catálogo e parsers RSS/Atom; ruff/mypy; tela em navegador desktop e celular.
 Relatórios locais: `var/ingestion/antes-otimizacao-20261024.json` e
 `var/ingestion/depois-otimizacao-20261024.json`.
+
+
+## Conteúdo rotineiro sem interesse — 26/10/2026
+
+Três barreiras, da mais barata à mais segura (`ingestion/content_filter.py`):
+
+1. **URL, antes de baixar a página.** Só seções inequívocas do caminho (`/horoscopo/`,
+   `/previsao-do-tempo/`, `/loterias/`, `/recipes/`). Seções amplas como esporte e entretenimento
+   nunca entram: nelas aparecem investigações reais (por exemplo, fraude de um dirigente).
+2. **Título, depois da extração.** Horóscopo, previsão do tempo, resultado de loteria, receita,
+   "onde assistir/escalação/palpite" e resumo de novela. Se o título tiver termo de risco
+   (fraude, morte, preso, processo, doping, recurso etc.), a regra **não** se aplica.
+3. **Categoria da análise de contexto (`content_category`).** Barra as categorias configuradas
+   quando a análise **não** aponta fato adverso (`finding` falso). Não há chamada extra: a
+   categoria já vem na mesma resposta. Esporte com fato adverso continua no fluxo.
+
+Palavras ambíguas ficam de fora de propósito: "receita" (Receita Federal), "BBB" (ex-BBB que
+fraudou cotas) e seções inteiras. Artigos que já existem no corpus não são excluídos.
+
+Configuração em **Mecanismos de busca**:
+
+- **Filtro de conteúdo rotineiro** (`content_filter`): `shadow` (padrão) só registra a regra em
+  `payload.shadow_exclusion` e segue processando; `enforce` descarta (URL/título); `off` desliga.
+  Use o modo sombra por alguns dias, confira os registros e só então ative `enforce`.
+- **Categorias barradas na análise** (`blocked_content_categories`): padrão `horoscope`,
+  `weather`, `cooking`, `sports`. Aceita também `entertainment` e `lifestyle`. Lista vazia
+  desliga a terceira barreira. A barreira por categoria vale em qualquer modo do filtro.
+
+Medição em 26/10/2026 sobre 51,7 mil artigos já coletados: as regras de URL e título pegariam
+cerca de 1% (a maioria já gravada no corpus, pois o nome de um astrólogo conta como entidade).
+Sobre os 104 mil artigos do corpus, 782 seriam excluídos e 6 tinham veredito "relevante"
+(sobretudo prévias de jogo). O ganho principal é limpar o corpus; a economia de IA é pequena,
+porque o passo de entidades já descarta boa parte desse conteúdo.
+
+Para conferir o modo sombra:
+
+```sql
+SELECT payload->'shadow_exclusion'->>'category' AS categoria, count(*)
+FROM midias_manager.ingest_articles WHERE payload ? 'shadow_exclusion' GROUP BY 1;
+```

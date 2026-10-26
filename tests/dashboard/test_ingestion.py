@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from datetime import UTC, datetime
 
 import pytest
 from test_catalog_postgres import local, schema  # noqa: F401
@@ -1430,3 +1431,41 @@ def test_recovery_keeps_future_cooldown_and_primary_hosts_unpublished(ingest, mo
             ).fetchall()
         }
     assert all(states[j] == "retry" for j in jobs[:4])
+
+
+def _daily(ingest):
+    from buscador_midias.ingestion.flow import today_start
+
+    config = ingest.settings()
+    ingest.configure(dict(version=config["version"], config=dict(window_mode="today")))
+    return today_start(datetime.now(UTC))
+
+
+def test_manual_round_for_a_past_day_covers_all_of_that_day(ingest):
+    from datetime import timedelta
+
+    midnight = _daily(ingest)
+    run = ingest.create_run(dict(day=(midnight - timedelta(days=1)).date().isoformat()))
+    assert run["since"] == midnight - timedelta(days=1)
+    assert run["until"] == midnight
+
+
+def test_manual_round_for_the_current_day_runs_from_midnight_until_now(ingest):
+    midnight = _daily(ingest)
+    run = ingest.create_run(dict(day=midnight.date().isoformat()))
+    assert run["since"] == midnight and run["until"] > midnight
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        dict(day="2999-01-01"),
+        dict(day="ontem"),
+        dict(day="2026-10-24", since="2026-10-24T00:00:00-03:00"),
+    ],
+)
+def test_manual_round_by_day_rejects_invalid_or_mixed_options(ingest, extra):
+    with pytest.raises(CatalogError):
+        ingest.create_run(extra)
+    with ingest.connection() as db:
+        assert db.execute("SELECT count(*) n FROM ingest_runs").fetchone()["n"] == 0

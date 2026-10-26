@@ -59,6 +59,7 @@ def make_server(
     functional_directory: Path | None = None,
     manager_db_path: Path | None = None,
     test_reader_factory: ReaderFactory | None = None,
+    priority_probe_directory: Path | None = None,
 ) -> ThreadingHTTPServer:
     """Cria o servidor do painel (sem iniciá-lo).
 
@@ -80,10 +81,14 @@ def make_server(
         functional_directory: Retrato offline dos RSS/sitemaps funcionais por fonte.
         manager_db_path: Cadastro editável separado, em SQLite local.
         test_reader_factory: Leitor dos testes interativos, substituível em testes sem rede.
+        priority_probe_directory: Pasta local do teste finito de notícias e evidências.
 
     Returns:
         O servidor, pronto para ``serve_forever``.
     """
+    priority_probe = priority_probe_directory or (
+        Path(__file__).resolve().parents[3] / "var/gerenciador/teste-noticias-evidencias-20261026"
+    )
     now_fn = clock or (lambda: datetime.now(UTC))
     cache: dict[tuple[int, int], tuple[datetime, bytes]] = {}
     cache_lock = threading.Lock()
@@ -157,15 +162,29 @@ def make_server(
                 self._send(200, "text/html; charset=utf-8", guide_page)
             elif parts.path == "/assets/health.js":
                 self._send(200, "application/javascript; charset=utf-8", health_script)
-            elif parts.path.startswith("/evidencias/corpus/"):
-                from buscador_midias.ingestion.evidence_view import read_evidence
+            elif parts.path == "/testes/prioritarios":
+                try:
+                    data = (priority_probe / "report.html").read_bytes()
+                    self._send(200, "text/html; charset=utf-8", data)
+                except OSError:
+                    self._json(404, {"error": "Relatório de teste ainda não disponível."})
+            elif parts.path.startswith(("/evidencias/corpus/", "/evidencias/teste-prioritarios/")):
+                from buscador_midias.ingestion.evidence_view import read_evidence, read_local
 
-                match = re.fullmatch(r"/evidencias/corpus/([a-f0-9]{64})", parts.path)
-                if not match or manager.ingestion is None:
+                match = re.fullmatch(
+                    r"/evidencias/(corpus|teste-prioritarios)/([a-f0-9]{64})", parts.path
+                )
+                if not match or (match[1] == "corpus" and manager.ingestion is None):
                     self._json(404, {"error": "Evidência não encontrada."})
                     return
                 try:
-                    content_type, data = read_evidence(manager.ingestion, match[1])
+                    if match[1] == "teste-prioritarios":
+                        content_type = "text/html"
+                        data = read_local(
+                            f"midias-ia/evidencias/{match[2]}.html", [priority_probe / "evidence"]
+                        )
+                    else:
+                        content_type, data = read_evidence(manager.ingestion, match[2])
                     original = parse_qs(parts.query).get("original") == ["1"]
                     if content_type == "text/html" and not original:
                         self._send(

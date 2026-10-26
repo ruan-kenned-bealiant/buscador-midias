@@ -193,3 +193,42 @@ def test_cache_nao_mistura_parametros_diferentes(base: str):
     b = json.loads(get(base + "/api/snapshot?hours=4")[2])
 
     assert len(a["hourly"]) == 3 and len(b["hourly"]) == 5
+
+
+def test_evidencia_do_teste_prioritario_reutiliza_visualizador_sem_acesso_ao_corpus(
+    tmp_path: Path,
+):
+    probe = tmp_path / "probe"
+    folder = probe / "evidence/midias-ia/evidencias"
+    folder.mkdir(parents=True)
+    digest = "a" * 64
+    original = b"<!doctype html><html><body>Materia de teste</body></html>"
+    (folder / f"{digest}.html").write_bytes(original)
+    (probe / "report.html").write_text("<h1>Teste de noticias</h1>")
+    server = make_server(
+        read_only,
+        "127.0.0.1",
+        0,
+        manager_db_path=tmp_path / "catalog.sqlite",
+        priority_probe_directory=probe,
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        assert get(base + "/testes/prioritarios")[0] == 200
+        url = base + "/evidencias/teste-prioritarios/" + digest
+        status, headers, body = get(url)
+        assert status == 200
+        assert b"/assets/evidence.js" in body
+        assert b"Materia de teste" not in body
+        status, headers, body = get(url + "?original=1")
+        assert status == 200 and body == original
+        assert "sandbox" in headers["Content-Security-Policy"]
+        assert "script-src 'none'" in headers["Content-Security-Policy"]
+        assert get(base + "/evidencias/teste-prioritarios/" + "b" * 64)[0] == 404
+        assert get(base + "/evidencias/teste-prioritarios/../secret")[0] == 404
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
