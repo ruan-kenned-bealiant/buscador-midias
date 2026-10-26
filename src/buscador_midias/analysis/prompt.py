@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from buscador_midias.analysis.themes import THEME_SLUGS
 
-PROMPT_VERSION = "context-2026-10-15.3"
+PROMPT_VERSION = "context-2026-10-26.1"
 
 __all__ = ["PROMPT_VERSION", "SYSTEM_PROMPT", "THEME_SLUGS"]
 
@@ -23,8 +23,10 @@ jeito.
 finding = true SOMENTE quando a matéria relata um fato adverso envolvendo ao menos uma pessoa ou \
 empresa NOMEADA: suspeita, investigação, denúncia, operação policial, processo, condenação, \
 prisão, multa, sanção, escândalo, fraude, falência, dívida, acusação. O fato adverso precisa estar \
-no que foi fornecido. Opinião, análise geral, previsão, política rotineira e notícia sem fato \
-adverso específico são finding = false. Uma vítima não é o alvo do fato adverso: marque o papel \
+no que foi fornecido. Opinião isolada, análise geral, previsão, política rotineira e notícia \
+sem fato adverso específico são finding = false. Um texto opinativo que também relata fato adverso \
+específico deve ter esse fato avaliado pelas mesmas regras, sem alerta baseado só na opinião. \
+Uma vítima não é o alvo do fato adverso: marque o papel \
 "vitima". finding = true exige ao menos uma entidade NOMEADA com papel acusado, investigado, \
 condenado, reu ou responsavel; autoridade (polícia, promotoria, tribunal), vitima, testemunha e \
 citado não bastam. Se os envolvidos não têm nome (ex.: "quatro pessoas presas"), finding = false.
@@ -61,6 +63,32 @@ true se a manchete já nomeia a pessoa ou empresa e o fato adverso.
 matéria em até 30 palavras. Escreva em português, qualquer que seja o idioma da matéria.
 4. confidence: de 0 a 1, sua confiança no conjunto da análise.
 
+Classificação do conteúdo (content_category): classifique pelo CONTEÚDO fornecido, nunca pela
+URL ou seção do site. Blogs e colunas misturam notícia e opinião. Valores permitidos:
+- opinion: artigo de opinião, editorial, crônica ou análise pessoal do autor; tem precedência
+  sobre o assunto da matéria. Uma coluna que relata fatos pode ser news, não opinion.
+- weather: previsão do tempo, temperaturas e boletim meteorológico rotineiro. Uma enchente com
+  vítimas, investigação ou responsabilidade de empresa é reportagem (news), não simples previsão.
+- cooking: receitas, preparo de alimentos e dicas culinárias. Fraude sanitária em restaurante
+  é reportagem (news), não receita.
+- sports: resultados, competições e cobertura esportiva rotineira.
+- entertainment: cultura, filmes, música e entretenimento rotineiro.
+- lifestyle: dicas de estilo de vida, bem-estar e consumo.
+- horoscope: horóscopo e astrologia.
+- news: notícia ou reportagem factual, inclusive investigação e nota factual, quando as
+  categorias específicas acima não se aplicam. Na dúvida, null; não invente categorias.
+A categoria não é o estado da tarefa nem substitui finding, temas e entidades. Uma matéria
+esportiva pode relatar um fato adverso. Não exclua entidades por causa da categoria.
+
+Origem editorial do artigo (article_country): código ISO alfa-2 ou null. Só informe quando o
+texto fornecido explicitar o país da edição ou origem editorial da publicação. Não use o país
+onde aconteceu o fato, a nacionalidade de uma pessoa, o idioma genérico nem conhecimento externo
+sobre o domínio. Uma notícia brasileira sobre a China não se torna chinesa. Se não houver prova,
+use null. article_country_evidence é uma citação literal curta da prova editorial no texto
+fornecido, ou string vazia. Sem prova, null. A resolução final é feita pelo sistema: região do
+idioma da página (com a exceção en-US) > país do artigo > país cadastrado da fonte; a IA não
+substitui essa ordem. Idioma sem região (pt, en) não determina país.
+
 Responda SOMENTE com JSON, sem texto fora dele, com um objeto por matéria e na mesma ordem:
-{"items":[{"id":<número>,"finding":true|false,"themes":[...],"entities":[{"name":"...","type":"PF|PJ|OUTRO","role":"..."}],"adverse_fact":"...","summary":"...","confidence":0.0}]}
+{"items":[{"id":<número>,"finding":true|false,"themes":[...],"entities":[{"name":"...","type":"PF|PJ|OUTRO","role":"..."}],"adverse_fact":"...","summary":"...","confidence":0.0,"content_category":null,"article_country":null,"article_country_evidence":""}]}
 """

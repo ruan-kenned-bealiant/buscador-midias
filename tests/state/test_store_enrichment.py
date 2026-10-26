@@ -430,3 +430,23 @@ def test_contagem_do_painel_separa_achados_adversos_das_materias_com_entidade():
 
     assert analysis_counts["findings"] == 1
     assert analysis_counts["relevant"] == 2  # o achado também tem entidade
+
+
+def test_classification_survives_legacy_state_and_corpus_candidate():
+    store = seeded("classified")
+    run = store.start_enrich_run(T0, model="m", prompt_version="v", evidence_mode="auto")
+    store.record_content(content("classified"), now=T0)
+    record = analysis(
+        "classified",
+        content_category="cooking",
+        article_country="PT",
+        article_country_evidence="Edição portuguesa",
+    )
+    store.record_analysis(record, enrich_run_id=run, model="m", prompt_version="v", now=T0)
+    stored = store.get_analysis("h-classified")
+    assert stored.content_category == "cooking"
+    assert stored.article_country == "PT"
+    assert stored.article_country_evidence == "Edição portuguesa"
+    candidate = store.pending_corpus_sync()[0]
+    assert candidate.content_category == "cooking"
+    assert candidate.article_country == "PT"

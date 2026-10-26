@@ -115,3 +115,22 @@ restauração. Foram 3.546 requisições às raízes e 2.481 na validação text
 547 reutilizações de conexão registradas na fase de raízes. Não houve consulta
 a robots, Bright Data ou OpenRouter nesta rodada. CSV e auditoria final estão
 no mesmo diretório dos checkpoints.
+
+
+## Capacidade ociosa e retentativas (26/10/2026)
+
+Workers principais consultam primeiro a fila normal da sua etapa. Quando ela está vazia,
+consomem a fila de recuperação da mesma etapa, informando a origem correta ao reservar
+a tarefa. A fila de recuperação continua separada, com um worker dedicado que garante
+progresso mesmo durante carga de tarefas novas. Não são criados workers adicionais.
+
+O publicador da recuperação disponibiliza até o número configurado de workers da etapa,
+limitado também pelo teto da fila e pelas mensagens já disponíveis no RabbitMQ. Em rede,
+continua liberando apenas uma tarefa por host em trânsito, compartilhada com descoberta
+e extração. Uma tarefa nova pronta para o mesmo host tem prioridade sobre a recuperação.
+Prazos de retentativa, Retry-After, backpressure e limite de três tentativas permanecem.
+
+Isso permite usar capacidade antes ociosa quando restam falhas de vários hosts. Não elimina
+a espera quando resta um único host ou quando o servidor solicita uma pausa. Os números
+do painel contam tarefas e workers; não representam uma redução automática da configuração
+quando a rodada se aproxima do fim.

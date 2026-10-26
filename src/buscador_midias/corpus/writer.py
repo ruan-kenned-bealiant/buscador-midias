@@ -18,6 +18,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from buscador_midias.analysis.classification import content_category
 from buscador_midias.corpus.article import ORIGIN, SOURCE, CorpusArticle
 from buscador_midias.corpus.index import ENV_VARS, CorpusConfigError
 
@@ -32,6 +33,8 @@ _REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
         "source_domain",
         "source_name",
         "source_country",
+        "source_country_method",
+        "content_category",
         "source_tier",
         "origin",
         "first_seen_by",
@@ -81,8 +84,10 @@ _INSERT_ARTICLE = (
     " source_name, source_country, source_tier, origin, first_seen_by, language, published_at,"
     " collected_at, description, body, body_source, ai_verdict, ai_score, ai_reason, ai_summary,"
     " ai_model, ai_classified, ai_classified_at, evidencia_path, evidencia_status, evidencia_tipo,"
-    " evidencia_attempts, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,"
-    " %s, %s, %s, now(), %s, %s, %s, %s, %s, %s, %s, %s, true, now(), %s, %s, %s, %s, now(), now())"
+    " evidencia_attempts, content_category, source_country_method, created_at, updated_at)"
+    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,"
+    " %s, %s, %s, now(), %s, %s, %s, %s, %s, %s, %s, %s, true, now(),"
+    " %s, %s, %s, %s, %s, %s, now(), now())"
     " ON CONFLICT (url_hash) DO NOTHING RETURNING id"
 )
 _UPDATE_EVIDENCE = (
@@ -253,6 +258,17 @@ class PostgresCorpusWriter:
         self._connection.rollback()
         return names
 
+    def source_countries(self) -> dict[str, str]:
+        """Países do cadastro ativo; a resolução respeita domínio e seção da URL."""
+        with self._lock, self._connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT url_without_https_www, country_code FROM midias_ia_trusted_sources "
+                "WHERE active AND country_code IS NOT NULL"
+            )
+            countries = {row[0]: row[1] for row in cursor.fetchall() if row[0] and row[1]}
+        self._connection.rollback()
+        return countries
+
     def close(self) -> None:
         """Fecha a conexão."""
         self._connection.close()
@@ -272,6 +288,14 @@ class PostgresCorpusWriter:
                 (article.url_hash,),
             )
             article_id, origin, current_status = cursor.fetchone()
+            # Mesma regra do KyX: preencher categoria ausente, sem trocar classificação existente.
+            category = content_category(article.content_category)
+            if category is not None:
+                cursor.execute(
+                    "UPDATE midias_ia_articles SET content_category=%s,updated_at=now() "
+                    "WHERE id=%s AND content_category IS NULL",
+                    (category, article_id),
+                )
             if origin == ORIGIN:
                 return self._refresh_own(cursor, int(article_id), article)
             improved = current_status != "captured" and article.evidence.status == "captured"
@@ -282,6 +306,12 @@ class PostgresCorpusWriter:
     def _refresh_own(self, cursor: Any, article_id: int, article: CorpusArticle) -> WriteOutcome:
         """Atualiza um artigo nosso: evidência e, sem duplicar, entidades e temas."""
         cursor.execute(_UPDATE_EVIDENCE, (*_evidence_values(article), article_id))
+        if article.source_country is not None:
+            cursor.execute(
+                "UPDATE midias_ia_articles SET source_country=%s,source_country_method=%s "
+                "WHERE id=%s",
+                (article.source_country, article.source_country_method, article_id),
+            )
         cursor.execute(
             "DELETE FROM midias_ia_article_entities WHERE article_id = %s AND extractor = %s",
             (article_id, SOURCE),
@@ -331,6 +361,8 @@ def _article_values(article: CorpusArticle) -> tuple[Any, ...]:
         _text(article.ai_summary),
         article.ai_model,
         *_evidence_values(article),
+        content_category(article.content_category),
+        article.source_country_method,
     )
 
 

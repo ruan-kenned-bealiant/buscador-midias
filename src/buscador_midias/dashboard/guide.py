@@ -179,6 +179,34 @@ PARAMETER_HELP = {
 
 FIELDS = (
     (
+        "content-category",
+        "Categoria do conteúdo: notícia, opinião e outros tipos",
+        "Classifica o que a matéria oferece: notícia/reportagem (news), opinião (opinion), "
+        "previsão do tempo (weather), culinária (cooking), esportes (sports), entretenimento "
+        "(entertainment), estilo de vida (lifestyle) ou horóscopo (horoscope). "
+        "Sem informação suficiente, a categoria fica não classificada (nula).",
+        "Uma receita de bolo é cooking. Uma investigação sobre fraude em um restaurante é "
+        "news. Uma coluna assinada só é opinion quando o conteúdo expressa opinião; o nome "
+        "da seção ou o endereço não decide.",
+        "É diferente do estado da execução e da avaliação de risco. Uma matéria esportiva "
+        "pode conter um fato adverso. A classificação não apaga notícias nem descarta entidades. "
+        "Categorias já gravadas são preservadas; versões antigas podem estar sem classificação.",
+    ),
+    (
+        "article-country",
+        "País do artigo e método de identificação",
+        "É a origem editorial da publicação, não a nacionalidade das pessoas citadas nem o "
+        "país onde aconteceu o fato. A precedência é: região do idioma da página, país "
+        "identificado no artigo e país cadastrado da fonte. O método fica salvo como "
+        "language, article ou site para explicar a decisão.",
+        "Uma reportagem em pt-BR sobre a China recebe BR pelo idioma, mesmo que a fonte "
+        "tenha outro país cadastrado. O idioma pt, sem região, não distingue Brasil de Portugal. "
+        "Sem país no artigo, usa-se o cadastro da fonte; en-US sozinho também não decide.",
+        "A exceção de en-US evita usar o padrão genérico de muitos sites como prova de origem. "
+        "Sem evidência válida, o país fica nulo. O artigo só fornece país à análise quando "
+        "há trecho explícito sobre sua edição/origem editorial; citar China não basta.",
+    ),
+    (
         "site",
         "Site / fonte",
         "Registro pai que identifica o veículo e seu endereço. Seus links de busca são"

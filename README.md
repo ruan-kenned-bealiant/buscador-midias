@@ -48,6 +48,10 @@ a edição do intervalo não inicia a coleta por si só.
 
 ## Guia de uso e interpretação
 
+A classificação de conteúdo e a origem editorial dos artigos estão descritas em
+[Classificação de artigos](docs/CLASSIFICACAO_ARTIGOS.md), incluindo as categorias
+e a precedência região do idioma → país do artigo → cadastro da fonte.
+
 Abra **http://127.0.0.1:8765/guia** ou use **Guia e dicionário** no menu.
 A tela permite pesquisar resultados dos testes, dados do catálogo, mecanismos,
 parâmetros e rotinas de saúde, com descrições, exemplos e orientações de leitura.

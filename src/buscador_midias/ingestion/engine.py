@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import asdict
@@ -87,6 +89,9 @@ class Engine:
         self.writer_factory = writer_factory
         self.corpus_schema = corpus_schema
         self.routes = Routes(repository)
+        self._country_registry: dict[str, str] | None = None
+        self._country_registry_at = 0.0
+        self._country_registry_lock = threading.Lock()
 
     @staticmethod
     def site(job: dict[str, Any]) -> Site:
@@ -373,7 +378,7 @@ class Engine:
             query = sql.SQL(
                 "SELECT a.id,a.url_hash,a.evidencia_status,a.evidencia_path,"
                 "(length(a.body)>0) has_body,a.ai_model,a.ai_verdict,a.ai_reason,"
-                "a.ai_summary,a.resumo,a.ai_score,"
+                "a.ai_summary,a.resumo,a.ai_score,a.content_category,a.source_country,"
                 "COALESCE((SELECT jsonb_agg(jsonb_build_object('name',e.name,"
                 "'entity_type',e.entity_type,'role',e.role)) "
                 "FROM {}.midias_ia_article_entities e WHERE e.article_id=a.id),"
@@ -412,7 +417,11 @@ class Engine:
             return outside
         if existing:
             entities = existing["entities"]
-            patch = dict(existing_hash=existing["url_hash"], existing_article_id=existing["id"])
+            patch = dict(
+                existing_hash=existing["url_hash"],
+                existing_article_id=existing["id"],
+                existing_source_country=existing.get("source_country"),
+            )
             if entities and existing.get("ai_model"):
                 analysis = dict(
                     entities=[
@@ -431,6 +440,7 @@ class Engine:
                     basis="text",
                     model=existing["ai_model"],
                     prompt_version="reused-corpus",
+                    content_category=existing.get("content_category"),
                 )
                 patch["analysis"] = analysis
             return dict(
@@ -658,17 +668,33 @@ class Engine:
             evidence.get("attempts", job["attempts"]),
             evidence.get("provider"),
             analysis["finding"],
+            content_category=analysis.get("content_category"),
+            article_country=analysis.get("article_country") or data.get("existing_source_country"),
         )
-        corpus_article = build_corpus_article(candidate, site, source_names={site.host: site.name})
-        if self.writer_factory:
-            writer = self.writer_factory()
-            results = writer.write([corpus_article])
-        else:
-            writer = PostgresCorpusWriter.from_env(os.environ)
-            try:
+        writer = (
+            self.writer_factory()
+            if self.writer_factory
+            else PostgresCorpusWriter.from_env(os.environ)
+        )
+        try:
+            if not self.writer_factory:
                 writer.check_schema()
-                results = writer.write([corpus_article])
-            finally:
+            countries = None
+            if hasattr(writer, "source_countries"):
+                with self._country_registry_lock:
+                    if (
+                        self._country_registry is None
+                        or time.monotonic() - self._country_registry_at > 300
+                    ):
+                        self._country_registry = writer.source_countries()
+                        self._country_registry_at = time.monotonic()
+                    countries = self._country_registry
+            corpus_article = build_corpus_article(
+                candidate, site, source_names={site.host: site.name}, source_countries=countries
+            )
+            results = writer.write([corpus_article])
+        finally:
+            if not self.writer_factory:
                 writer.close()
         result = results[0]
         if result.error or not result.article_id:

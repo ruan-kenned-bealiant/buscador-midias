@@ -573,7 +573,23 @@ def test_pipeline_separate_stages_through_text_evidence_and_persistence(
     ingest.configure(dict(version=setting["version"], config=dict(allow_undated=True)))
     saved = []
 
+    class ClassifiedAnalyzer(Analyzer):
+        def analyze(self, items):
+            from dataclasses import replace
+
+            return [
+                replace(
+                    super().analyze(items)[0],
+                    content_category="opinion",
+                    article_country="PT",
+                    article_country_evidence="Edição portuguesa",
+                )
+            ]
+
     class Writer:
+        def source_countries(self):
+            return {"jose.example": "GB"}
+
         def write(self, articles):
             assert articles[0].body and "João Silva" in articles[0].body
             saved.extend(articles)
@@ -583,7 +599,7 @@ def test_pipeline_separate_stages_through_text_evidence_and_persistence(
         ingest,
         artifacts=Artifacts(tmp_path / "work"),
         reader_factory=reader,
-        analyzer_factory=Analyzer,
+        analyzer_factory=ClassifiedAnalyzer,
         evidence_store=LocalEvidenceStore(tmp_path / "evidence"),
         writer_factory=Writer,
     )
@@ -604,6 +620,8 @@ def test_pipeline_separate_stages_through_text_evidence_and_persistence(
     assert ingest.overview()["runs"][0]["state"] == "completed"
     assert len(saved) == 1 and saved[0].entities[0].name == "João Silva"
     assert saved[0].evidence.status == "captured"
+    assert saved[0].content_category == "opinion"
+    assert (saved[0].source_country, saved[0].source_country_method) == ("PT", "article")
     with ingest.connection() as db:
         result = db.execute("SELECT * FROM ingest_articles").fetchone()
         assert result["status"] == "persisted" and result["article_id"] == 123
@@ -849,7 +867,8 @@ def test_corpus_lookup_is_one_query_for_whole_batch(ingest):
         db.execute(
             "CREATE TABLE midias_ia_articles(id bigint,url_hash text,evidencia_status text,"
             "evidencia_path text,body text,ai_model text,ai_verdict text,ai_reason text,"
-            "ai_summary text,resumo text,ai_score numeric)"
+            "ai_summary text,resumo text,ai_score numeric,content_category text,"
+            "source_country text)"
         )
         db.execute(
             "CREATE TABLE midias_ia_article_entities(article_id bigint,name text,"
@@ -857,7 +876,7 @@ def test_corpus_lookup_is_one_query_for_whole_batch(ingest):
         )
         db.execute(
             "INSERT INTO midias_ia_articles VALUES(1,%s,'captured','evidence.html',"
-            "'Texto completo','model','neutro','','','',0.9)",
+            "'Texto completo','model','neutro','','','',0.9,NULL,NULL)",
             (url_hash(urls[0]),),
         )
         db.execute("INSERT INTO midias_ia_article_entities VALUES(1,'João Silva','PER','citado')")
@@ -1331,3 +1350,83 @@ def test_permanent_http_failure_is_terminal_on_first_attempt(ingest, status, err
             ).fetchone()["n"]
             == 1
         )
+
+
+def seed_recovery_hosts(ingest):
+    run = ingest.create_run({})
+    root = next_job(ingest, "discovery")
+    ingest.finish(root, {})
+    urls = [
+        "https://a.example/1",
+        "https://a.example/2",
+        "https://b.example/1",
+        "https://c.example/1",
+        "https://d.example/1",
+    ]
+    jobs = []
+    with ingest.connection() as db:
+        for url in urls:
+            ident = ingest.enqueue(db, "discovery", url, run["id"], root["poll_id"], {"url": url})
+            db.execute("UPDATE ingest_jobs SET state='retry',failures=1 WHERE id=%s", (ident,))
+            jobs.append(ident)
+    return run, root, jobs
+
+
+def test_recovery_publication_scales_but_respects_host_and_queue_limits(ingest, monkeypatch):
+    from types import SimpleNamespace
+
+    from buscador_midias.ingestion import broker
+
+    _, _, jobs = seed_recovery_hosts(ingest)
+    config = ingest.settings()
+    ingest.configure(
+        dict(
+            version=config["version"],
+            config=dict(workers=dict(config["config"]["workers"], discovery=3)),
+        )
+    )
+    sent = []
+    monkeypatch.setattr(broker, "publish", lambda ch, stage, ident, **kw: sent.append(ident))
+    channel = SimpleNamespace(
+        queue_declare=lambda **kw: SimpleNamespace(method=SimpleNamespace(message_count=1))
+    )
+    # Três slots configurados e uma mensagem já no Rabbit: publicar no máximo duas.
+    assert Service(ingest).publish_once(channel, "discovery", recovery=True) == 2
+    with ingest.connection() as db:
+        urls = [
+            r["url"]
+            for r in db.execute(
+                "SELECT payload->>'url' url FROM ingest_jobs WHERE id=ANY(%s)", (sent,)
+            ).fetchall()
+        ]
+    assert len({u.split("/")[2] for u in urls}) == 2
+    assert set(sent).issubset(jobs)
+
+
+def test_recovery_keeps_future_cooldown_and_primary_hosts_unpublished(ingest, monkeypatch):
+    from buscador_midias.ingestion import broker
+
+    run, root, jobs = seed_recovery_hosts(ingest)
+    with ingest.connection() as db:
+        ingest.enqueue(
+            db, "discovery", "fresh-a", run["id"], root["poll_id"], {"url": "https://a.example/new"}
+        )
+        db.execute(
+            "UPDATE ingest_outbox SET ready_at=now()+interval '1 hour' WHERE job_id=%s", (jobs[2],)
+        )
+        db.execute("INSERT INTO ingest_host_cooldowns VALUES('c.example',now()+interval '1 hour')")
+    sent = []
+    monkeypatch.setattr(broker, "publish", lambda ch, stage, ident, **kw: sent.append(ident))
+    # a: tem tarefa nova; b: prazo futuro; c: Retry-After; apenas d está elegível.
+    assert Service(ingest).publish_once(None, "discovery", recovery=True) == 1
+    assert sent == [jobs[4]]
+    service = Service(ingest)
+    assert service.publish_once(None, "discovery") == 1
+    with ingest.connection() as db:
+        states = {
+            r["id"]: r["state"]
+            for r in db.execute(
+                "SELECT id,state FROM ingest_jobs WHERE id=ANY(%s)", (jobs,)
+            ).fetchall()
+        }
+    assert all(states[j] == "retry" for j in jobs[:4])

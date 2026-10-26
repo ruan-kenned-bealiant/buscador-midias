@@ -209,8 +209,8 @@ def test_estado_da_evidencia_segue_o_do_kyx(status, path, kind, state):
     assert article.evidence.attempts == (2 if status else 0)
 
 
-def test_sem_catalogo_o_pais_fica_nulo():
-    article = build_corpus_article(candidate(), None, {})
+def test_sem_catalogo_e_sem_regiao_de_idioma_o_pais_fica_nulo():
+    article = build_corpus_article(candidate(language="pt"), None, {})
 
     assert article.source_country is None
 
@@ -263,3 +263,22 @@ def test_entidade_neutra_vai_para_o_corpus_com_papel_outro():
         "outro",
     )
     assert entity.context is None
+
+
+def test_category_and_country_follow_candidate_through_to_corpus():
+    article = build_corpus_article(
+        candidate(content_category="opinion", article_country="PT", language="pt"),
+        None,
+        {},
+        source_countries={"correio24horas.com.br": "BR"},
+    )
+    assert article.content_category == "opinion"
+    assert (article.source_country, article.source_country_method) == ("PT", "article")
+    article = build_corpus_article(
+        candidate(content_category="weather", language="pt-BR", article_country="CN"),
+        None,
+        {},
+        source_countries={"correio24horas.com.br": "PT"},
+    )
+    assert article.content_category == "weather"
+    assert (article.source_country, article.source_country_method) == ("BR", "language")

@@ -9,6 +9,8 @@ from datetime import datetime
 
 from unidecode import unidecode
 
+from buscador_midias.analysis.classification import content_category
+from buscador_midias.corpus.country import registered_country, resolve_country
 from buscador_midias.domain.roles import is_adverse_role, normalize_role
 from buscador_midias.domain.site import Site
 from buscador_midias.domain.url import url_domain
@@ -132,6 +134,8 @@ class CorpusArticle:
     evidence: CorpusEvidence
     entities: tuple[CorpusEntity, ...]
     keywords: tuple[CorpusKeyword, ...]
+    content_category: str | None = None
+    source_country_method: str | None = None
 
 
 def normalize_entity_name(name: str) -> str:
@@ -153,7 +157,10 @@ def map_role(role: str, entity_type: str) -> str:
 
 
 def build_corpus_article(
-    candidate: CorpusCandidate, site: Site | None, source_names: Mapping[str, str]
+    candidate: CorpusCandidate,
+    site: Site | None,
+    source_names: Mapping[str, str],
+    source_countries: Mapping[str, str] | None = None,
 ) -> CorpusArticle:
     """Monta o artigo do corpus a partir de uma matéria com entidade (adversa ou não).
 
@@ -161,12 +168,19 @@ def build_corpus_article(
         candidate: Matéria com texto, análise e estado da evidência.
         site: Fonte no catálogo (dá o país); ``None`` se não for encontrada.
         source_names: Nome da fonte por domínio, das fontes confiáveis do corpus.
+        source_countries: País cadastrado por domínio/seção; sem mapa usa o país de site.
 
     Returns:
         O artigo, com entidades (as de papel adverso primeiro e sem repetir o nome), palavras-chave
         dos temas (ou ``diversos``) e o estado da evidência.
     """
     domain = url_domain(candidate.url)
+    site_country = (
+        registered_country(candidate.url, source_countries)
+        if source_countries is not None
+        else (site.country_code if site else None)
+    )
+    country, method = resolve_country(candidate.language, candidate.article_country, site_country)
     return CorpusArticle(
         url=candidate.url,
         url_hash=candidate.url_hash,
@@ -175,7 +189,7 @@ def build_corpus_article(
         domain=domain,
         source_domain=domain,
         source_name=source_names.get(domain or ""),
-        source_country=site.country_code if site else None,
+        source_country=country,
         source_tier=SOURCE_TIER,
         language=candidate.language,
         published_at=candidate.published_at,
@@ -191,6 +205,8 @@ def build_corpus_article(
         evidence=_evidence(candidate),
         entities=_entities(candidate),
         keywords=_keywords(candidate),
+        content_category=content_category(candidate.content_category),
+        source_country_method=method,
     )
 
 

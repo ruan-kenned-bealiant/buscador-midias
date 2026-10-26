@@ -9,11 +9,13 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from buscador_midias.analysis.classification import content_category
 from buscador_midias.analysis.headline import tokens
 from buscador_midias.analysis.openrouter import OpenRouterChat, Usage
 from buscador_midias.analysis.prompt import SYSTEM_PROMPT
 from buscador_midias.analysis.replies import json_items
 from buscador_midias.analysis.themes import THEME_SLUGS
+from buscador_midias.corpus.country import country_code
 from buscador_midias.domain.roles import is_adverse_role, normalize_role
 
 DEFAULT_BATCH_SIZE = 6
@@ -25,7 +27,7 @@ _MAX_NAME = 120
 _MAX_ROLE = 30
 _MAX_FACT = 300
 _MAX_SUMMARY = 400
-_TOKENS_PER_ITEM = 380
+_TOKENS_PER_ITEM = 520
 _BASE_TOKENS = 300
 _ENTITY_TYPES = frozenset({"PF", "PJ", "OUTRO"})
 _MIN_NAME_WORD = 3
@@ -78,6 +80,9 @@ class ContextVerdict:
     summary: str
     confidence: float
     basis: str
+    content_category: str | None = None
+    article_country: str | None = None
+    article_country_evidence: str = ""
 
 
 class ContextAnalyzer(Protocol):
@@ -243,6 +248,7 @@ def _verdict(item: AnalysisItem, entry: dict[str, Any] | None) -> ContextVerdict
     themes = tuple(
         t for t in (raw_themes if isinstance(raw_themes, list) else []) if t in THEME_SLUGS
     )
+    country, evidence = _editorial_country(entry, item)
     return ContextVerdict(
         id=item.id,
         decided=True,
@@ -253,7 +259,23 @@ def _verdict(item: AnalysisItem, entry: dict[str, Any] | None) -> ContextVerdict
         summary=str(entry.get("summary", ""))[:_MAX_SUMMARY],
         confidence=confidence,
         basis=item.basis,
+        content_category=content_category(entry.get("content_category")),
+        article_country=country,
+        article_country_evidence=evidence,
     )
+
+
+def _editorial_country(entry: dict[str, Any], item: AnalysisItem) -> tuple[str | None, str]:
+    """Exige país válido e citação literal nos dados fornecidos, sem aceitar prova inventada."""
+    country = country_code(entry.get("article_country"))
+    evidence = entry.get("article_country_evidence")
+    if not country or not isinstance(evidence, str) or not evidence.strip():
+        return None, ""
+    evidence = " ".join(evidence.split())[:240]
+    available = " ".join(f"{item.headline} {item.description} {item.text}".split())
+    if evidence.casefold() not in available.casefold():
+        return None, ""
+    return country, evidence
 
 
 def _entities(raw: Any, item: AnalysisItem) -> tuple[dict[str, str], ...]:

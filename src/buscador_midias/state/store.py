@@ -173,6 +173,9 @@ class AnalysisRecord:
     basis: str
     model: str = ""
     prompt_version: str = ""
+    content_category: str | None = None
+    article_country: str | None = None
+    article_country_evidence: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -317,6 +320,8 @@ class CorpusCandidate:
     evidence_attempts: int
     evidence_provider: str | None
     adverse: bool
+    content_category: str | None = None
+    article_country: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1194,7 +1199,8 @@ class StateStore:
         self._run(
             "INSERT INTO midias_crawler_analyses (url_hash, finding, themes, entities,"
             " adverse_fact, summary, confidence, basis, model, prompt_version, enrich_run_id,"
-            " analyzed_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            " analyzed_at, content_category, article_country, article_country_evidence) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
             " ON CONFLICT (url_hash) DO NOTHING",
             (
                 record.url_hash,
@@ -1209,6 +1215,9 @@ class StateStore:
                 prompt_version,
                 enrich_run_id,
                 _utc(now),
+                record.content_category,
+                record.article_country,
+                record.article_country_evidence,
             ),
         )
 
@@ -1216,7 +1225,8 @@ class StateStore:
         """Análise de contexto de uma URL, se existir."""
         row = self._one(
             "SELECT url_hash, finding, themes, entities, adverse_fact, summary, confidence,"
-            " basis, model, prompt_version FROM midias_crawler_analyses WHERE url_hash = %s",
+            " basis, model, prompt_version, content_category, article_country, "
+            "article_country_evidence FROM midias_crawler_analyses WHERE url_hash = %s",
             (url_hash,),
         )
         if row is None:
@@ -1232,6 +1242,9 @@ class StateStore:
             basis=row[7],
             model=row[8],
             prompt_version=row[9],
+            content_category=row[10],
+            article_country=row[11],
+            article_country_evidence=row[12] or "",
         )
 
     def pending_evidence(
@@ -1484,7 +1497,9 @@ class StateStore:
             "SELECT u.url_hash, u.url, u.site_key, COALESCE(c.title, u.title), c.description,"
             " c.lede, c.published_at, c.language, a.themes, a.entities, a.adverse_fact,"
             " a.summary, a.confidence, a.basis, a.model, e.status, e.path,"
-            " COALESCE(e.attempts, 0), e.provider, a.finding FROM midias_crawler_analyses a"
+            " COALESCE(e.attempts, 0), e.provider, a.finding, a.content_category,"
+            " a.article_country "
+            "FROM midias_crawler_analyses a"
             " JOIN midias_crawler_urls u ON u.url_hash = a.url_hash"
             " LEFT JOIN midias_crawler_contents c ON c.url_hash = a.url_hash"
             " LEFT JOIN midias_crawler_evidences e ON e.url_hash = a.url_hash"
@@ -1519,6 +1534,8 @@ class StateStore:
                 evidence_attempts=row[17],
                 evidence_provider=row[18],
                 adverse=bool(row[19]),
+                content_category=row[20],
+                article_country=row[21],
             )
             for row in self._all(sql, params)
         ]

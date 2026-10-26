@@ -65,14 +65,23 @@ class Service:
         self, channel: Any, stage: str | None = None, *, recovery: bool = False
     ) -> int:
         """Confirma publicação antes de marcar a outbox; reentrega é idempotente."""
-        allowance = 1 if recovery else 100
+        recovery_limit = (
+            min(QUEUE_LIMITS[stage], self.configuration()["workers"][stage])
+            if recovery and stage is not None
+            else 1
+        )
+        allowance = recovery_limit if recovery else 100
         if stage is not None and channel is not None:
             ready = channel.queue_declare(
                 queue=broker.queue_name(stage, recovery=recovery), passive=True
             )
             allowance = min(
                 allowance,
-                max(0, (1 if recovery else QUEUE_LIMITS[stage]) - ready.method.message_count),
+                max(
+                    0,
+                    (recovery_limit if recovery else QUEUE_LIMITS[stage])
+                    - ready.method.message_count,
+                ),
             )
         if not allowance:
             return 0
@@ -93,6 +102,20 @@ class Service:
                         "WHERE j.stage IN ('discovery','fetch') AND j.state IN ('queued','running')"
                     ).fetchall()
                 }
+                if recovery:
+                    # Não reservar um host para retentativa se há trabalho novo pronto nele.
+                    primary = db.execute(
+                        "SELECT COALESCE(a.url,j.payload->>'url') url FROM ingest_outbox o "
+                        "JOIN ingest_jobs j ON j.id=o.job_id "
+                        "LEFT JOIN ingest_articles a ON a.hash=j.hash "
+                        "WHERE o.published_at IS NULL AND o.discarded_at IS NULL "
+                        "AND o.ready_at<=now() AND o.dispatch=j.dispatch AND o.kind='work' "
+                        "AND j.stage IN ('discovery','fetch') AND j.state IN ('pending','retry') "
+                        "AND j.failures=0 AND NOT j.payload @> '{\"recovery\":true}'"
+                    ).fetchall()
+                    occupied.update(
+                        (urlsplit(r["url"] or "").hostname or "").rstrip(".") for r in primary
+                    )
             db.execute(
                 "WITH obsolete AS (SELECT o.id FROM ingest_outbox o JOIN ingest_jobs j "
                 "ON j.id=o.job_id WHERE o.published_at IS NULL AND o.discarded_at IS NULL "
@@ -288,6 +311,22 @@ class Service:
                     with suppress(Exception):
                         connection.close()
 
+    @staticmethod
+    def take_message(
+        channel: Any, stage: str, recovery: bool = False
+    ) -> tuple[Any, Any, Any, bool]:
+        """Workers principais ajudam a recuperação somente quando sua fila está vazia."""
+        if not recovery:
+            method, properties, body = channel.basic_get(
+                queue=broker.queue_name(stage), auto_ack=False
+            )
+            if method:
+                return method, properties, body, False
+        method, properties, body = channel.basic_get(
+            queue=broker.queue_name(stage, recovery=True), auto_ack=False
+        )
+        return method, properties, body, True
+
     def worker(self, stage: str, number: int, recovery: bool = False) -> None:
         """Consome sua fila independente, com pausa por configuração e heartbeat."""
         owner = f"{self.instance}:{stage}:{number}" + (":recovery" if recovery else "")
@@ -327,9 +366,7 @@ class Service:
                         connection.process_data_events(time_limit=1)
                         self.stop.wait(1)
                         continue
-                    method, _, body = channel.basic_get(
-                        queue=broker.queue_name(stage, recovery=recovery), auto_ack=False
-                    )
+                    method, _, body, selected_recovery = self.take_message(channel, stage, recovery)
                     if method:
                         try:
                             payload = json.loads(body)
@@ -343,7 +380,7 @@ class Service:
                             identifiers, tags = [ident], [method.delivery_tag]
                             for _ in range(DEDUP_BATCH - 1):
                                 extra, _, content = channel.basic_get(
-                                    queue=broker.queue_name(stage, recovery=recovery),
+                                    queue=broker.queue_name(stage, recovery=selected_recovery),
                                     auto_ack=False,
                                 )
                                 if not extra:
@@ -357,11 +394,11 @@ class Service:
                                     continue
                                 identifiers.append(item)
                                 tags.append(extra.delivery_tag)
-                            self.process_many(identifiers, owner, recovery=recovery)
+                            self.process_many(identifiers, owner, recovery=selected_recovery)
                             for tag in tags:
                                 channel.basic_ack(tag)
                         else:
-                            self.process(ident, owner, channel, recovery=recovery)
+                            self.process(ident, owner, channel, recovery=selected_recovery)
                             channel.basic_ack(method.delivery_tag)
                     else:
                         if time.monotonic() >= heartbeat_at:

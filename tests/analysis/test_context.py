@@ -336,4 +336,52 @@ def test_prompt_pede_entidades_em_toda_materia_mesmo_sem_fato_adverso():
 def test_versao_do_prompt_acompanha_a_mudanca_de_criterio():
     from buscador_midias.analysis.prompt import PROMPT_VERSION
 
-    assert PROMPT_VERSION.endswith(".3")
+    assert PROMPT_VERSION == "context-2026-10-26.1"
+
+
+def test_new_categories_are_validated_without_discarding_adverse_facts():
+    from buscador_midias.analysis.classification import CONTENT_CATEGORIES
+
+    for category in CONTENT_CATEGORIES:
+        verdict = parse_analysis(raw(entry(content_category=category)), ITEMS[:1])[0]
+        assert verdict.content_category == category
+        assert verdict.finding and verdict.entities
+    for value in [None, "", [], {}, "invented", 123]:
+        verdict = parse_analysis(raw(entry(content_category=value)), ITEMS[:1])[0]
+        assert verdict.content_category is None
+    assert (
+        parse_analysis(raw(entry(content_category=" OPINION ")), ITEMS[:1])[0].content_category
+        == "opinion"
+    )
+
+
+def test_editorial_country_requires_literal_evidence_not_an_invented_quote():
+    item = AnalysisItem(
+        1,
+        "example.test",
+        "Edição brasileira",
+        "",
+        "Edição brasileira do Jornal Exemplo. Economia da China desacelera.",
+        "text",
+    )
+    result = dict(
+        content_category="news",
+        article_country="BR",
+        article_country_evidence="Edição brasileira do Jornal Exemplo.",
+    )
+    verdict = parse_analysis(raw(entry(**result)), [item])[0]
+    assert verdict.article_country == "BR"
+    assert verdict.article_country_evidence == result["article_country_evidence"]
+    for country, evidence in [("CN", ""), ("CN", "Editorial chinês"), ("ZZ", "Economia da China")]:
+        verdict = parse_analysis(
+            raw(entry(article_country=country, article_country_evidence=evidence)), [item]
+        )[0]
+        assert verdict.article_country is None
+
+
+def test_prompt_explains_origin_not_subject_and_content_not_url():
+    assert "nunca pela" in SYSTEM_PROMPT
+    assert "Não use o país" in SYSTEM_PROMPT
+    assert "nacionalidade de uma pessoa" in SYSTEM_PROMPT
+    for name in ["weather", "cooking", "horoscope", "opinion"]:
+        assert name in SYSTEM_PROMPT

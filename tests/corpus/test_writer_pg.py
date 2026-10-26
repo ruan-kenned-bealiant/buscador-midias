@@ -60,11 +60,11 @@ def schema():
             )
         connection.execute(
             f"CREATE TABLE {name}.midias_ia_trusted_sources "
-            "(url_without_https_www text, name text, active boolean)"
+            "(url_without_https_www text, name text, active boolean, country_code text)"
         )
         connection.execute(
             f"INSERT INTO {name}.midias_ia_trusted_sources VALUES "
-            "('correio24horas.com.br', 'Correio', true), ('inativo.com', 'Inativo', false)"
+            "('correio24horas.com.br', 'Correio', true, 'BR'), ('inativo.com', 'Inativo', false, 'US')"
         )
     except psycopg.Error as error:  # banco sem as tabelas: não há o que testar
         connection.close()
@@ -310,3 +310,49 @@ def test_lote_grande_em_uma_chamada_grava_todos(writer):
 
     assert sum(o.created for o in outcomes) == 30
     assert rows(writer, "SELECT COUNT(*) FROM midias_ia_articles") == [(30,)]
+
+
+def test_classification_country_provenance_and_registry_are_persisted(writer):
+    from dataclasses import replace
+
+    article = replace(
+        make_article(),
+        content_category="weather",
+        source_country="PT",
+        source_country_method="article",
+    )
+    result = writer.write([article])[0]
+    assert not result.error
+    assert rows(
+        writer,
+        "SELECT content_category,source_country,source_country_method FROM midias_ia_articles WHERE id=%s",
+        (result.article_id,),
+    )[0] == ("weather", "PT", "article")
+    assert writer.source_countries() == {"correio24horas.com.br": "BR"}
+    writer.write([replace(article, content_category="news")])
+    assert (
+        rows(
+            writer,
+            "SELECT content_category FROM midias_ia_articles WHERE id=%s",
+            (result.article_id,),
+        )[0][0]
+        == "weather"
+    )
+
+
+def test_unknown_existing_category_is_filled_even_for_another_origin(writer):
+    from dataclasses import replace
+
+    original = replace(make_article(), origin="live_search", content_category=None)
+    result = writer.write([original])[0]
+    assert not result.error
+    updated = writer.write([replace(original, origin="crawler", content_category="opinion")])[0]
+    assert not updated.error
+    assert (
+        rows(
+            writer,
+            "SELECT content_category FROM midias_ia_articles WHERE id=%s",
+            (result.article_id,),
+        )[0][0]
+        == "opinion"
+    )
