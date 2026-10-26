@@ -55,3 +55,24 @@ def test_le_de_volta_e_confere_o_sha256(tmp_path):
 def test_leitura_nao_sai_da_raiz(tmp_path):
     with pytest.raises(ValueError, match="caminho"):
         LocalEvidenceStore(tmp_path).read("../../etc/passwd")
+
+
+def test_compaction_preserves_key_hash_and_allows_replacing_archived_copy(tmp_path, monkeypatch):
+    import importlib
+    import time
+    from pathlib import Path
+
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "scripts"))
+    compressor = importlib.import_module("compact_old_evidence")
+    monkeypatch.setattr(compressor, "ROOT", tmp_path)
+    store = LocalEvidenceStore(tmp_path)
+    body = b"<html>conteudo antigo verificavel</html>" * 100
+    key = store.put(HASH, body)
+    path = tmp_path / key
+    result = compressor.compact(path, time.time() + 1)
+    assert result and not path.exists()
+    assert (tmp_path / (key + ".gz")).exists()
+    assert store.read(key) == body
+    assert hashlib.sha256(store.read(key)).hexdigest() == result["sha256"]
+    store.put(HASH, b"captura mais recente")
+    assert store.read(key) == b"captura mais recente"

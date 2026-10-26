@@ -1,5 +1,7 @@
 # buscador-midias
 
+**Documentação atual:** [índice completo](docs/atual/README.md), com arquitetura, fluxo de notícias, catálogo/mecanismos, dicionário de dados, API, operação e inventário por arquivo. Revisada contra o código em 26/10/2026. As seções de levantamento e auditorias abaixo preservam resultados históricos; suas contagens não são o estado permanente da base.
+
 MVP local do gerenciador de fontes e buscador de notícias, com cadastro de sites,
 RSS/sitemaps, modelos de leitura e testes interativos. O mapeamento inicial alimenta o cadastro.
 
@@ -43,7 +45,8 @@ começam com 4 horas. Reiniciar o painel não sobrescreve configurações manuai
 A estimativa de publicação continua preservada separadamente: é uma amostra do
 histórico, não uma garantia da frequência futura. Alterar o intervalo de busca
 mantém as provas de funcionamento e registra a edição na auditoria. Esta entrega
-configura a periodicidade consumida pelo agendador da tela Buscador de notícias;
+configura a periodicidade disponível ao modo `link_interval`; no modo atual por horários
+fixos (01h, 06h, 12h e 16h), esse intervalo individual é ignorado. Na tela Buscador de notícias,
 a edição do intervalo não inicia a coleta por si só.
 
 ## Guia de uso e interpretação
@@ -102,29 +105,30 @@ entre excluídos. Não há restauração de excluídos pela interface neste MVP.
 use **Testar funcionamento**, no formulário ou no link já cadastrado. Alterar URL, tipo
 ou modelo remove a prova do cadastro atual, mantendo-a na trilha de alterações. Editar nome,
 seção, observações ou status conserva a prova. Evidências exibidas são históricas,
-sem filtro de publicação, e não garantem disponibilidade atual. Os testes fazem apenas HTTP direto, sob demanda, sem
-Bright Data, OpenRouter ou coleta contínua.
+sem filtro de publicação, e não garantem disponibilidade atual. Os testes usam o transporte
+HTTP configurado, sem OpenRouter. Bright Data permanece disponível nos testes/saúde
+conforme opção e credenciais; está desativado na ingestão de notícias.
 
 Esta entrega é local, sem autenticação multiusuário. Escritas exigem JSON, token do
 painel e origem local válida; edições concorrentes usam revisão e retornam conflito.
 As telas antigas foram removidas, inclusive seus arquivos HTML. `/` abre somente o
 gerenciador; os endereços antigos respondem 410. Arquivos da rodada 12 e APIs históricas
-de consulta permanecem preservados por compatibilidade, sem navegação na interface. A conexão do futuro mecanismo de busca
-com o novo cadastro será uma próxima etapa; os executores existentes continuam
-usando seus planos anteriores.
+de consulta permanecem preservados por compatibilidade. O buscador atual já usa o cadastro,
+com seis etapas RabbitMQ, em `/buscador`; saúde e guia ficam em `/saude` e `/guia`.
 
 APIs do cadastro: `GET /api/gerenciador/resumo`, `GET/POST /api/gerenciador/fontes`,
 `GET/PATCH/DELETE /api/gerenciador/fontes/{id}`,
 `GET/POST /api/gerenciador/fontes/{id}/mecanismos` e
 `PATCH/DELETE /api/gerenciador/mecanismos/{id}`. Alterações/exclusões enviam `version`;
 escritas incluem `X-Catalog-Token` obtido no resumo. `manager_db_path` em `make_server`
-permite isolar o banco em testes. Para backup consistente enquanto o servidor estiver
-ativo, use a API `sqlite3.Connection.backup()`; copiar apenas o `.sqlite` pode ignorar o WAL.
+permite isolar o banco em testes. O backup operacional precisa incluir PostgreSQL e
+evidências; `sqlite3.Connection.backup()` aplica-se somente às bases SQLite históricas/testes.
 
 ## Modelo relacional e futura base de Mídias
 
-O destino definitivo do gerenciador é **o banco de Mídias**. Por enquanto, o cadastro
-continua exclusivamente no SQLite local. A migração para Mídias será uma etapa posterior.
+O gerenciador já utiliza **o PostgreSQL de Mídias**, esquema `midias_manager`.
+O SQLite local foi preservado como retrato do corte; não recebe escrita dupla.
+A etapa futura é transportar as definições e a aplicação para o powerDD.
 
 As tabelas centrais agora são `sites`, `links` e `mechanisms`: um site possui vários
 links; cada link tem um site e um mecanismo obrigatórios por chaves estrangeiras.
@@ -134,16 +138,16 @@ Os nomes antigos das tabelas foram migrados sem mudar IDs ou o contrato da API.
 Parâmetros e instantâneos permanecem JSON em colunas das tabelas relacionadas.
 
 Veja o [modelo relacional e as etapas de migração para Mídias](docs/MODELO_RELACIONAL_CATALOGO.md).
-A troca de banco exigirá adaptador, migrações e conferência dos dados; não há conexão
-ou sincronização com Mídias nesta entrega.
+O corte já aplicado está descrito na [migração PostgreSQL](docs/MIGRACAO_POSTGRES_GERENCIADOR.md).
+A [referência atual de dados](docs/atual/DADOS.md) também inclui saúde, ingestão e corpus.
 
-## Validação completa da base antes da migração
+## Histórico: validação completa da base antes da migração
 
 A rodada autorizada testa todos os links não excluídos, inclusive inativos, em uma fila
 persistente com até três tentativas. Mantém somente caminhos comprovados de XML até
 notícia textual e atribui o mecanismo que passar. A janela atual dos modelos é de
-365 dias; publicações conhecidas fora dela não servem como prova. Datas desconhecidas
-ficam sinalizadas. O painel mostra o progresso em tempo real em um bloco no topo.
+365 dias nessa rodada; publicações conhecidas fora dela não serviam como prova. Datas desconhecidas
+ficavam sinalizadas. O card dessa validação foi removido; o histórico foi preservado.
 
 Exclusões lógicas e inativação dos sites sem links são aplicadas após concluir a fila,
 com preservação de histórico, backup e proteção de edições concorrentes. A periodicidade
@@ -162,16 +166,17 @@ Parâmetros comuns: duração total (5–60 s), requisições (4–48), notícia
 (0–3), posição das amostras (distribuídas/primeiras/últimas) e tamanho de resposta/XML
 (1–16 MiB). Automático e índice também permitem quantidade de documentos (1–24) e
 profundidade (0–10, raiz no nível 0). Zero amostras valida somente o XML; datas continuam
-sem restringir a legibilidade quando a janela está em 0. A rodada atual usa 365 dias. Robots, escopo, TLS e deduplicação permanecem obrigatórios.
+sem restringir a legibilidade quando a janela está em 0. A validação histórica usou 365 dias.
+O teste interativo atual força janela 0; escopo, TLS e deduplicação permanecem, sem consulta a robots.txt.
 
 Cada mecanismo está implementado em seu próprio módulo de
 `src/buscador_midias/catalog/mechanisms/`: `automatic.py`, `rss.py`, `sitemap.py`,
-`sitemap_index.py` e `news_sitemap.py`. `base.py` define o contrato e os campos
+`sitemap_index.py`, `news_sitemap.py` e `g1_daily.py`. `base.py` define o contrato e os campos
 configuráveis; `parsing.py` compartilha a interpretação defensiva do XML.
 `catalog/models.py` mantém a fachada de metadados. O executor, a rede e o banco
 continuam compartilhados, sem condicionais de ID para as regras de formato no executor.
 
-As configurações ficam na tabela `mechanisms` do SQLite do gerenciador,
+As configurações ficam na tabela `mechanisms` do PostgreSQL do gerenciador,
 com atualização otimista e auditoria. Uma alteração vale para os próximos testes,
 sem modificar em massa o cadastro ou apagar provas históricas. Cada teste registra
 os parâmetros e a revisão utilizados. Resultados de revisões anteriores continuam
@@ -215,8 +220,8 @@ Cada teste é uma **amostra finita**. Os padrões são até 12 XMLs nos modelos 
 profundidade 10 e orçamento de 45 segundos. Os parâmetros da tela de mecanismos ajustam
 esses valores dentro dos intervalos definidos acima; modelos diretos leem apenas um XML.
 Ao encontrar notícias, prioriza as amostras e informa que não leu os demais filhos.
-O leitor acessa diretamente XMLs e artigos, sem consultar robots.txt. Escopo da fonte e limites são explícitos; não há tentativas infinitas ou cobrança
-externa. O leitor valida IPs públicos e fixa o IP da conexão, preservando Host/SNI/TLS;
+O leitor acessa diretamente XMLs e artigos, sem consultar robots.txt. Escopo da fonte e limites são explícitos. Bright Data, se habilitado no teste, pode
+gerar cobrança externa; a ingestão atual não utiliza esse fallback. O leitor valida IPs públicos e fixa o IP da conexão, preservando Host/SNI/TLS;
 revalida cada redirecionamento e recusa destinos privados ou fora dos domínios permitidos.
 
 Resultados de links cadastrados são salvos automaticamente apenas se a revisão e a

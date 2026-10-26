@@ -9,6 +9,7 @@ from typing import Any
 
 from buscador_midias.catalog.store import CatalogError
 from buscador_midias.evidence.s3_storage import S3EvidenceStore
+from buscador_midias.evidence.storage import EvidenceTooLargeError, read_stored_evidence
 
 ROOT = Path(__file__).resolve().parents[3]
 MAX_BYTES = 16 * 1024 * 1024
@@ -26,13 +27,12 @@ def read_local(path: str, roots: list[Path]) -> bytes:
     if not re.fullmatch(r"midias-ia/evidencias/[A-Za-z0-9_-]{1,128}\.(html|pdf|png|jpe?g)", path):
         raise CatalogError("Caminho de evidência inválido.")
     for root in roots:
-        target = (root / path).resolve()
-        if target.is_relative_to(root.resolve()) and target.is_file():
-            with target.open("rb") as stream:
-                data = stream.read(MAX_BYTES + 1)
-            if len(data) > MAX_BYTES:
-                raise CatalogError("Evidência acima do tamanho permitido.", 413)
-            return data
+        try:
+            return read_stored_evidence(root, path, max_bytes=MAX_BYTES)
+        except EvidenceTooLargeError as error:
+            raise CatalogError(str(error), 413) from error
+        except (FileNotFoundError, ValueError):
+            continue
     raise CatalogError("Evidência não encontrada no armazenamento local.", 404)
 
 

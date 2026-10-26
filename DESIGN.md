@@ -1,11 +1,16 @@
 # Design
 
+**Referência da implementação atual:** [documentação técnica consolidada](docs/atual/README.md).
+Este arquivo preserva decisões e fases do levantamento. O produto atual inclui catálogo,
+saúde e buscador em seis etapas; consulte a referência consolidada para contratos e limites.
+
 ## MVP do produto: gerenciador de sites
 
 O produto terá busca de notícias e gerenciador de sites. A interface atual contém
 o gerenciador em `/` e `/gerenciador`, com CRUD, estados ativo/inativo, filtros, paginação,
-evidências e teste interativo. A configuração dos mecanismos fica em `/mecanismos`. As demais telas foram removidas; os arquivos históricos
-e APIs de consulta são preservados. A busca completa será integrada depois.
+evidências e teste interativo. A configuração dos mecanismos fica em `/mecanismos`,
+a saúde em `/saude`, o guia em `/guia` e a ingestão em `/buscador`. Telas antigas do
+levantamento foram removidas; arquivos históricos e APIs de consulta são preservados.
 
 O cadastro editável usa PostgreSQL de Mídias, esquema `midias_manager`.
 A migração transacional preservou o SQLite em `var/gerenciador/catalogo.sqlite`
@@ -19,13 +24,13 @@ preservam rastreabilidade, sem modificar a rodada 12 ou relatórios do mapeament
 A API do gerenciador é a única área com escrita; as rotas históricas continuam
 somente leitura. Escritas limitadas a HTTP local, JSON de tamanho limitado e token
 de mesma origem. O MVP não oferece autenticação, restauração de excluídos pela
-interface nem coleta contínua. Publicação e uso multiusuário exigirão
-autenticação e revisão da infraestrutura. Não cria agendamentos ou custos externos.
+interface. A ingestão atual tem serviço/agendamento próprios e chamadas de contexto
+podem gerar custos. Publicação e uso multiusuário exigirão autenticação e revisão da infraestrutura.
 
 ### Mecanismos separados e configuração persistente
 
 Cada modelo implementa o contrato `Mechanism` em módulo próprio: automático, RSS,
-sitemap direto, índice e news sitemap. As regras de aceitação, expansão e ajuste do tipo
+sitemap direto, índice, news sitemap e atualizações diárias do g1. As regras de aceitação, expansão e ajuste do tipo
 ficam nesses módulos. Parsing defensivo, executor, rede e persistência são compartilhados.
 A interface cria os campos a partir do esquema de parâmetros do próprio mecanismo.
 Modelos sem expansão não expõem parâmetros de árvore.
@@ -43,8 +48,8 @@ amostras controlam o executor. Domínio/IP público e TLS são invariantes; o le
 
 ### Modelos e validação sob demanda
 
-Cinco modelos versionados em código: automático, RSS/Atom/RDF, sitemap direto, árvore de
-sitemaps e sitemap de notícias. Configuração por endpoint, independente do estado ativo.
+Seis modelos versionados em código: automático, RSS/Atom/RDF, sitemap direto, árvore de
+sitemaps, sitemap de notícias e `g1_daily`. Configuração por endpoint, independente do estado ativo.
 Migração idempotente adiciona `model` e `last_test` ao cadastro existente, inferindo apenas
 formato/índice. Modelos novos não recebem comprovação retroativa.
 
@@ -108,7 +113,7 @@ mecanismos/tentativas no máximo, prova real de XML → notícia → texto e est
 conservadora de periodicidade. Aplicação ao final com revisão otimista, exclusão
 lógica, inativação dos sites vazios e preservação integral das evidências anteriores.
 As tabelas de rodada/tentativa e `link_cadence` também integram o modelo destinado
-futuramente a Mídias. Não há coleta contínua ou agenda automática. Ver
+futuramente a Mídias. Essa validação finita não é o serviço contínuo de ingestão atual. Ver
 [critérios, limites e retomada](docs/VALIDACAO_COMPLETA_CATALOGO.md).
 
 ## Referência histórica do mapeamento

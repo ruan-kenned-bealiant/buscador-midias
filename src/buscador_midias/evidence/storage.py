@@ -6,6 +6,7 @@ mesmo lugar. Trocar o disco local por um bucket é só implementar a mesma porta
 
 from __future__ import annotations
 
+import gzip
 import os
 import re
 import tempfile
@@ -14,6 +15,27 @@ from typing import Protocol
 
 DEFAULT_PREFIX = "midias-ia/evidencias"
 SAFE_HASH = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+
+
+class EvidenceTooLargeError(ValueError):
+    """A cópia salva excede o limite de leitura após descompressão."""
+
+
+def read_stored_evidence(root: Path, path: str, *, max_bytes: int = 16 * 1024 * 1024) -> bytes:
+    """Lê bytes originais ou sua cópia gzip, mantendo confinamento e limite de tamanho."""
+    for suffix in ("", ".gz"):
+        target = (root / (path + suffix)).resolve()
+        if not target.is_relative_to(root.resolve()):
+            raise ValueError(f"caminho fora da raiz de evidências: {path!r}")
+        if not target.is_file():
+            continue
+        opener = gzip.open if suffix else open
+        with opener(target, "rb") as stream:
+            data = stream.read(max_bytes + 1)
+        if len(data) > max_bytes:
+            raise EvidenceTooLargeError("Evidência acima do tamanho permitido.")
+        return data
+    raise FileNotFoundError(path)
 
 
 class EvidenceStore(Protocol):
@@ -77,4 +99,4 @@ class LocalEvidenceStore:
         target = (self._root / path).resolve()
         if not target.is_relative_to(self._root.resolve()):
             raise ValueError(f"caminho fora da raiz de evidências: {path!r}")
-        return target.read_bytes()
+        return read_stored_evidence(self._root, path)
