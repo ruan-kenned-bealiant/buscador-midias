@@ -1,5 +1,9 @@
 # Descoberta complementar de RSS via Feeder — 26/10/2026
 
+> Atualização de prontidão: os RSS comprovadamente funcionais passaram a participar da busca diária independentemente da idade da amostra; a data é filtrada em cada notícia. Veja [a verificação dos mecanismos](VERIFICACAO_MECANISMOS_20261026.md). As classificações mencionadas abaixo preservam o histórico da rodada.
+
+> Atualização: os 281 candidatos então pendentes foram testados: 154 novos RSS cadastrados e 127 sem comprovação. Veja [a conclusão](CONCLUSAO_FEEDER_PENDENTES.md) e o [relatório no painel](http://127.0.0.1:8765/testes/feeder-pendentes). Os números abaixo preservam a rodada inicial.
+
 A rodada consultou as páginas públicas do diretório Feeder para os 65 veículos prioritários. O diretório foi tratado como indicação de candidatos; o teste de XML, notícia textual e evidência foi feito por HTTP diretamente nos veículos, com os mesmos leitores e capturador usados pelo gerenciador.
 
 ## Resultado

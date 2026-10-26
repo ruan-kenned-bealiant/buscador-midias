@@ -61,6 +61,7 @@ def make_server(
     test_reader_factory: ReaderFactory | None = None,
     priority_probe_directory: Path | None = None,
     feeder_mapping_directory: Path | None = None,
+    feeder_pending_directory: Path | None = None,
 ) -> ThreadingHTTPServer:
     """Cria o servidor do painel (sem iniciá-lo).
 
@@ -84,6 +85,7 @@ def make_server(
         test_reader_factory: Leitor dos testes interativos, substituível em testes sem rede.
         priority_probe_directory: Pasta local do teste finito de notícias e evidências.
         feeder_mapping_directory: Artefatos da descoberta complementar via Feeder.
+        feeder_pending_directory: Artefatos da conclusão dos candidatos RSS pendentes.
 
     Returns:
         O servidor, pronto para ``serve_forever``.
@@ -94,6 +96,19 @@ def make_server(
     feeder_mapping = feeder_mapping_directory or (
         Path(__file__).resolve().parents[3] / "var/gerenciador/mapeamento-feeder-20261026"
     )
+    feeder_pending = feeder_pending_directory or (
+        Path(__file__).resolve().parents[3] / "var/gerenciador/feeder-pendentes-20261026"
+    )
+    audit_reports = {
+        "/testes/prioritarios": priority_probe,
+        "/testes/feeder": feeder_mapping,
+        "/testes/feeder-pendentes": feeder_pending,
+    }
+    audit_evidence = {
+        "teste-prioritarios": priority_probe,
+        "feeder": feeder_mapping,
+        "feeder-pendentes": feeder_pending,
+    }
     now_fn = clock or (lambda: datetime.now(UTC))
     cache: dict[tuple[int, int], tuple[datetime, bytes]] = {}
     cache_lock = threading.Lock()
@@ -167,22 +182,26 @@ def make_server(
                 self._send(200, "text/html; charset=utf-8", guide_page)
             elif parts.path == "/assets/health.js":
                 self._send(200, "application/javascript; charset=utf-8", health_script)
-            elif parts.path in ("/testes/prioritarios", "/testes/feeder"):
+            elif parts.path in audit_reports:
                 try:
-                    report_root = (
-                        feeder_mapping if parts.path == "/testes/feeder" else priority_probe
-                    )
+                    report_root = audit_reports[parts.path]
                     data = (report_root / "report.html").read_bytes()
                     self._send(200, "text/html; charset=utf-8", data)
                 except OSError:
                     self._json(404, {"error": "Relatório de teste ainda não disponível."})
             elif parts.path.startswith(
-                ("/evidencias/corpus/", "/evidencias/teste-prioritarios/", "/evidencias/feeder/")
+                (
+                    "/evidencias/corpus/",
+                    "/evidencias/teste-prioritarios/",
+                    "/evidencias/feeder/",
+                    "/evidencias/feeder-pendentes/",
+                )
             ):
                 from buscador_midias.ingestion.evidence_view import read_evidence, read_local
 
                 match = re.fullmatch(
-                    r"/evidencias/(corpus|teste-prioritarios|feeder)/([a-f0-9]{64})", parts.path
+                    r"/evidencias/(corpus|teste-prioritarios|feeder|feeder-pendentes)/([a-f0-9]{64})",
+                    parts.path,
                 )
                 if not match or (match[1] == "corpus" and manager.ingestion is None):
                     self._json(404, {"error": "Evidência não encontrada."})
@@ -192,10 +211,7 @@ def make_server(
                         content_type = "text/html"
                         data = read_local(
                             f"midias-ia/evidencias/{match[2]}.html",
-                            [
-                                (feeder_mapping if match[1] == "feeder" else priority_probe)
-                                / "evidence"
-                            ],
+                            [audit_evidence[match[1]] / "evidence"],
                         )
                     else:
                         content_type, data = read_evidence(manager.ingestion, match[2])

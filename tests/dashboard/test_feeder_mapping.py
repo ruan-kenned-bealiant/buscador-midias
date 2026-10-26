@@ -102,6 +102,10 @@ def test_aplicacao_preserva_exclusao_manual_e_audita_restauracao(
             ("delete" if manual else "validation_exclude", Jsonb({"version": version})),
         )
         wrapped = fixture_row(ingestion, db)
+        # Uma notícia antiga comprova o RSS; não deve impedir a leitura diária futura.
+        for sample in wrapped["result"]["samples"]:
+            if sample.get("article") and sample.get("text"):
+                sample["published_at"] = "2020-01-01T12:00:00+00:00"
         source = db.execute("SELECT * FROM sites WHERE id=1").fetchone()
         links = db.execute("SELECT * FROM links").fetchall()
     out = tmp_path / "audit"
@@ -161,6 +165,8 @@ def test_aplicacao_preserva_exclusao_manual_e_audita_restauracao(
             assert decisions[0]["action"] == "feeder_restore"
             assert link["active"] and link["deleted_at"] is None
             assert link["access_transport"] == "curl_chrome_h2"
+            route = db.execute("SELECT purpose FROM ingest_daily_routes WHERE link_id=1").fetchone()
+            assert route["purpose"] == "updates"
             assert link["last_test"]["evidence_capture"]["sha256"] == proof["sha256"]
             assert (
                 db.execute(
@@ -168,3 +174,54 @@ def test_aplicacao_preserva_exclusao_manual_e_audita_restauracao(
                 ).fetchone()["n"]
                 == 1
             )
+
+
+def test_continuacao_testa_todos_os_candidatos_sem_corte_de_oito(feeder, monkeypatch, tmp_path):
+    import time
+    from types import SimpleNamespace
+
+    candidates = [
+        dict(url=f"https://example.com/feed/{i}", decision="candidate") for i in range(12)
+    ]
+    monkeypatch.setattr(feeder, "OUT", tmp_path)
+    monkeypatch.setattr(feeder, "candidates_for", lambda *_: candidates)
+
+    class Reader:
+        def __init__(self, *_):
+            self.inner = SimpleNamespace(deadline=time.monotonic() + 35)
+
+        def close(self):
+            pass
+
+    calls = []
+
+    def test(config, _source, _progress, factory):
+        assert config["parameters"]["timeout_seconds"] == 5
+        calls.append(config["url"])
+        return dict(samples=[], xml_valid=True, news_urls=0, endpoint_status=200)
+
+    monkeypatch.setattr(feeder, "RecordingReader", Reader)
+    monkeypatch.setattr(feeder, "run_test", test)
+    result = feeder.probe(
+        dict(id=1, name="Example", url="https://example.com"),
+        {},
+        dict(
+            models=[dict(model="rss", parameters={}, version=1)],
+            probe_limits=dict(max_candidates=12, source_seconds=90, test_seconds=5),
+        ),
+    )
+    assert len(result["results"]) == 12
+    assert len(calls) == 12
+    assert all(c["decision"] == "not_confirmed" for c in result["candidates"])
+
+
+def test_retomadas_simultaneas_nao_duplicam_execucao(feeder, tmp_path):
+    runner = importlib.import_module("resume_feeder_candidates")
+    with (
+        runner.run_lock(tmp_path),
+        pytest.raises(RuntimeError, match="já está em execução"),
+        runner.run_lock(tmp_path),
+    ):
+        pytest.fail("Uma segunda execução não deve obter o lock")
+    with runner.run_lock(tmp_path):
+        assert True

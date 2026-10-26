@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import gzip
 import hashlib
 import json
 import threading
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -25,6 +27,21 @@ PREVIOUS = ROOT / "var/gerenciador/mapeamento-feeder-20261026"
 OUT = ROOT / "var/gerenciador/feeder-pendentes-20261026"
 LOCK = threading.Lock()
 HOST_LOCKS = {}
+
+
+@contextmanager
+def run_lock(directory):
+    """Impede duas retomadas simultâneas do mesmo lote de chamadas HTTP."""
+    directory.mkdir(parents=True, exist_ok=True)
+    with (directory / ".execution.lock").open("a+") as handle:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise RuntimeError("Este lote já está em execução; aguarde sua conclusão.") from error
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def freeze():
@@ -45,7 +62,8 @@ def freeze():
         # A auditoria completa anterior permanece preservada; aqui basta a revisão para deduplicar.
         links = db.execute(
             "SELECT id,source_id,url,version,active,deleted_at,model,access_transport,"
-            "jsonb_build_object('usable_for_news',coalesce((last_test->>'usable_for_news')::boolean,false)) last_test "
+            "jsonb_build_object('usable_for_news',"
+            "coalesce((last_test->>'usable_for_news')::boolean,false)) last_test "
             "FROM midias_manager.links"
         ).fetchall()
         models = db.execute("SELECT * FROM midias_manager.mechanisms").fetchall()
@@ -170,10 +188,15 @@ def main():
     build_report(
         OUT,
         evidence_prefix="feeder-pendentes",
-        description="Conclusão dos 281 candidatos pendentes da rodada anterior. Até 3 perfis HTTP e 20 segundos por teste; sem limite de 8 candidatos por fonte nesta rodada.",
+        description=(
+            "Conclusão dos 281 candidatos pendentes da rodada anterior. "
+            "Até 3 perfis HTTP e 20 segundos por teste; "
+            "sem limite de 8 candidatos por fonte nesta rodada."
+        ),
     )
     print(json.dumps(summary, ensure_ascii=False), flush=True)
 
 
 if __name__ == "__main__":
-    main()
+    with run_lock(OUT):
+        main()

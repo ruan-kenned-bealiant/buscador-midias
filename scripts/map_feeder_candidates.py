@@ -24,7 +24,7 @@ from lxml import html
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from buscador_midias.catalog.editorial_mapping import normalized, recent_samples
+from buscador_midias.catalog.editorial_mapping import normalized
 from buscador_midias.catalog.health_restoration import automatic_event
 from buscador_midias.catalog.http_transport import make_reader
 from buscador_midias.catalog.postgres import WRITE_LOCK, connect_postgres
@@ -525,8 +525,8 @@ def apply_source(row, manifest):
                 ),
             )
             event(db, "endpoint", after["id"], action, before, after)
-            # Apenas notícia com data recente comprovada habilita a rota diária automaticamente.
-            daily = "updates" if recent_samples(test) else "review"
+            # RSS funcional deve ser consultado: a janela filtra as matérias, não a fonte.
+            daily = "updates"
             current_route = db.execute(
                 "SELECT * FROM ingest_daily_routes WHERE link_id=%s", (after["id"],)
             ).fetchone()

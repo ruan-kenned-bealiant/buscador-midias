@@ -95,7 +95,7 @@ def build_report(out: Path, *, evidence_prefix="feeder", description=None):
     page += f"<p>{len(results)} fontes consultadas · {len(all_candidates)} candidatos · {count['confirmed']} comprovados · {decisions['feeder_create']} criados · {decisions['feeder_restore']} reativados.</p>"
     page += """<p>O Feeder fornece candidatos; XML, notícia textual e evidência foram testados diretamente nos veículos.
     Até 8 candidatos por fonte, 3 perfis HTTP e 120 segundos por fonte. Os demais ficaram registrados como pendentes de orçamento, sem ativação.
-    Feeds de terceiros, agregadores e podcasts foram separados. Um RSS antigo pode ser funcional; somente publicação recente comprovada habilita automaticamente uma nova rota diária.
+    Feeds de terceiros, agregadores e podcasts foram separados. RSS funcional participa da busca diária; a data de cada notícia é filtrada na rodada, sem excluir o feed pela idade da amostra.
     Exclusões/inativações manuais e revisões posteriores foram preservadas. Não houve análise de contexto, uso de serviços pagos ou nova rodada de ingestão.</p>
     <p>Legenda: already_functional = já funcional no catálogo; confirmed = notícia e evidência comprovadas;
     not_confirmed = sem comprovação nesta amostra; third_party_review = origem externa para revisão;
@@ -104,7 +104,8 @@ def build_report(out: Path, *, evidence_prefix="feeder", description=None):
     <table><thead><tr><th>Fonte</th><th>Candidatos</th><th>RSS testados</th><th>Comprovados</th><th>Aplicados</th><th>Notícias e evidências</th></tr></thead><tbody>"""
     if description:
         page = page.replace(
-            "Até 8 candidatos por fonte, 3 perfis HTTP e 120 segundos por fonte.",
+            "Até 8 candidatos por fonte, 3 perfis HTTP e 120 segundos por fonte. "
+            "Os demais ficaram registrados como pendentes de orçamento, sem ativação.",
             escape(description),
         )
     (out / "report.html").write_text(page + "".join(rows) + "</tbody></table></html>")
