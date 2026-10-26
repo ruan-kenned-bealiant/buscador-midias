@@ -11,7 +11,8 @@ RESULTS = (
         "healthy",
         "Notícia textual confirmada",
         "O XML é compatível e pelo menos uma página da amostra entregou texto útil de notícia.",
-        "Um feed lista dez URLs e uma das três páginas testadas permite extrair a reportagem.",
+        "Você testa um RSS com dez entradas. O sistema abre até três páginas e consegue "
+        "ler o corpo de uma reportagem. Acesso, notícia e texto foram comprovados nessa amostra.",
         "É prova de funcionamento na data do teste, sem garantir todas as notícias ou "
         "disponibilidade futura.",
     ),
@@ -20,7 +21,9 @@ RESULTS = (
         "Formato ou mecanismo inválido",
         "A resposta não pôde ser interpretada como XML aceito, ou não corresponde ao "
         "mecanismo escolhido.",
-        "A URL entrega HTML; o XML está malformado; um índice foi configurado como sitemap direto.",
+        "Você cadastrou a página inicial do jornal como RSS. Ela abre no navegador, mas "
+        "entrega uma página comum (HTML), não um boletim RSS. Outro exemplo: escolher "
+        "Sitemap direto para um índice que lista outros arquivos.",
         "Confira a URL e o formato. Troque o mecanismo quando houver incompatibilidade"
         " e teste novamente.",
     ),
@@ -28,7 +31,9 @@ RESULTS = (
         "no_news",
         "Acessível, sem notícias na amostra",
         "O documento pôde ser lido, mas a varredura não encontrou URLs de notícias aproveitáveis.",
-        "Um RSS está vazio ou a lista lida não contém entradas úteis.",
+        "O boletim RSS abre e seu formato está correto, mas não contém entradas. O sistema "
+        "não recebe um endereço de reportagem para testar. A lista foi acessada; a "
+        "reportagem ainda não pôde ser avaliada.",
         "Não é erro de acesso nem prova de que o site inteiro não tenha notícias. "
         "Confira as entradas e os avisos.",
     ),
@@ -46,16 +51,18 @@ RESULTS = (
         "Falha de acesso",
         "Não foi possível acessar o RSS/sitemap ou uma notícia necessária à comprovação.",
         "HTTP 403/429, endereço inexistente (404), timeout, DNS, SSL ou falha no destino.",
-        "Confira se a falha ocorreu no XML ou no artigo. Bright Data pode ajudar em "
-        "alguns bloqueios e falhas de rede, sem garantia de resolver todos.",
+        "Confira se a falha ocorreu na lista XML ou na reportagem. Leia o código e a "
+        "mensagem antes de alterar o mecanismo: trocar o leitor não resolve "
+        "necessariamente um bloqueio de rede. Veja os exemplos em Problemas de acesso.",
     ),
     (
         "inconclusive",
         "Inconclusivo",
         "Não há evidência suficiente para confirmar funcionamento nem atribuir uma "
         "reprovação específica.",
-        "Acabou o tempo antes de abrir uma notícia, foi atingido o limite do fallback "
-        "ou houve falha do provedor.",
+        "O índice abriu, mas tem muitos arquivos filhos. O tempo do teste acabou antes "
+        "de chegar a uma reportagem. Sem essa amostra, ainda não há prova de texto. "
+        "Limites do fallback ou falha do provedor também podem impedir a conclusão.",
         "Leia os avisos e os limites efetivamente usados. Não significa link inválido."
         " Ajuste o teste conforme o motivo.",
     ),
@@ -141,7 +148,9 @@ PARAMETER_HELP = {
     "article_samples": (
         "Quantidade máxima de páginas de notícias a conferir. 0 verifica apenas XML e "
         "não comprova texto. Na saúde é garantida ao menos uma amostra.",
-        "3 testa até três páginas; confirmar uma notícia textual já pode tornar o link funcional.",
+        "Uma lista com 100 entradas e amostra 3 permite abrir até três reportagens, "
+        "não as 100. Confirmar texto em uma delas já pode comprovar funcionamento. "
+        "Amostra maior exige mais tempo e requisições.",
     ),
     "sample_order": (
         "Escolhe posições na ordem de URLs do XML: distribuídas, primeiras ou últimas."
@@ -157,8 +166,9 @@ PARAMETER_HELP = {
     "max_documents": (
         "Máximo de XMLs lidos em modelos que expandem índices. Inclui o documento "
         "inicial e os filhos.",
-        "12 documentos permitem o índice inicial e até 11 filhos, desde que os demais "
-        "limites também permitam.",
+        "O índice aponta para 50 arquivos de seção. Com limite 12, o teste pode ler a "
+        "raiz e até 11 filhos. Os outros 39 não foram necessariamente reprovados: "
+        "podem ter ficado fora da amostra por limite.",
     ),
     "max_depth": (
         "Máximo de níveis de XML a partir da raiz, que fica no nível 0. Não é a "
@@ -198,7 +208,8 @@ FIELDS = (
     (
         "cadence",
         "Periodicidade de busca e cadência estimada",
-        "Periodicidade é o intervalo configurado para a busca futura. Cadência é uma "
+        "Periodicidade é o intervalo cadastrado para consultar o link. Quando a busca usa "
+        "horários fixos, esse intervalo individual não controla as rodadas. Cadência é uma "
         "estimativa de publicação obtida das datas disponíveis, quando há dados "
         "suficientes.",
         "240 minutos = 4 horas. Uma estimativa de 30 minutos sugere publicações "
@@ -274,7 +285,8 @@ HEALTH = (
         "Verifica links ativos cujos sites também estão ativos. Avalia acesso, notícia"
         " e texto, sem filtro de data.",
         "Executar diariamente uma conferência de saúde dos caminhos cadastrados.",
-        "É independente da busca futura de notícias e do intervalo de cada link.",
+        "É uma verificação de funcionamento, independente da busca de notícias e "
+        "do intervalo de cada link.",
     ),
     (
         "recovery_round",
@@ -298,7 +310,7 @@ HEALTH = (
     ),
     (
         "workers",
-        "Sites em paralelo",
+        "Sites em paralelo (workers)",
         "Quantidade máxima de testes simultâneos. A fila evita concorrência entre "
         "itens agrupados pelo mesmo host da fonte.",
         "8 permite testar fontes diferentes em paralelo, respeitando a disponibilidade da fila.",
@@ -442,7 +454,8 @@ def render_guide() -> bytes:
             mechanism.label,
             mechanism.description + " " + meaning,
             example,
-            "Escolha pelo formato real do documento e confirme com Testar funcionamento.",
+            "O endereço deve entregar o formato compatível com este leitor. Uma URL que "
+            "termina em .xml não garante isso: confira o resultado de Testar funcionamento.",
         )
         for parameter in mechanism.parameters:
             parameters[parameter.key] = parameter
@@ -461,7 +474,8 @@ def render_guide() -> bytes:
             example,
             f"Padrão do modelo: {parameter.default}. {limits} "
             "Os valores salvos podem ser diferentes: consulte Mecanismos de busca. "
-            "Alterações globais afetam os próximos testes dos links que usam esse modelo.",
+            "Alterações globais afetam os próximos testes dos links que usam esse modelo. "
+            "Não alteram os resultados antigos já registrados.",
         )
     template = resources.files("buscador_midias.dashboard").joinpath("guide.html").read_text()
     for key, content in sections.items():
