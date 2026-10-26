@@ -127,7 +127,7 @@ def parse_feed_entries(
         link = _item_link(item)
         if not link:
             continue
-        url = urljoin(base_url, link)
+        url = _article_url(urljoin(base_url, link), base_url)
         if urlsplit(url).scheme not in ("http", "https"):
             continue
         entries.append(
@@ -136,6 +136,38 @@ def parse_feed_entries(
             )
         )
     return tuple(entries)
+
+
+def _article_url(url: str, base_url: str) -> str:
+    """Extrai o destino editorial explícito do redirecionador dos RSS oficiais da Folha.
+
+    Não expande redirecionadores arbitrários: o feed, o intermediário e o destino
+    precisam pertencer aos domínios conhecidos. A validação de escopo/IP/TLS do
+    download continua sendo aplicada ao destino resultante.
+    """
+    feed_host = (urlsplit(base_url).hostname or "").lower()
+    wrapper = urlsplit(url)
+    if (
+        feed_host != "folha.uol.com.br" and not feed_host.endswith(".folha.uol.com.br")
+    ) or wrapper.hostname != "redir.folha.com.br":
+        return url
+    if not wrapper.path.startswith("/redir/online/") or "*" not in url:
+        return url
+    target = url.partition("*")[2]
+    try:
+        parsed = urlsplit(target)
+        host = (parsed.hostname or "").lower()
+        if (
+            parsed.scheme in ("http", "https")
+            and (host == "folha.uol.com.br" or host.endswith(".folha.uol.com.br"))
+            and parsed.username is None
+            and parsed.password is None
+            and parsed.port in (None, 80, 443)
+        ):
+            return target
+    except ValueError:
+        pass
+    return url
 
 
 def _item_link(item: etree._Element) -> str:

@@ -286,6 +286,7 @@ class HealthStore:
                         ),
                         config=dict(
                             bright_data=configuration["bright_data"],
+                            access_transport=row.get("access_transport", "direct"),
                             max_bright_requests=configuration["max_bright_requests"],
                             url=row["url"],
                             kind=row["kind"],

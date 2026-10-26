@@ -15,6 +15,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from unidecode import unidecode
 
+from buscador_midias.catalog.http_transport import validate_transport
 from buscador_midias.catalog.mechanisms import get_mechanism
 from buscador_midias.catalog.models import get_model, list_models
 from buscador_midias.catalog.schema import (
@@ -232,6 +233,11 @@ class CatalogStore:
                 enforce_relations(db)
                 create_test_history(db)
                 create_search_intervals(db)
+                if "access_transport" not in {r[1] for r in db.execute("PRAGMA table_info(links)")}:
+                    db.execute(
+                        "ALTER TABLE links ADD COLUMN access_transport "
+                        "TEXT NOT NULL DEFAULT 'direct'"
+                    )
                 db.commit()
             except Exception:
                 db.rollback()
@@ -285,6 +291,8 @@ class CatalogStore:
         result["test_config_current"] = bool(result["last_test"]) and (
             result["last_test"].get("model_version") == model_version
             and result["last_test"].get("source_url") == source_url
+            and result["last_test"].get("access_transport", "direct")
+            == result.get("access_transport", "direct")
         )
         result["active"] = bool(result["active"])
         result["effective_active"] = result["active"] and source_active
@@ -430,6 +438,7 @@ class CatalogStore:
                 "active",
                 "version",
                 "search_interval_seconds",
+                "access_transport",
             }
         if data.keys() - allowed:
             raise CatalogError("O cadastro contém campos desconhecidos.")
@@ -476,11 +485,18 @@ class CatalogStore:
                             "O intervalo de busca deve ser um número inteiro positivo de segundos."
                         )
                     values["search_interval_seconds"] = interval
+                    try:
+                        values["access_transport"] = validate_transport(
+                            merged.get("access_transport", "direct")
+                        )
+                    except ValueError as error:
+                        raise CatalogError(str(error)) from error
                     # A prova pertence ao endereço e tipo que foram efetivamente testados.
                     if before and (
                         values["url"] != before["url"]
                         or kind != before["kind"]
                         or model != before["model"]
+                        or values["access_transport"] != before.get("access_transport", "direct")
                     ):
                         values["evidence"] = "{}"
                         values["last_test"] = "{}"
@@ -498,6 +514,8 @@ class CatalogStore:
                             or test_result["source_id"] != source_id
                             or test_result["requested_kind"] != kind
                             or test_result["source_url"] != parent["url"]
+                            or test_result.get("access_transport", "direct")
+                            != values["access_transport"]
                         ):
                             raise CatalogError(
                                 "O teste pertence a outra configuração. Teste novamente."
@@ -547,8 +565,8 @@ class CatalogStore:
                 "",
             ),
             audio=result["outcome"] == "audio_only",
-            access_method=result.get("access_method","direct"),
-            bright_data_requests=result.get("bright_data_requests",0),
+            access_method=result.get("access_method", "direct"),
+            bright_data_requests=result.get("bright_data_requests", 0),
             test_id=result["test_id"],
         )
 

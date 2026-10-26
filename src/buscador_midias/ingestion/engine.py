@@ -21,8 +21,8 @@ from buscador_midias.analysis.context import AnalysisItem, OpenRouterContextAnal
 from buscador_midias.analysis.openrouter import OpenRouterChat
 from buscador_midias.analysis.prompt import PROMPT_VERSION
 from buscador_midias.catalog.http_policy import retryable
+from buscador_midias.catalog.http_transport import make_reader
 from buscador_midias.catalog.mechanisms import get_mechanism
-from buscador_midias.catalog.reader import TestReader
 from buscador_midias.corpus.article import build_corpus_article
 from buscador_midias.corpus.writer import PostgresCorpusWriter
 from buscador_midias.criteria import meets_criteria
@@ -133,15 +133,20 @@ class Engine:
                     raise HostBusyError("Host aguardando Retry-After", int(cooldown["seconds"]))
                 acquired.add(host)
 
-            reader = TestReader(
+            reader = make_reader(
                 roots,
                 lambda _: None,
+                transport=job["snapshot"].get("access_transport", "direct"),
                 seconds=60,
                 requests=24,
                 max_bytes=16 * 1024 * 1024,
                 before_request=reserve,
             )
-            yield reader
+            try:
+                yield reader
+            finally:
+                if hasattr(reader, "close"):
+                    reader.close()
 
     @staticmethod
     def metrics(reader: Any) -> dict[str, Any]:
@@ -151,6 +156,10 @@ class Engine:
             bright_data_requests=getattr(reader, "bright_requests", 0),
             connections_reused=getattr(reader, "connections_reused", 0),
             cookies_sent=getattr(reader, "cookies_sent", 0),
+            access_transport=getattr(reader, "transport", "direct"),
+            http_protocols=sorted(
+                {event["protocol"] for event in getattr(reader, "transport_events", [])}
+            ),
         )
         if getattr(reader, "retry_after_seconds", None) is not None:
             result.update(

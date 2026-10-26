@@ -440,6 +440,7 @@ class IngestStore:
                     parameters=link["parameters"],
                     url=link["url"],
                     kind=link["kind"],
+                    access_transport=link.get("access_transport", "direct"),
                     source=dict(
                         id=link["source_id"],
                         name=link["source_name"],

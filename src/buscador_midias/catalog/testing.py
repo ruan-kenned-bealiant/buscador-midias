@@ -16,6 +16,7 @@ from urllib.parse import urljoin
 
 from buscador_midias.catalog.bright_reader import BrightTestReader, bright_data_available
 from buscador_midias.catalog.cadence import estimate_cadence
+from buscador_midias.catalog.http_transport import make_reader, validate_transport
 from buscador_midias.catalog.mechanisms import get_mechanism
 from buscador_midias.catalog.reader import TestLimitError, TestReader
 from buscador_midias.catalog.store import CatalogError, CatalogStore, clean_url
@@ -71,10 +72,14 @@ def run_test(
         source_type="",
     )
     roots = [source["url"], config["url"]]
+    transport = validate_transport(config.get("access_transport", "direct"))
+    use_bright = bool(config.get("bright_data")) and transport == "direct"
     reader = (
         factory(roots, progress)
         if factory is not None
-        else (BrightTestReader if config.get("bright_data") else TestReader)(
+        else (
+            BrightTestReader if use_bright else TestReader if transport == "direct" else make_reader
+        )(
             roots,
             progress,
             seconds=parameters["timeout_seconds"],
@@ -82,7 +87,9 @@ def run_test(
             max_bytes=parameters["max_response_mib"] * 1024 * 1024,
             **(
                 {"max_bright_requests": config.get("max_bright_requests", 8)}
-                if config.get("bright_data")
+                if use_bright
+                else {"transport": transport}
+                if transport != "direct"
                 else {}
             ),
         )
@@ -349,12 +356,22 @@ def run_test(
     result["connections_reused"] = getattr(reader, "connections_reused", 0)
     result["cookies_sent"] = getattr(reader, "cookies_sent", 0)
     result["retry_after_seconds"] = getattr(reader, "retry_after_seconds", None)
-    result["bright_data_enabled"] = bool(config.get("bright_data"))
+    result["bright_data_enabled"] = use_bright
+    result["access_transport"] = transport
+    result["transport_events"] = getattr(reader, "transport_events", [])
     result["bright_data_requests"] = getattr(reader, "bright_requests", 0)
     result["bright_data_events"] = getattr(reader, "bright_events", [])
     result["bright_data_provider_error"] = getattr(reader, "bright_provider_error", False)
     result["bright_data_limit_reached"] = getattr(reader, "bright_limit_reached", False)
-    result["access_method"] = "bright_data" if result["bright_data_requests"] else "direct"
+    result["access_method"] = (
+        "bright_data"
+        if result["bright_data_requests"]
+        else "curl"
+        if transport != "direct"
+        else "direct"
+    )
+    if factory is None and hasattr(reader, "close"):
+        reader.close()
     result["elapsed_seconds"] = round(time.monotonic() - started, 2)
     result["warnings"] = list(dict.fromkeys(result["warnings"]))[:15]
     return result
@@ -436,6 +453,7 @@ class TestJobs:
             "endpoint_id",
             "version",
             "bright_data",
+            "access_transport",
         }:
             raise CatalogError("Campos de teste desconhecidos.")
         source_id = data.get("source_id")
@@ -464,12 +482,15 @@ class TestJobs:
             parameters=test_parameters,
             bright_data=bright,
             model_version=settings["version"],
+            access_transport=validate_transport(data.get("access_transport", "direct")),
         )
         if data.get("endpoint_id") is not None:
             ident = data["endpoint_id"]
             if type(ident) is not int:
                 raise CatalogError("Link inválido.")
             endpoint = self.store.endpoint(ident)
+            if "access_transport" not in data:
+                config["access_transport"] = endpoint.get("access_transport", "direct")
             if (
                 endpoint["source_id"] != source_id
                 or any(endpoint[k] != config[k] for k in ("url", "kind", "model"))

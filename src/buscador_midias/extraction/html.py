@@ -10,10 +10,12 @@ from __future__ import annotations
 import codecs
 import json
 import re
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 from lxml import etree
 from lxml import html as lxml_html
@@ -229,6 +231,26 @@ def _has_article_data(root: Any, json_ld: list[dict[str, Any]]) -> bool:
     return declared or bool(root.xpath("//article"))
 
 
+def _occrp_body(root: Any) -> Any | None:
+    """Template editorial observado da OCCRP; cards de matérias não identificam o artigo.
+
+    A identidade do veículo, manchete própria, data e corpo dedicado são exigidos
+    juntos. Não usa qualquer <article> ou data solta de um destaque como prova.
+    """
+    identity = _first_attr(root, '//meta[@property="og:url"]/@content') or ""
+    if urlsplit(identity).hostname not in ("occrp.org", "www.occrp.org"):
+        return None
+    if not root.xpath('//h1[@class="article-template__title"]'):
+        return None
+    if not root.xpath('//div[@class="article-details__date"]'):
+        return None
+    bodies = root.xpath(
+        '//div[contains(concat(" ", normalize-space(@class), " "), '
+        '" article-template__content-generator ")]/div[@class="content-generator"]'
+    )
+    return bodies[0] if len(bodies) == 1 and bodies[0].xpath(".//p") else None
+
+
 def _is_article(root: Any, json_ld: list[dict[str, Any]], now: datetime) -> bool:
     """Se a página se declara uma matéria (e não uma seção, listagem ou home)."""
     declares_type = any(_ARTICLE_TYPE.search(json.dumps(node)) for node in json_ld)
@@ -261,7 +283,8 @@ def _article_text(root: Any, json_ld: list[dict[str, Any]]) -> str:
     ``<article>``/``<main>`` e, se este for minúsculo, para o do corpo sem menu e rodapé.
     """
     etree.strip_elements(root, *_NOISE_TAGS, with_tail=False)
-    articles = root.xpath("//article")
+    publisher_body = _occrp_body(root)
+    articles = [publisher_body] if publisher_body is not None else root.xpath("//article")
     container = max(articles, key=lambda el: len(el.text_content())) if articles else None
     if container is None:
         mains = root.xpath("//main")
@@ -304,6 +327,11 @@ def _published_at(
     candidates: list[str | None] = [_first_attr(root, query) for query in _DATE_META]
     candidates += [node.get("datePublished") for node in json_ld]
     candidates += _publish_metas(root)
+    if _occrp_body(root) is not None:
+        value = _first_attr(root, '//div[@class="article-details__date"]/text()')
+        if value:
+            with suppress(ValueError):
+                candidates.append(datetime.strptime(value, "%B %d, %Y").isoformat())
     if use_time_tag:
         candidates += [_first_attr(root, "//time[@datetime]/@datetime")]
     for value in candidates:

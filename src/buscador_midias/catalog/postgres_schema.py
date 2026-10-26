@@ -25,6 +25,7 @@ CREATE TABLE links (
  model TEXT NOT NULL REFERENCES mechanisms(model) ON DELETE RESTRICT,
  last_test JSONB NOT NULL DEFAULT '{}',
  search_interval_seconds BIGINT NOT NULL DEFAULT 14400 CHECK(search_interval_seconds>0),
+ access_transport TEXT NOT NULL DEFAULT 'direct',
  UNIQUE(source_id,url)
 );
 CREATE INDEX link_site ON links(source_id,deleted_at);

@@ -134,3 +134,51 @@ Isso permite usar capacidade antes ociosa quando restam falhas de vários hosts.
 a espera quando resta um único host ou quando o servidor solicita uma pausa. Os números
 do painel contam tarefas e workers; não representam uma redução automática da configuração
 quando a rodada se aproxima do fim.
+
+
+## Perfis de acesso por link (26/10/2026)
+
+O campo `links.access_transport` separa conexão e mecanismo. Em uma instalação
+PostgreSQL existente, aplique `sql/postgres/009_link_access_transport.sql` antes de
+executar esta versão. A migração é aditiva e já foi aplicada ao ambiente atual.
+Novos catálogos recebem a coluna na criação do esquema; ela deve acompanhar a
+migração futura ao PowerDD. O mecanismo interpreta
+RSS/sitemap e seleciona notícias. O transporte define como obter os bytes pela rede.
+O padrão `direct` preserva o leitor anterior. No formulário do link, **Forma de acesso**
+permite selecionar e testar outro perfil antes de salvar.
+
+| Valor | Como acessa |
+| --- | --- |
+| `direct` | Cliente HTTP original com sessões públicas e conexões reutilizadas. |
+| `curl_chrome_h2` | curl com perfil Chrome e HTTP/2 para HTTPS. |
+| `curl_chrome_h1` | Mesmo perfil, usando HTTP/1.1. |
+| `curl_firefox_h2` | curl com perfil Firefox e HTTP/2 para HTTPS. |
+| `curl_bot_h2` | curl com identificação BuscadorMidiasBot e HTTP/2 para HTTPS. |
+| `curl_bot_h1` | curl com identificação BuscadorMidiasBot e HTTP/1.1. |
+
+Os perfis curl usam `curl_cffi`, não executam JavaScript e não abrem um navegador.
+Em URLs HTTP sem TLS, utilizam HTTP/1.1. O protocolo efetivamente observado fica
+registrado em `transport_events`, pois HTTP/2 não pode ser presumido pelo nome do perfil.
+Não há troca automática de perfil em cada falha da rotina: usa-se o valor salvo no link.
+A rodada de auditoria compara perfis para escolher esse valor com comprovação textual.
+
+Todos mantêm validação TLS, fixação de IP público por conexão, checagem de escopo em
+cada redirecionamento, limite de corpo, prazo, requisições, pausas e travas de host.
+Resolução de IP público pode ser reutilizada por até 60 segundos dentro do processo.
+Cookies curl são públicos e exclusivos da sessão; nenhum cookie autenticado é importado.
+Os limites da fila continuam aplicados; não há uma camada oculta de tentativas curl.
+Estes perfis não acionam Bright Data, mesmo se um formulário antigo tiver essa opção marcada.
+
+Gerenciador e Saúde das fontes usam o perfil configurado. Novas tarefas da ingestão
+conservam esse valor no snapshot do link. Tarefas antigas mantêm seu snapshot histórico,
+portanto editar o cadastro não muda silenciosamente uma rodada já criada. Alterar o
+perfil invalida a comprovação corrente até um novo teste compatível com a configuração.
+
+A comparação inicial de 20 links e seus controles está em
+[PILOTO_HTTP_20_LINKS.md](PILOTO_HTTP_20_LINKS.md). A recuperação ampliada, suas decisões
+e limitações estão em [RECUPERACAO_TRANSPORTES.md](RECUPERACAO_TRANSPORTES.md).
+
+Nos perfis curl, `transport_events` registra status e protocolo observados. Os
+contadores de reutilização de conexão e envio de cookies do leitor original não
+medem o pool interno do curl; zeros nesses campos não comprovam ausência de
+keep-alive ou de cookies públicos dentro da sessão curl.

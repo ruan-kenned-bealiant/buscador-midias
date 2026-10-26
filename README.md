@@ -2019,6 +2019,18 @@ Todo o estado (URLs vistas, rodadas, análises, evidências, gravações) vive n
 
 ## Rodada dirigida dos veículos prioritários
 
+Comparação de HTTP, curl e Chromium em 20 URLs com falhas documentadas:
+[PILOTO_HTTP_20_LINKS.md](docs/PILOTO_HTTP_20_LINKS.md). O piloto recuperou caminhos
+do g1 e da AP. Os perfis de acesso agora podem ser configurados por link e são
+usados pelo teste, Saúde das fontes e ingestão. A rodada ampliada está descrita em
+[RECUPERACAO_TRANSPORTES.md](docs/RECUPERACAO_TRANSPORTES.md).
+
+Auditoria editorial de 65 veículos em 26/10/2026, separando acesso ao XML,
+notícia textual recente, arquivos históricos e bloqueios:
+[MAPEAMENTO_EDITORIAL_PRIORITARIO.md](docs/MAPEAMENTO_EDITORIAL_PRIORITARIO.md).
+Foram confirmadas notícias de hoje em amostra de 32 fontes, com oito links
+novos e um restaurado. A prova não representa cobertura integral dos veículos.
+
 Piloto de seleção diária do g1, medições e bloqueio do teste ao vivo:
 [PILOTO_G1_ATUALIZACOES.md](docs/PILOTO_G1_ATUALIZACOES.md).
 
