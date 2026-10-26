@@ -195,8 +195,10 @@ def test_cache_nao_mistura_parametros_diferentes(base: str):
     assert len(a["hourly"]) == 3 and len(b["hourly"]) == 5
 
 
+@pytest.mark.parametrize("probe_kind", ["prioritarios", "feeder"])
 def test_evidencia_do_teste_prioritario_reutiliza_visualizador_sem_acesso_ao_corpus(
     tmp_path: Path,
+    probe_kind: str,
 ):
     probe = tmp_path / "probe"
     folder = probe / "evidence/midias-ia/evidencias"
@@ -211,13 +213,15 @@ def test_evidencia_do_teste_prioritario_reutiliza_visualizador_sem_acesso_ao_cor
         0,
         manager_db_path=tmp_path / "catalog.sqlite",
         priority_probe_directory=probe,
+        feeder_mapping_directory=probe,
     )
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     base = f"http://127.0.0.1:{server.server_address[1]}"
     try:
-        assert get(base + "/testes/prioritarios")[0] == 200
-        url = base + "/evidencias/teste-prioritarios/" + digest
+        assert get(base + "/testes/" + probe_kind)[0] == 200
+        evidence_prefix = "teste-prioritarios" if probe_kind == "prioritarios" else "feeder"
+        url = base + "/evidencias/" + evidence_prefix + "/" + digest
         status, headers, body = get(url)
         assert status == 200
         assert b"/assets/evidence.js" in body
