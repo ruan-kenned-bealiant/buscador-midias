@@ -16,6 +16,8 @@ from urllib.parse import quote, urljoin, urlsplit
 
 from buscador_midias.catalog.compression import MAX_BYTES as MAX_BYTES
 from buscador_midias.catalog.compression import unpack_gzip as unpack_gzip
+from buscador_midias.catalog.http_policy import retry_after
+from buscador_midias.catalog.http_session import SESSIONS, HttpSessions
 from buscador_midias.catalog.store import CatalogError, clean_url
 from buscador_midias.discovery.robots import RobotsPolicy
 from buscador_midias.net.fetcher import USER_AGENT, FetchResult
@@ -77,6 +79,7 @@ class TestReader:
         max_bytes: int = MAX_BYTES,
         before_request: Callable[[str], None] | None = None,
         policy_cache: dict[str, tuple[float, RobotsPolicy]] | None = None,
+        sessions: HttpSessions | None = None,
     ) -> None:
         """Define escopo explícito e orçamento por teste."""
         self.deadline = time.monotonic() + seconds
@@ -90,6 +93,15 @@ class TestReader:
         self.policies: dict[str, RobotsPolicy | None] = {}
         self.last: dict[str, float] = {}
         self.policy_cache = policy_cache if policy_cache is not None else {}
+        self.sessions = sessions if sessions is not None else SESSIONS
+        self.namespace = (urlsplit(roots[0]).hostname or "").lower().removeprefix("www.")
+        self.connections_reused = 0
+        self.cookies_sent = 0
+        self.session_updated = False
+        self.retry_after_seconds: int | None = None
+        self.retry_after_host: str | None = None
+        self.last_http_status: int | None = None
+        self.cooldown_deferred = False
         self.conditional_headers: dict[str, dict[str, str]] = {}
 
     def _check(self) -> float:
@@ -115,6 +127,11 @@ class TestReader:
 
     def get(self, url: str) -> FetchResult:
         """Lê o destino diretamente, validando o escopo de cada redirecionamento."""
+        self.session_updated = False
+        self.retry_after_seconds = None
+        self.retry_after_host = None
+        self.last_http_status = None
+        self.cooldown_deferred = False
         try:
             return self._fetch(url)
         except (CatalogError, OSError, ValueError, http.client.HTTPException) as error:
@@ -124,9 +141,15 @@ class TestReader:
 
     def _fetch(self, url: str, *, robots: bool = False) -> FetchResult:
         original = url
+        visited: set[str] = set()
         for _ in range(6):
             self._check()
             url = self._scope(url)
+            if url in visited:
+                return FetchResult(
+                    original, None, b"", "redirect_cycle: ciclo de redirecionamento", url
+                )
+            visited.add(url)
             if not robots:
                 allowed, reason = self._allowed(url)
                 if not allowed:
@@ -139,14 +162,44 @@ class TestReader:
                 time.sleep(min(delay, remaining))
             if self.before_request is not None:
                 self.before_request(host)
-            ip = public_ip(host, min(3, self._check()))
-            connection = _PinnedConnection(
+            wait = self.sessions.remaining(host)
+            if wait:
+                self.retry_after_seconds, self.retry_after_host = wait, host
+                self.cooldown_deferred = True
+                return FetchResult(
+                    original,
+                    None,
+                    b"",
+                    "host_cooldown: aguardando o servidor",
+                    url,
+                    retry_after_seconds=wait,
+                )
+            self.sessions.wait(host, self._check())
+            key = (
+                self.namespace,
+                parts.scheme,
                 host,
-                ip,
                 parts.port or (443 if parts.scheme == "https" else 80),
-                parts.scheme == "https",
-                min(5, self._check()),
             )
+
+            def create(
+                host: str = host, port: int = key[3], secure: bool = parts.scheme == "https"
+            ) -> _PinnedConnection:
+                ip = public_ip(host, min(3, self._check()))
+                return _PinnedConnection(host, ip, port, secure, min(5, self._check()))
+
+            connection, reused = self.sessions.acquire(key, create)
+            self.connections_reused += int(reused)
+            if reused:
+                try:
+                    connection.timeout = connection._timeout = min(5, self._check())
+                    if connection.sock is None:
+                        raise OSError("Conexão persistente encerrada")
+                    connection.sock.settimeout(connection.timeout)
+                except Exception:
+                    self.sessions.release(key, connection, False)
+                    raise
+            reusable = False
             self.requests += 1
 
             def abort(conn: _PinnedConnection = connection) -> None:
@@ -168,6 +221,8 @@ class TestReader:
                     and "\r" not in v
                     and "\n" not in v
                 }
+                cookie = self.sessions.cookie_header(self.namespace, url)
+                self.cookies_sent += int(bool(cookie))
                 connection.request(
                     "GET",
                     quote(parts.path or "/", safe="/%:@!$&'()*+,;=-._~")
@@ -177,11 +232,22 @@ class TestReader:
                     headers={
                         "User-Agent": USER_AGENT,
                         "Accept-Encoding": "identity",
+                        **({"Cookie": cookie} if cookie else {}),
                         **conditional,
                     },
                 )
                 response = connection.getresponse()
                 status = response.status
+                self.last_http_status = status
+                self.session_updated = self.sessions.remember(self.namespace, url, response)
+                after = (
+                    retry_after(response.getheader("Retry-After")) if status in (429, 503) else None
+                )
+                if status == 429 and after is None:
+                    after = 60
+                if after:
+                    self.retry_after_seconds, self.retry_after_host = after, host
+                    self.sessions.defer(host, after)
                 mime = response.getheader("Content-Type")
                 self.progress(dict(stage="http", message=f"HTTP {status}", url=url, status=status))
                 if status in (301, 302, 303, 307, 308):
@@ -210,6 +276,11 @@ class TestReader:
                 body = b"".join(chunks)
                 if response.getheader("Content-Encoding", "").lower() == "gzip":
                     body = unpack_gzip(body, self.max_bytes)
+                reusable = (
+                    not getattr(response, "will_close", True)
+                    and 200 <= status < 400
+                    and time.monotonic() < self.deadline
+                )
                 return FetchResult(
                     original,
                     status,
@@ -219,9 +290,12 @@ class TestReader:
                     mime,
                     etag=response.getheader("ETag"),
                     last_modified=response.getheader("Last-Modified"),
+                    retry_after_seconds=after,
                 )
             finally:
                 timer.cancel()
                 self.last[host] = time.monotonic()
-                connection.close()
-        return FetchResult(original, None, b"", "Limite de cinco redirecionamentos atingido", url)
+                self.sessions.release(key, connection, reusable)
+        return FetchResult(
+            original, None, b"", "redirect_limit: cinco redirecionamentos atingidos", url
+        )

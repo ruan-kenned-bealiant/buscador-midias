@@ -346,6 +346,9 @@ def run_test(
     result["cadence"] = estimate_cadence(dates)
     result.update(assess_news_search(result))
     result["requests"] = reader.requests
+    result["connections_reused"] = getattr(reader, "connections_reused", 0)
+    result["cookies_sent"] = getattr(reader, "cookies_sent", 0)
+    result["retry_after_seconds"] = getattr(reader, "retry_after_seconds", None)
     result["bright_data_enabled"] = bool(config.get("bright_data"))
     result["bright_data_requests"] = getattr(reader, "bright_requests", 0)
     result["bright_data_events"] = getattr(reader, "bright_events", [])

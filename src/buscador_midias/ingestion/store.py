@@ -543,6 +543,7 @@ class IngestStore:
         metrics: dict[str, Any] | None = None,
         defer_seconds: int = 5,
         recovery: bool = False,
+        retryable: bool = True,
     ) -> str:
         """Espera crescente e limite de tentativas; contenção de host não reprova a fonte."""
         with self.connection() as db:
@@ -551,8 +552,9 @@ class IngestStore:
             ).fetchone()
             if current["state"] != "running" or current["owner"] != job["owner"]:
                 return "stale"
-            exhausted = not busy and current["failures"] + 1 >= min(
-                3, job["run"]["config"]["max_attempts"]
+            exhausted = not busy and (
+                not retryable
+                or current["failures"] + 1 >= min(3, job["run"]["config"]["max_attempts"])
             )
             state = "failed" if exhausted else "retry"
             delay = (
@@ -563,6 +565,18 @@ class IngestStore:
                     60 * job["run"]["config"]["retry_minutes"] * 2 ** current["failures"],
                 )
             )
+            after = (metrics or {}).get("retry_after_seconds")
+            host = (metrics or {}).get("retry_after_host")
+            if isinstance(after, int) and 0 <= after <= 2**31 - 1:
+                delay = max(delay, after)
+                if isinstance(host, str) and host and len(host) <= 253:
+                    db.execute(
+                        "INSERT INTO ingest_host_cooldowns(host,available_at) "
+                        "VALUES(%s,now()+%s*interval '1 second') ON CONFLICT(host) DO UPDATE "
+                        "SET available_at=GREATEST(ingest_host_cooldowns.available_at,"
+                        "excluded.available_at)",
+                        (host, after),
+                    )
             db.execute(
                 "UPDATE ingest_attempts SET finished_at=now(),outcome=%s,detail=%s,metrics=%s "
                 "WHERE job_id=%s AND attempt=%s",

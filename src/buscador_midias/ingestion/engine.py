@@ -18,6 +18,7 @@ from psycopg import sql
 from buscador_midias.analysis.context import AnalysisItem, OpenRouterContextAnalyzer
 from buscador_midias.analysis.openrouter import OpenRouterChat
 from buscador_midias.analysis.prompt import PROMPT_VERSION
+from buscador_midias.catalog.http_policy import retryable
 from buscador_midias.catalog.mechanisms import get_mechanism
 from buscador_midias.catalog.reader import TestReader
 from buscador_midias.corpus.article import build_corpus_article
@@ -41,14 +42,22 @@ from buscador_midias.state.store import CorpusCandidate, FindingUrl
 class HostBusyError(Exception):
     """Outro worker está usando o host; adiar não é uma falha da notícia."""
 
+    def __init__(self, message: str = "Host ocupado", retry_after_seconds: int = 5) -> None:
+        """Conserva o prazo do servidor sem consumir tentativas de acesso."""
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
+
 
 class RetryableError(Exception):
     """Etapa precisa de nova tentativa e conserva o diagnóstico sanitizado."""
 
-    def __init__(self, reason: str, metrics: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self, reason: str, metrics: dict[str, Any] | None = None, *, retryable: bool = True
+    ) -> None:
         """Associa consumo já realizado, inclusive quando a resposta do provedor falha."""
         super().__init__(reason)
         self.metrics = metrics or {}
+        self.retryable = retryable
 
 
 class ProviderUnavailableError(RetryableError):
@@ -110,6 +119,13 @@ class Engine:
                 ).fetchone()
                 if not row["locked"]:
                     raise HostBusyError()
+                cooldown = lock_db.execute(
+                    "SELECT ceil(extract(epoch FROM available_at-now()))::bigint seconds "
+                    "FROM ingest_host_cooldowns WHERE host=%s AND available_at>now()",
+                    (host,),
+                ).fetchone()
+                if cooldown:
+                    raise HostBusyError("Host aguardando Retry-After", int(cooldown["seconds"]))
                 acquired.add(host)
 
             reader = TestReader(
@@ -125,8 +141,28 @@ class Engine:
     @staticmethod
     def metrics(reader: Any) -> dict[str, Any]:
         """Contadores do transporte, sem credenciais ou conteúdo das respostas de API."""
-        return dict(
-            requests=reader.requests, bright_data_requests=getattr(reader, "bright_requests", 0)
+        result = dict(
+            requests=reader.requests,
+            bright_data_requests=getattr(reader, "bright_requests", 0),
+            connections_reused=getattr(reader, "connections_reused", 0),
+            cookies_sent=getattr(reader, "cookies_sent", 0),
+        )
+        if getattr(reader, "retry_after_seconds", None) is not None:
+            result.update(
+                retry_after_seconds=reader.retry_after_seconds,
+                retry_after_host=reader.retry_after_host,
+            )
+        return result
+
+    def http_failure(self, reader: Any, response: Any, message: str) -> None:
+        """Classifica falhas antes de reenfileirar; não repete erros permanentes."""
+        if getattr(reader, "cooldown_deferred", False):
+            raise HostBusyError("Host aguardando Retry-After", reader.retry_after_seconds or 5)
+        raise RetryableError(
+            response.error or f"HTTP {response.status} {message}",
+            self.metrics(reader),
+            retryable=retryable(response.status, response.error)
+            or (response.status == 403 and bool(getattr(reader, "session_updated", False))),
         )
 
     def execute(self, job: dict[str, Any]) -> dict[str, Any]:
@@ -200,7 +236,7 @@ class Engine:
             response = reader.get(url)
             metrics = self.metrics(reader)
             if not response.ok and not (response.status == 304 and cached):
-                raise RetryableError(response.error or f"HTTP {response.status} no XML", metrics)
+                self.http_failure(reader, response, "no XML")
             try:
                 if cached and (
                     response.status == 304
@@ -419,9 +455,7 @@ class Engine:
             response = reader.get(url)
             metrics = self.metrics(reader)
             if not response.ok:
-                raise RetryableError(
-                    response.error or f"HTTP {response.status} na notícia", metrics
-                )
+                self.http_failure(reader, response, "na notícia")
             page = PageSnapshot(
                 url, response.status, response.content_type, response.final_url, response.content
             )

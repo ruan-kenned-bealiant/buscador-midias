@@ -38,6 +38,7 @@ class FetchResult:
     redirect_url: str | None = None
     etag: str | None = None
     last_modified: str | None = None
+    retry_after_seconds: int | None = None
 
     @property
     def ok(self) -> bool:

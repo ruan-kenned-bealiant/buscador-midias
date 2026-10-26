@@ -214,7 +214,12 @@ class Service:
             result = self.engine.execute(job)
             self.repository.finish(job, result)
         except HostBusyError as error:
-            self.repository.failure(job, str(error) or "Host ocupado; aguardando", busy=True)
+            self.repository.failure(
+                job,
+                str(error) or "Host ocupado; aguardando",
+                busy=True,
+                defer_seconds=error.retry_after_seconds,
+            )
         except ProviderUnavailableError as error:
             self.cooldowns[job["stage"]] = (time.monotonic() + 300, str(error))
             self.repository.failure(
@@ -226,7 +231,9 @@ class Service:
                 recovery=True,
             )
         except RetryableError as error:
-            self.repository.failure(job, str(error), metrics=error.metrics)
+            self.repository.failure(
+                job, str(error), metrics=error.metrics, retryable=error.retryable
+            )
         except (OperationalError, InterfaceError):
             self.repository.failure(
                 job, "PostgreSQL temporariamente indisponível", busy=True, defer_seconds=30

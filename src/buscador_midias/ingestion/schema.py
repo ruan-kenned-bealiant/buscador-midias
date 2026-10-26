@@ -110,6 +110,9 @@ CREATE INDEX IF NOT EXISTS ingest_outbox_stage_pending ON ingest_outbox(stage,re
  WHERE published_at IS NULL;
 CREATE INDEX IF NOT EXISTS ingest_outbox_stage_ready ON ingest_outbox(stage,ready_at,id)
  WHERE published_at IS NULL AND discarded_at IS NULL;
+CREATE TABLE IF NOT EXISTS ingest_host_cooldowns (
+ host TEXT PRIMARY KEY,available_at TIMESTAMPTZ NOT NULL
+);
 CREATE TABLE IF NOT EXISTS ingest_host_admission (
  host TEXT PRIMARY KEY,last_admitted TIMESTAMPTZ NOT NULL DEFAULT now()
 );

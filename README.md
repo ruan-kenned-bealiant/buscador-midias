@@ -2054,3 +2054,8 @@ de até três tentativas e Bright Data desabilitado. As rotinas históricas de
 mapeamento podem ainda ler robots para descobrir endereços de sitemaps; os relatos
 históricos de erros de robots permanecem preservados. A alteração não inicia uma
 nova rodada nem reprocessa automaticamente falhas antigas.
+
+As melhorias de sessão HTTP, conexões persistentes, espera compartilhada por
+`Retry-After` e interrupção de erros permanentes estão descritas em
+[Transporte HTTP](docs/HTTP_ACESSO.md). A amostra reproduzível pode ser executada com
+`PYTHONPATH=.:src .venv/bin/python scripts/probe_http_sessions.py`.

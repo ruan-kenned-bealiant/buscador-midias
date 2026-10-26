@@ -1242,3 +1242,92 @@ def test_network_admission_rotates_hosts_before_repeating_large_source(ingest, m
             for ident in sent
         ]
     assert urls == ["https://jose.example/map-1", "https://other.example/map"]
+
+
+def test_retry_after_is_durable_and_blocks_other_jobs_of_same_host(ingest, monkeypatch):
+    from buscador_midias.ingestion import broker
+
+    ingest.store.save(
+        "endpoint", dict(url="https://jose.example/another", kind="feed"), source_id=1
+    )
+    source = ingest.store.save("source", dict(name="Outra fonte", url="https://another.example"))
+    ingest.store.save(
+        "endpoint", dict(url="https://another.example/feed", kind="feed"), source_id=source["id"]
+    )
+    run = ingest.create_run({})
+    job = next_job(ingest, "discovery")
+    assert job["snapshot"]["source"]["id"] == 1
+    assert (
+        ingest.failure(
+            job, "HTTP 429", metrics=dict(retry_after_seconds=120, retry_after_host="jose.example")
+        )
+        == "retry"
+    )
+    with ingest.connection() as db:
+        cooldown = db.execute(
+            "SELECT extract(epoch FROM available_at-now()) seconds FROM "
+            "ingest_host_cooldowns WHERE host='jose.example'"
+        ).fetchone()
+        pending = db.execute(
+            "SELECT extract(epoch FROM available_at-now()) seconds,failures "
+            "FROM ingest_jobs WHERE id=%s",
+            (job["id"],),
+        ).fetchone()
+        assert cooldown["seconds"] >= 119 and pending["seconds"] >= 119
+        assert pending["failures"] == 1
+    published = []
+    monkeypatch.setattr(broker, "publish", lambda ch, stage, ident, **kw: published.append(ident))
+    assert Service(ingest).publish_once(None, "discovery") == 1
+    with ingest.connection() as db:
+        task = db.execute("SELECT payload FROM ingest_jobs WHERE id=%s", (published[0],)).fetchone()
+    assert task["payload"]["url"] == "https://another.example/feed"
+    # Tarefas já publicadas também conferem o prazo antes de acessar o host.
+    from buscador_midias.ingestion.engine import HostBusyError
+
+    with (
+        pytest.raises(HostBusyError, match="Retry-After"),
+        Engine(ingest).reader(job, ["https://jose.example"]) as reader,
+    ):
+        reader.before_request("jose.example")
+    # A rodada e a tarefa original continuam preservadas, sem novas tentativas físicas.
+    with ingest.connection() as db:
+        assert db.execute("SELECT count(*) n FROM ingest_runs").fetchone()["n"] == 1
+        assert (
+            db.execute("SELECT state FROM ingest_runs WHERE id=%s", (run["id"],)).fetchone()[
+                "state"
+            ]
+            == "running"
+        )
+
+
+@pytest.mark.parametrize(
+    "status,error", [(404, None), (403, None), (None, "redirect_cycle: ciclo")]
+)
+def test_permanent_http_failure_is_terminal_on_first_attempt(ingest, status, error):
+    from buscador_midias.ingestion.engine import RetryableError
+
+    ingest.create_run({})
+    job = next_job(ingest, "discovery")
+    reader = type("Reader", (), dict(requests=1))()
+    with pytest.raises(RetryableError) as caught:
+        Engine(ingest).http_failure(
+            reader, FetchResult("https://jose.example/feed", status, b"", error), "no XML"
+        )
+    failure = caught.value
+    assert not failure.retryable
+    assert (
+        ingest.failure(job, str(failure), metrics=failure.metrics, retryable=failure.retryable)
+        == "failed"
+    )
+    with ingest.connection() as db:
+        saved = db.execute(
+            "SELECT failures,state FROM ingest_jobs WHERE id=%s", (job["id"],)
+        ).fetchone()
+        assert saved == dict(failures=1, state="failed")
+        assert (
+            db.execute(
+                "SELECT count(*) n FROM ingest_outbox WHERE job_id=%s AND kind='failed'",
+                (job["id"],),
+            ).fetchone()["n"]
+            == 1
+        )

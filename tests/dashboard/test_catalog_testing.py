@@ -496,7 +496,10 @@ def test_watchdog_interrupts_slow_response_headers(monkeypatch):
 
     monkeypatch.setattr("buscador_midias.catalog.reader.public_ip", lambda *args: "93.184.216.34")
     monkeypatch.setattr("buscador_midias.catalog.reader._PinnedConnection", SlowConnection)
-    reader = TestReader([ROOT], lambda s: None, seconds=0.05)
+    from buscador_midias.catalog.http_session import HttpSessions
+
+    # O teste do watchdog não compartilha o intervalo por host com outros testes.
+    reader = TestReader([ROOT], lambda s: None, seconds=0.05, sessions=HttpSessions())
     reader.policies["https://news.example"] = RobotsPolicy.allow_all()
     start = time.monotonic()
     with pytest.raises(TestLimitError):
