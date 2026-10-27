@@ -1,0 +1,121 @@
+source_id,group,name,homepage
+1,Brasil,Folha de S.Paulo,https://www.folha.uol.com.br
+2,Brasil,O Globo,https://oglobo.globo.com
+3,Brasil,O Estado de S. Paulo (Estadão),https://www.estadao.com.br
+4,Brasil,Valor Econômico,https://valor.globo.com
+6,Brasil,Piauí,https://piaui.uol.com.br
+7,Brasil,Veja,https://veja.abril.com.br
+8,Brasil,IstoÉ,https://istoe.com.br
+9,Brasil,CartaCapital,https://www.cartacapital.com.br
+10,Brasil,Revista Fórum,https://revistaforum.com.br
+11,Brasil,Revista Oeste,https://revistaoeste.com
+12,Brasil,Crusoé,https://crusoe.com.br
+13,Brasil,O Antagonista,https://oantagonista.com.br
+15,Brasil,g1,https://g1.globo.com
+16,Brasil,UOL Notícias,https://www.uol.com.br
+17,Brasil,R7,https://www.r7.com
+18,Brasil,Terra,https://www.terra.com.br
+20,Brasil,CNN Brasil,https://www.cnnbrasil.com.br
+21,Brasil,TV Cultura,https://cultura.uol.com.br
+22,Brasil,Band Jornalismo,https://www.band.com.br
+24,Brasil,SBT News,https://www.sbt.com.br
+27,Brasil,Jovem Pan News,https://jovempan.com.br
+28,Brasil,CBN,https://cbn.globo.com
+30,Brasil,Agência Brasil,https://agenciabrasil.ebc.com.br
+39,Brasil,InfoMoney,https://www.infomoney.com.br
+40,Brasil,Brazil Journal,https://braziljournal.com
+41,Brasil,NeoFeed,https://neofeed.com.br
+42,Brasil,Exame,https://exame.com
+43,Brasil,Money Times,https://www.moneytimes.com.br
+44,Brasil,Seu Dinheiro,https://www.seudinheiro.com
+45,Brasil,IstoÉ Dinheiro,https://istoedinheiro.com.br
+47,Brasil,InvestNews,https://investnews.com.br
+51,Brasil,Nexo Jornal,https://www.nexojornal.com.br
+52,Brasil,JOTA,https://www.jota.info
+53,Brasil,Poder360,https://www.poder360.com.br
+54,Brasil,Metrópoles,https://www.metropoles.com
+55,Brasil,The Intercept Brasil,https://www.intercept.com.br
+56,Brasil,Congresso em Foco,https://www.congressoemfoco.com.br
+57,Brasil,Gazeta do Povo,https://www.gazetadopovo.com.br
+58,Brasil,Brasil de Fato,https://www.brasildefato.com.br
+59,Brasil,Brasil 247,https://www.brasil247.com
+60,Brasil,Diário do Centro do Mundo,https://www.diariodocentrodomundo.com.br
+63,Brasil,Agência Pública,https://apublica.org
+64,Brasil,Repórter Brasil,https://reporterbrasil.org.br
+79,Brasil,Canaltech,https://canaltech.com.br
+80,Brasil,Tecnoblog,https://tecnoblog.net
+81,Brasil,Olhar Digital,https://olhardigital.com.br
+82,Brasil,TecMundo,https://www.tecmundo.com.br
+85,Brasil,ge (Globo Esporte),https://ge.globo.com
+93,Brasil,BBC News Brasil,https://www.bbc.com/portuguese
+94,Brasil,DW Brasil,https://www.dw.com/pt-br
+110,Brasil,Correio (Correio 24 Horas),https://www.correio24horas.com.br
+111,Brasil,A Tarde,https://atarde.com.br
+114,Brasil,O Povo,https://www.opovo.com.br
+115,Brasil,Diário do Nordeste,https://diariodonordeste.verdesmares.com.br
+116,Brasil,Correio Braziliense,https://www.correiobraziliense.com.br
+137,Brasil,Estado de Minas,https://www.em.com.br
+138,Brasil,O Tempo,https://www.otempo.com.br
+139,Brasil,Itatiaia,https://www.itatiaia.com.br
+158,Brasil,Extra,https://extra.globo.com
+159,Brasil,O Dia (RJ),https://odia.ig.com.br
+184,Internacional,Clarín,https://www.clarin.com
+185,Internacional,La Nación,https://www.lanacion.com.ar
+186,Internacional,Infobae,https://www.infobae.com
+213,Internacional,El Comercio (Peru),https://elcomercio.pe
+226,Internacional,El Tiempo,https://www.eltiempo.com
+252,Internacional,El Universal (México),https://www.eluniversal.com.mx
+373,Internacional,The New York Times,https://www.nytimes.com
+374,Internacional,The Washington Post,https://www.washingtonpost.com
+375,Internacional,The Wall Street Journal,https://www.wsj.com
+376,Internacional,Associated Press,https://apnews.com
+377,Internacional,Reuters,https://www.reuters.com
+378,Internacional,Bloomberg News,https://www.bloomberg.com
+382,Internacional,Los Angeles Times,https://www.latimes.com
+394,Internacional,Politico,https://www.politico.com
+395,Internacional,Axios,https://www.axios.com
+416,Internacional,The Globe and Mail,https://www.theglobeandmail.com
+417,Internacional,Toronto Star,https://www.thestar.com
+419,Internacional,CBC News,https://www.cbc.ca
+429,Internacional,BBC News,https://www.bbc.co.uk/news
+430,Internacional,The Guardian,https://www.theguardian.com
+431,Internacional,Financial Times,https://www.ft.com
+432,Internacional,The Times,https://www.thetimes.co.uk
+433,Internacional,The Daily Telegraph,https://www.telegraph.co.uk
+438,Internacional,The Irish Times,https://www.irishtimes.com
+442,Internacional,Le Monde,https://www.lemonde.fr
+446,Internacional,France Info,https://www.franceinfo.fr
+447,Internacional,Agence France-Presse,https://www.afp.com
+452,Internacional,Der Spiegel,https://www.spiegel.de
+453,Internacional,Süddeutsche Zeitung,https://www.sueddeutsche.de
+454,Internacional,Frankfurter Allgemeine Zeitung,https://www.faz.net
+459,Internacional,Deutsche Welle,https://www.dw.com
+494,Internacional,Público,https://www.publico.pt
+496,Internacional,Observador,https://observador.pt
+499,Internacional,El País,https://elpais.com
+508,Internacional,Corriere della Sera,https://www.corriere.it
+509,Internacional,la Repubblica,https://www.repubblica.it
+514,Internacional,ANSA,https://www.ansa.it
+700,Internacional,Nikkei (Nihon Keizai Shimbun),https://www.nikkei.com
+701,Internacional,Nikkei Asia,https://asia.nikkei.com
+702,Internacional,The Japan Times,https://www.japantimes.co.jp
+703,Internacional,NHK,https://www3.nhk.or.jp
+726,Internacional,Xinhua (English),https://english.news.cn
+729,Internacional,China Daily,https://www.chinadaily.com.cn
+740,Internacional,South China Morning Post,https://www.scmp.com
+760,Internacional,The Straits Times,https://www.straitstimes.com
+821,Internacional,The Times of India,https://timesofindia.indiatimes.com
+822,Internacional,Hindustan Times,https://www.hindustantimes.com
+898,Internacional,ABC News (Australia),https://www.abc.net.au/news
+902,Internacional,Australian Financial Review,https://www.afr.com
+967,Internacional,Premium Times,https://www.premiumtimesng.com
+1110,Internacional,Mail & Guardian,https://mg.co.za
+1216,Internacional,Al Jazeera English,https://www.aljazeera.com
+1269,Internacional,France 24,https://www.france24.com
+1271,Internacional,Euronews,https://www.euronews.com
+1272,Internacional,NHK World-Japan,https://www3.nhk.or.jp/nhkworld
+1295,Internacional,CNN International,https://www.cnn.com
+381,Internacional,USA Today,https://www.usatoday.com
+390,Internacional,ProPublica,https://www.propublica.org
+500,Internacional,El Mundo,https://www.elmundo.es
+899,Internacional,The Sydney Morning Herald,https://www.smh.com.au

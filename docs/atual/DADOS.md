@@ -100,7 +100,7 @@ DDL integral e estados: [ingestion/schema.py](../../src/buscador_midias/ingestio
 | `ingest_occurrences` | PK poll/hash; todas as origens da URL, rodada e documento onde foi encontrada |
 | `ingest_jobs` | ID, etapa, assunto, geração, rodada/poll/hash, estado, payload/result/outcome, attempts/failures, dispatch/owner, lease e datas; único etapa/assunto/geração |
 | `ingest_attempts` | PK tarefa/tentativa; dono, início/fim, resultado, detalhe e métricas JSONB |
-| `ingest_outbox` | Evento de publicação, tarefa, despacho, tipo, etapa, disponibilidade, envio e eventual descarte; único tarefa/despacho |
+| `ingest_outbox` | Evento de publicação, tarefa, despacho, tipo, etapa, `host` (preenchido por gatilho a partir da URL, com índice `(etapa, host, disponibilidade, id)` para o publicador), disponibilidade, envio e eventual descarte; único tarefa/despacho |
 | `ingest_workers` | Identificador do worker, papel, status, detalhe e heartbeat |
 | `ingest_host_cooldowns` | Host e instante mínimo de novo acesso, inclusive `Retry-After` |
 | `ingest_host_admission` | Última admissão por host, para alternância justa |

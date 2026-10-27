@@ -20,9 +20,11 @@ from typing import Any, Protocol
 
 from buscador_midias.analysis.classification import content_category
 from buscador_midias.corpus.article import ORIGIN, SOURCE, CorpusArticle
+from buscador_midias.corpus.contexts import CONTEXT_COLUMNS, insert_contexts
 from buscador_midias.corpus.index import ENV_VARS, CorpusConfigError
 
 _REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
+    "midias_ia_article_contexts": CONTEXT_COLUMNS,
     "midias_ia_articles": (
         "id",
         "url",
@@ -129,6 +131,7 @@ class WriteOutcome:
     entities: int
     keywords: int
     error: str | None = None
+    contexts: int = 0
 
 
 class CorpusWriter(Protocol):
@@ -281,7 +284,10 @@ class PostgresCorpusWriter:
             if inserted is not None:
                 article_id = int(inserted[0])
                 entities, keywords = _insert_children(cursor, article_id, article)
-                return WriteOutcome(article.url_hash, article_id, True, False, entities, keywords)
+                contexts = insert_contexts(cursor, article_id, article)
+                return WriteOutcome(
+                    article.url_hash, article_id, True, False, entities, keywords, contexts=contexts
+                )
 
             cursor.execute(
                 "SELECT id, origin, evidencia_status FROM midias_ia_articles WHERE url_hash = %s",
@@ -301,7 +307,10 @@ class PostgresCorpusWriter:
             improved = current_status != "captured" and article.evidence.status == "captured"
             if improved:
                 cursor.execute(_UPDATE_EVIDENCE, (*_evidence_values(article), article_id))
-            return WriteOutcome(article.url_hash, int(article_id), False, improved, 0, 0)
+            contexts = insert_contexts(cursor, int(article_id), article)
+            return WriteOutcome(
+                article.url_hash, int(article_id), False, improved, 0, 0, contexts=contexts
+            )
 
     def _refresh_own(self, cursor: Any, article_id: int, article: CorpusArticle) -> WriteOutcome:
         """Atualiza um artigo nosso: evidência e, sem duplicar, entidades e temas."""
@@ -321,7 +330,10 @@ class PostgresCorpusWriter:
             (article_id,),
         )
         entities, keywords = _insert_children(cursor, article_id, article)
-        return WriteOutcome(article.url_hash, article_id, False, True, entities, keywords)
+        contexts = insert_contexts(cursor, article_id, article)
+        return WriteOutcome(
+            article.url_hash, article_id, False, True, entities, keywords, contexts=contexts
+        )
 
 
 def _text(value: str | None) -> str | None:

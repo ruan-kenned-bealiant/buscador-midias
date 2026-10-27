@@ -506,3 +506,26 @@ A seleção abaixo é um mapa, não um relatório de execução. Suítes de Post
 | [plano_descoberta.json](../../data/plano_descoberta.json) | Plano explícito de descoberta consumido pelo fluxo anterior |
 | [poc_sample.txt](../../data/poc_sample.txt), [poc_sample_ext.txt](../../data/poc_sample_ext.txt) | Subconjuntos de fontes para a POC |
 | [teste_g1.txt](../../data/teste_g1.txt), [teste_20_fontes.txt](../../data/teste_20_fontes.txt) | Recortes de fontes para pilotos |
+
+## Componentes de otimização da ingestão
+
+- [ingestion/batch.py](../../src/buscador_midias/ingestion/batch.py): finalização SQL de dedup em conjunto, preservando checkpoints e outbox por URL.
+- [ingestion/connections.py](../../src/buscador_midias/ingestion/connections.py): pool limitado de transações curtas, separado das conexões com locks de rede.
+- [ingestion/document_memo.py](../../src/buscador_midias/ingestion/document_memo.py): reutilização curta e limitada de respostas XML idênticas.
+- [test_ingestion_fast_batch.py](../../tests/dashboard/test_ingestion_fast_batch.py): consistência, rollback, retomada e benchmark PostgreSQL isolado.
+- [test_ingestion_document_memo.py](../../tests/dashboard/test_ingestion_document_memo.py): concorrência, isolamento, expiração e limites da reutilização HTTP.
+- [ingestion/admission.py](../../src/buscador_midias/ingestion/admission.py): primeiro candidato pronto de cada host por salto no índice do outbox, com `host_concurrency` tarefas por host.
+- [ingestion/lastmod_backfill.py](../../src/buscador_midias/ingestion/lastmod_backfill.py): `ingest backfill-lastmod`, aplica o filtro por `lastmod` às tarefas já criadas.
+- [test_ingestion_host_index.py](../../tests/dashboard/test_ingestion_host_index.py): coluna `host`, gatilho, seleção por host, vagas por host e trava de execução.
+- [test_ingestion_lastmod.py](../../tests/dashboard/test_ingestion_lastmod.py): regra de `lastmod`, modos `off|shadow|enforce` e validação da configuração.
+- [test_ingestion_lock_order.py](../../tests/dashboard/test_ingestion_lock_order.py): publicador e workers disputando as mesmas tarefas sem deadlock.
+- [test_ingestion_schema_version.py](../../tests/dashboard/test_ingestion_schema_version.py): `initialize()` pula o DDL na versão atual e não espera locks da fila.
+- [test_postgres_parameters.py](../../tests/dashboard/test_postgres_parameters.py): opções de sessão (sem paralelismo, limites de lock e de tempo).
+- [test_ingestion_lastmod_backfill.py](../../tests/dashboard/test_ingestion_lastmod_backfill.py): relatório, aplicação idempotente e trava de segurança do retroativo.
+
+## Auditoria de cobertura por capa
+
+- [analysis/coverage.py](../../src/buscador_midias/analysis/coverage.py): referência de capa, elegibilidade temporal e métricas de cobertura.
+- [audit_frontpage_coverage.py](../../scripts/audit_frontpage_coverage.py): espera a rodada exata encerrar e executa auditoria finita, com PostgreSQL somente leitura.
+- [coverage_priority_sites.csv](../../data/coverage_priority_sites.csv): os 120 alvos explícitos.
+- [test_frontpage_coverage.py](../../tests/coverage/test_frontpage_coverage.py): isolamento de janela, identidade, diagnóstico, espera e relatório com portas falsas.

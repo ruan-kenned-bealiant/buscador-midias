@@ -10,6 +10,7 @@ from datetime import datetime
 from unidecode import unidecode
 
 from buscador_midias.analysis.classification import content_category
+from buscador_midias.analysis.entity_context import EntityContext
 from buscador_midias.corpus.country import registered_country, resolve_country
 from buscador_midias.domain.roles import is_adverse_role, normalize_role
 from buscador_midias.domain.site import Site
@@ -136,6 +137,8 @@ class CorpusArticle:
     keywords: tuple[CorpusKeyword, ...]
     content_category: str | None = None
     source_country_method: str | None = None
+    entity_contexts: tuple[EntityContext, ...] = ()
+    context_prompt_version: str | None = None
 
 
 def normalize_entity_name(name: str) -> str:
@@ -207,6 +210,8 @@ def build_corpus_article(
         keywords=_keywords(candidate),
         content_category=content_category(candidate.content_category),
         source_country_method=method,
+        entity_contexts=candidate.entity_contexts,
+        context_prompt_version=candidate.context_prompt_version,
     )
 
 
@@ -237,6 +242,7 @@ def _entities(candidate: CorpusCandidate) -> tuple[CorpusEntity, ...]:
     """Entidades sem repetir o nome normalizado; a de papel adverso vence a repetida."""
     ordered = sorted(candidate.entities, key=lambda e: not is_adverse_role(str(e.get("role", ""))))
     seen: dict[str, CorpusEntity] = {}
+    contexts = {normalize_entity_name(c.name): c for c in candidate.entity_contexts}
     for entity in ordered:
         name = str(entity.get("name", "")).strip()
         norm = normalize_entity_name(name)
@@ -244,11 +250,17 @@ def _entities(candidate: CorpusCandidate) -> tuple[CorpusEntity, ...]:
             continue
         kind = str(entity.get("type", ""))
         role = str(entity.get("role", ""))
+        individual = contexts.get(norm)
+        fact = (
+            (individual.adverse_fact if individual.alert else None)
+            if individual is not None
+            else (candidate.adverse_fact if is_adverse_role(role) else None)
+        )
         seen[norm] = CorpusEntity(
             name=name,
             name_norm=norm,
             entity_type=map_entity_type(kind),
             role=map_role(role, kind),
-            context=candidate.adverse_fact if is_adverse_role(role) else None,
+            context=fact,
         )
     return tuple(seen.values())

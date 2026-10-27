@@ -129,16 +129,16 @@ def test_achado_sem_entidade_nomeada_nao_conta_como_achado():
 
 
 def test_entidades_sao_saneadas_tipo_papel_nome_e_limite():
-    entities = [{"name": f"Pessoa {n}", "type": "XYZ", "role": "ACUSADO"} for n in range(10)]
+    entities = [{"name": f"Pessoa {n}", "type": "XYZ", "role": "ACUSADO"} for n in range(40)]
     entities.append({"name": "", "type": "PF", "role": "acusado"})
     entities.append("lixo")  # type: ignore[arg-type]
 
-    names = " ".join(f"Pessoa {n}" for n in range(10))
+    names = " ".join(f"Pessoa {n}" for n in range(40))
     item = AnalysisItem(1, "a.com", "Manchete", "", f"Acusados: {names}.", "text")
 
     verdict = parse_analysis(raw(entry(entities=entities)), [item])[0]
 
-    assert len(verdict.entities) == 6
+    assert len(verdict.entities) == 30
     assert verdict.entities[0] == {"name": "Pessoa 0", "type": "OUTRO", "role": "acusado"}
 
 
@@ -336,7 +336,7 @@ def test_prompt_pede_entidades_em_toda_materia_mesmo_sem_fato_adverso():
 def test_versao_do_prompt_acompanha_a_mudanca_de_criterio():
     from buscador_midias.analysis.prompt import PROMPT_VERSION
 
-    assert PROMPT_VERSION == "context-2026-10-26.1"
+    assert PROMPT_VERSION == "context-2026-10-26.3-entity-context-refs"
 
 
 def test_new_categories_are_validated_without_discarding_adverse_facts():

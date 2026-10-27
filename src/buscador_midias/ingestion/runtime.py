@@ -17,7 +17,7 @@ from psycopg import InterfaceError, OperationalError
 
 from buscador_midias.catalog.postgres import PostgresCatalogStore
 from buscador_midias.ingestion import broker
-from buscador_midias.ingestion.admission import network_candidates
+from buscador_midias.ingestion.admission import confirm_published, network_candidates
 from buscador_midias.ingestion.engine import (
     Engine,
     HostBusyError,
@@ -37,7 +37,9 @@ class Service:
     def __init__(self, repository: IngestStore, engine: Engine | None = None) -> None:
         """Uma instância não interfere nos workers nem nas filas das outras instâncias."""
         self.repository = repository
-        self.engine = engine or Engine(repository)
+        self.engine = engine or Engine(
+            repository, host_slots=lambda: int(self.configuration().get("host_concurrency", 1))
+        )
         self.stop = threading.Event()
         self.instance = uuid.uuid4().hex
         self.threads: list[threading.Thread] = []
@@ -45,6 +47,8 @@ class Service:
         self.config_lock = threading.Lock()
         self.config_until = 0.0
         self.cached_config: dict[str, Any] = {}
+        self.capacity_locks = {stage: threading.Lock() for stage in STAGES}
+        self.capacity_cache: dict[str, tuple[float, tuple[bool, str]]] = {}
 
     def heartbeat(self, owner: str, role: str, status: str, detail: str = "") -> None:
         """Telemetria indisponível não encerra uma thread nem mascara o erro original."""
@@ -60,6 +64,16 @@ class Service:
                 self.cached_config = self.repository.settings()["config"]
                 self.config_until = time.monotonic() + 2
             return self.cached_config
+
+    def capacity(self, stage: str) -> tuple[bool, str]:
+        """Compartilha por etapa uma decisão de capacidade válida por meio segundo."""
+        with self.capacity_locks[stage]:
+            cached = self.capacity_cache.get(stage)
+            if cached is not None and time.monotonic() < cached[0]:
+                return cached[1]
+            result = self.repository.capacity(stage)
+            self.capacity_cache[stage] = (time.monotonic() + 0.5, result)
+            return result
 
     def publish_once(
         self, channel: Any, stage: str | None = None, *, recovery: bool = False
@@ -85,23 +99,23 @@ class Service:
             )
         if not allowance:
             return 0
-        with self.repository.connection() as db:
+        with self.repository.publication_connection() as db:
             network = stage in ("discovery", "fetch")
-            occupied = set()
+            per_host = int(self.configuration().get("host_concurrency", 1))
+            occupied: dict[str, int] = {}
             if network:
                 admitted = db.execute(
                     "SELECT pg_try_advisory_xact_lock(674931221) acquired"
                 ).fetchone()
                 if not admitted["acquired"]:
                     return 0
-                occupied = {
-                    (urlsplit(r["url"] or "").hostname or "").rstrip(".")
-                    for r in db.execute(
-                        "SELECT COALESCE(a.url,j.payload->>'url') url FROM ingest_jobs j "
-                        "LEFT JOIN ingest_articles a ON a.hash=j.hash "
-                        "WHERE j.stage IN ('discovery','fetch') AND j.state IN ('queued','running')"
-                    ).fetchall()
-                }
+                for r in db.execute(
+                    "SELECT COALESCE(a.url,j.payload->>'url') url FROM ingest_jobs j "
+                    "LEFT JOIN ingest_articles a ON a.hash=j.hash "
+                    "WHERE j.stage IN ('discovery','fetch') AND j.state IN ('queued','running')"
+                ).fetchall():
+                    host = (urlsplit(r["url"] or "").hostname or "").rstrip(".")
+                    occupied[host] = occupied.get(host, 0) + 1
                 if recovery:
                     # Não reservar um host para retentativa se há trabalho novo pronto nele.
                     primary = db.execute(
@@ -113,9 +127,9 @@ class Service:
                         "AND j.stage IN ('discovery','fetch') AND j.state IN ('pending','retry') "
                         "AND j.failures=0 AND NOT j.payload @> '{\"recovery\":true}'"
                     ).fetchall()
-                    occupied.update(
-                        (urlsplit(r["url"] or "").hostname or "").rstrip(".") for r in primary
-                    )
+                    for r in primary:
+                        host = (urlsplit(r["url"] or "").hostname or "").rstrip(".")
+                        occupied[host] = per_host
             db.execute(
                 "WITH obsolete AS (SELECT o.id FROM ingest_outbox o JOIN ingest_jobs j "
                 "ON j.id=o.job_id WHERE o.published_at IS NULL AND o.discarded_at IS NULL "
@@ -127,7 +141,9 @@ class Service:
                 (stage, stage),
             )
             if network:
-                rows = network_candidates(db, str(stage), recovery, occupied, allowance)
+                rows = network_candidates(
+                    db, str(stage), recovery, occupied, allowance, per_host=per_host
+                )
             else:
                 rows = db.execute(
                     "SELECT o.id,o.job_id,o.kind,o.stage,COALESCE(a.url,j.payload->>'url') url "
@@ -145,14 +161,15 @@ class Service:
                     (stage, stage, recovery, recovery, 1000 if network else allowance),
                 ).fetchall()
             published = 0
+            confirmed = []
             for row in rows:
                 if published >= allowance:
                     break
                 host = (urlsplit(row["url"] or "").hostname or "").rstrip(".")
                 if network and row["kind"] == "work":
-                    if host in occupied:
+                    if occupied.get(host, 0) >= per_host:
                         continue
-                    occupied.add(host)
+                    occupied[host] = occupied.get(host, 0) + 1
                 broker.publish(
                     channel,
                     row["stage"],
@@ -161,18 +178,16 @@ class Service:
                     recovery=recovery,
                 )
                 published += 1
+                confirmed.append(row["id"])
                 if network and row["kind"] == "work":
                     db.execute(
                         "INSERT INTO ingest_host_admission(host,last_admitted) VALUES(%s,now()) "
                         "ON CONFLICT(host) DO UPDATE SET last_admitted=excluded.last_admitted",
                         (host,),
                     )
-                db.execute("UPDATE ingest_outbox SET published_at=now() WHERE id=%s", (row["id"],))
-                db.execute(
-                    "UPDATE ingest_jobs SET state='queued',updated_at=now() WHERE id=%s "
-                    "AND state IN ('pending','retry')",
-                    (row["job_id"],),
-                )
+            if confirmed:
+                # Só trava tarefas depois de receber todos os confirms do lote.
+                confirm_published(db, confirmed)
             return published
 
     def filter_window_once(self, cursor: str = "") -> tuple[str, int]:
@@ -216,8 +231,18 @@ class Service:
             return
         try:
             self.heartbeat(owner, "dedup", "processing", f"{len(jobs)} URLs")
+            started = time.perf_counter()
             outputs = self.engine.dedup_many(jobs)
+            looked_up = time.perf_counter()
             self.repository.finish_many(jobs, outputs)
+            finished = time.perf_counter()
+            _LOG.info(
+                "Lote dedup: %s URLs; consulta=%.3fs checkpoint=%.3fs total=%.3fs",
+                len(jobs),
+                looked_up - started,
+                finished - looked_up,
+                finished - started,
+            )
         except Exception as error:
             _LOG.error("Lote dedup: %s", type(error).__name__)
             for job in jobs:
@@ -337,8 +362,6 @@ class Service:
                 channel = connection.channel()
                 broker.declare(channel)
                 heartbeat_at = 0.0
-                capacity_at = 0.0
-                capacity = True
                 while not self.stop.is_set():
                     config = self.configuration()
                     cooldown, reason = self.cooldowns.get(stage, (0, ""))
@@ -349,15 +372,13 @@ class Service:
                         connection.process_data_events(time_limit=1)
                         self.stop.wait(1)
                         continue
-                    if time.monotonic() >= capacity_at:
-                        capacity, capacity_reason = self.repository.capacity(stage)
-                        capacity_at = time.monotonic() + 5
+                    capacity, capacity_reason = self.capacity(stage)
                     if not capacity:
                         if time.monotonic() >= heartbeat_at:
                             self.heartbeat(owner, stage, "throttled", capacity_reason)
                             heartbeat_at = time.monotonic() + 10
                         connection.process_data_events(time_limit=0)
-                        self.stop.wait(1)
+                        self.stop.wait(0.5)
                         continue
                     if not config["workers_enabled"] or number >= config["workers"][stage]:
                         if time.monotonic() >= heartbeat_at:
@@ -404,8 +425,8 @@ class Service:
                         if time.monotonic() >= heartbeat_at:
                             self.heartbeat(owner, stage, "online")
                             heartbeat_at = time.monotonic() + 10
-                        connection.process_data_events(time_limit=0.5)
-                        self.stop.wait(0.5)
+                        connection.process_data_events(time_limit=0)
+                        self.stop.wait(0.25)
             except Exception as error:
                 _LOG.error("Worker %s: %s", stage, type(error).__name__)
                 self.heartbeat(
@@ -420,6 +441,7 @@ class Service:
     def serve(self, role: str = "all", stage: str | None = None) -> None:
         """Permite separar os processos no supervisor ou executá-los juntos no MVP."""
         self.repository.initialize()
+        self.repository.start_pool()
         targets: list[tuple[Any, tuple[Any, ...]]] = []
         if role in ("all", "scheduler"):
             targets.append((self.scheduler, ()))
@@ -447,6 +469,7 @@ class Service:
                 self.stop.set()
         for thread in self.threads:
             thread.join(timeout=100)
+        self.repository.close_pool()
         if failed:
             raise RuntimeError("Uma thread encerrou; o supervisor deve reiniciar o serviço")
 
@@ -454,7 +477,10 @@ class Service:
 def main(argv: list[str] | None = None) -> int:
     """CLI do serviço e da inicialização aditiva das tabelas."""
     parser = argparse.ArgumentParser(description="Buscador contínuo por filas RabbitMQ")
-    parser.add_argument("command", choices=("serve", "init", "status", "g1-pilot", "sources-pilot"))
+    parser.add_argument(
+        "command",
+        choices=("serve", "init", "status", "g1-pilot", "sources-pilot", "backfill-lastmod"),
+    )
     parser.add_argument(
         "--role", choices=("all", "scheduler", "publisher", "worker"), default="all"
     )
@@ -463,6 +489,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--day", help="Dia civil em Brasília (AAAA-MM-DD)")
     parser.add_argument("--samples", type=int, default=3)
     parser.add_argument("--link-ids", type=int, nargs="+")
+    parser.add_argument("--run-id", help="Rodada do backfill; padrão: a mais recente em execução")
+    parser.add_argument("--hours", type=int, default=6, help="Idade máxima dos XMLs em cache")
+    parser.add_argument(
+        "--apply", action="store_true", help="Encerra as tarefas (padrão: relatório)"
+    )
     args = parser.parse_args(argv)
     if args.command == "g1-pilot":
         from buscador_midias.ingestion.g1_pilot import run
@@ -476,6 +507,21 @@ def main(argv: list[str] | None = None) -> int:
     repository.initialize()
     if args.command == "init":
         print("Tabelas de ingestão prontas; agendamento inicialmente pausado.")
+    elif args.command == "backfill-lastmod":
+        from buscador_midias.ingestion.lastmod_backfill import backfill, load_hints
+
+        with repository.connection() as db:
+            run = db.execute(
+                "SELECT id FROM ingest_runs WHERE (%s::text IS NULL AND state='running') "
+                "OR id=%s ORDER BY created_at DESC LIMIT 1",
+                (args.run_id, args.run_id),
+            ).fetchone()
+            hints = load_hints(db, args.hours) if run else {}
+        if not run:
+            print("Nenhuma rodada encontrada.")
+            return 1
+        report = backfill(repository, run["id"], hints, apply=args.apply)
+        print(json.dumps(report, ensure_ascii=False, default=str))
     elif args.command == "status":
         print(
             json.dumps(repository.jsonable(repository.overview()), ensure_ascii=False, default=str)

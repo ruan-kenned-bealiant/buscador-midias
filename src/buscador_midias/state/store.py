@@ -15,6 +15,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
+from buscador_midias.analysis.entity_context import EntityContext
 from buscador_midias.criteria import MEETS_CRITERIA_SQL
 from buscador_midias.domain.discovered import DiscoveredUrl
 from buscador_midias.domain.mapping import MapPage, MapSource, PageStatus
@@ -322,6 +323,8 @@ class CorpusCandidate:
     adverse: bool
     content_category: str | None = None
     article_country: str | None = None
+    entity_contexts: tuple[EntityContext, ...] = ()
+    context_prompt_version: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

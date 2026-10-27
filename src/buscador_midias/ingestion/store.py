@@ -21,6 +21,7 @@ from buscador_midias.catalog.health_store import HealthStore
 from buscador_midias.catalog.postgres import WRITE_LOCK
 from buscador_midias.catalog.store import CatalogError
 from buscador_midias.domain.url import url_hash
+from buscador_midias.ingestion.connections import IngestConnections
 from buscador_midias.ingestion.flow import (
     BACKLOG_LIMITS,
     RESERVE_BYTES,
@@ -33,6 +34,8 @@ from buscador_midias.ingestion.schema import (
     CONTENT_FILTER_MODES,
     DDL,
     DEFAULTS,
+    LASTMOD_FILTER_MODES,
+    SCHEMA_VERSION,
     STAGES,
 )
 
@@ -48,10 +51,41 @@ class IngestStore:
         self._base = HealthStore(store)
         self.ready = False
         self.lock = threading.RLock()
+        self.pool: IngestConnections | None = None
+        self.publisher_pool: IngestConnections | None = None
 
     def connection(self) -> AbstractContextManager[Any]:
         """Abre uma transação no esquema configurado do catálogo."""
+        return self.pool.connection() if self.pool else self._base.connection()
+
+    def lease_connection(self) -> AbstractContextManager[Any]:
+        """Locks que abrangem HTTP não ocupam o pool de checkpoints curtos."""
         return self._base.connection()
+
+    def publication_connection(self) -> AbstractContextManager[Any]:
+        """Confirms RabbitMQ não esgotam o pool reservado aos checkpoints."""
+        return self.publisher_pool.connection() if self.publisher_pool else self._base.connection()
+
+    def start_pool(self) -> None:
+        """O serviço habilita reutilização; ferramentas e testes podem usar conexão direta."""
+        if self.pool is None:
+            self.pool = IngestConnections(self.store.schema, self.store.env)
+            try:
+                self.publisher_pool = IngestConnections(
+                    self.store.schema, self.store.env, name="ingest-publish", min_size=0
+                )
+            except Exception:
+                self.close_pool()
+                raise
+
+    def close_pool(self) -> None:
+        """Fecha somente depois da drenagem dos workers da instância."""
+        if self.publisher_pool is not None:
+            self.publisher_pool.close()
+            self.publisher_pool = None
+        if self.pool is not None:
+            self.pool.close()
+            self.pool = None
 
     def capacity(self, stage: str) -> tuple[bool, str]:
         """Contém produtores antes de gerar mais tarefas; consumidores finais continuam."""
@@ -67,8 +101,8 @@ class IngestStore:
             and shutil.disk_usage(Path(__file__).resolve().parents[3]).free < RESERVE_BYTES
         ):
             return False, "Reserva de disco: aguardando liberação de espaço"
-        if downstream:
-            limit = BACKLOG_LIMITS[downstream]
+        limit = BACKLOG_LIMITS.get(downstream) if downstream else None
+        if limit is not None:
             with self.connection() as db:
                 count = db.execute(
                     "SELECT count(*) n FROM (SELECT 1 FROM ingest_jobs "
@@ -194,7 +228,19 @@ class IngestStore:
             return
         with self.lock, self.connection() as db:
             db.execute("SELECT pg_advisory_xact_lock(%s)", (WRITE_LOCK,))
-            db.execute(DDL)
+            # Com o esquema já na versão atual, nem toca nas tabelas: o DDL pede locks de tabela
+            # que entravam em deadlock com o serviço em execução.
+            applied = 0
+            if db.execute("SELECT to_regclass('ingest_schema') IS NOT NULL ok").fetchone()["ok"]:
+                applied = db.execute(
+                    "SELECT COALESCE(max(version),0) v FROM ingest_schema"
+                ).fetchone()["v"]
+            if applied < SCHEMA_VERSION:
+                db.execute(DDL)
+                db.execute(
+                    "INSERT INTO ingest_schema(version) VALUES(%s) ON CONFLICT DO NOTHING",
+                    (SCHEMA_VERSION,),
+                )
             db.execute(
                 "INSERT INTO ingest_settings(id,config) VALUES(1,%s) ON CONFLICT DO NOTHING",
                 (Jsonb(DEFAULTS),),
@@ -284,6 +330,9 @@ class IngestStore:
             elif key == "content_filter":
                 if value not in CONTENT_FILTER_MODES:
                     raise CatalogError("Selecione o modo do filtro de conteúdo válido.")
+            elif key == "lastmod_filter":
+                if value not in LASTMOD_FILTER_MODES:
+                    raise CatalogError("Selecione o modo do filtro por lastmod válido.")
             elif key == "blocked_content_categories":
                 if (
                     not isinstance(value, list)
@@ -302,6 +351,7 @@ class IngestStore:
                     "max_attempts": (1, 3),
                     "retry_minutes": (1, 1440),
                     "analysis_text_chars": (1000, 30000),
+                    "host_concurrency": (1, 4),
                 }
                 low, high = bounds[key]
                 if type(value) is not int or not low <= value <= high:
@@ -524,13 +574,16 @@ class IngestStore:
         if not identifiers:
             return []
         with self.connection() as db:
+            # Trava em ordem de id, como o publicador: ordens diferentes causavam deadlock.
             rows = db.execute(
-                "UPDATE ingest_jobs SET state='running',owner=%s,attempts=attempts+1,"
+                "WITH locked AS (SELECT id FROM ingest_jobs WHERE id=ANY(%s) AND "
+                "state IN ('pending','queued','retry') AND available_at<=now() AND "
+                "(%s::boolean IS NULL OR (failures>0 OR payload @> '{\"recovery\":true}')=%s) "
+                "ORDER BY id FOR UPDATE) "
+                "UPDATE ingest_jobs j SET state='running',owner=%s,attempts=attempts+1,"
                 "lease_until=now()+interval '5 minutes',started_at=now(),updated_at=now() "
-                "WHERE id=ANY(%s) AND state IN ('pending','queued','retry') AND "
-                "available_at<=now() AND (%s::boolean IS NULL OR "
-                "(failures>0 OR payload @> '{\"recovery\":true}')=%s) RETURNING *",
-                (owner, identifiers, recovery, recovery),
+                "FROM locked l WHERE j.id=l.id RETURNING j.*",
+                (identifiers, recovery, recovery, owner),
             ).fetchall()
             if not rows:
                 return []
@@ -574,6 +627,26 @@ class IngestStore:
                     )
                 )
             return result
+
+    def save_entity_context_progress(self, job: dict[str, Any], progress: dict[str, Any]) -> None:
+        """Persiste lotes completos e renova o lease sem finalizar a etapa de contexto."""
+        with self.connection() as db:
+            current = db.execute(
+                "SELECT id FROM ingest_jobs WHERE id=%s AND state='running' AND owner=%s "
+                "AND generation=%s AND dispatch=%s AND attempts=%s FOR UPDATE",
+                (job["id"], job["owner"], job["generation"], job["dispatch"], job["attempts"]),
+            ).fetchone()
+            if not current:
+                raise CatalogError("Reserva de análise substituída; checkpoint não aplicado", 409)
+            db.execute(
+                "UPDATE ingest_articles SET payload=payload||%s,updated_at=now() "
+                "WHERE hash=%s AND generation=%s",
+                (Jsonb(dict(entity_context_progress=progress)), job["hash"], job["generation"]),
+            )
+            db.execute(
+                "UPDATE ingest_jobs SET lease_until=now()+interval '5 minutes' WHERE id=%s",
+                (job["id"],),
+            )
 
     def failure(
         self,
@@ -802,7 +875,23 @@ class IngestStore:
             return True
 
     def finish_many(self, jobs: list[dict[str, Any]], outputs: list[dict[str, Any]]) -> None:
-        """Um commit por lote, com pipeline SQL e checkpoints individuais preservados."""
+        """Dedup em SQL de conjunto; demais etapas preservam o executor genérico."""
+        if len(jobs) != len(outputs):
+            raise ValueError("Quantidade de resultados diferente da quantidade de tarefas")
+        if (
+            jobs
+            and all(j["stage"] == "dedup" for j in jobs)
+            and all(
+                not any(k in o for k in ("candidates", "children", "continuation", "plan_key"))
+                and o.get("next") in (None, "fetch")
+                for o in outputs
+            )
+        ):
+            from buscador_midias.ingestion.batch import finish_dedup
+
+            with self.connection() as db:
+                finish_dedup(db, jobs, outputs)
+            return
         with self.connection() as db, db.pipeline():
             for job, output in zip(jobs, outputs, strict=True):
                 self.finish(job, output, db=db)

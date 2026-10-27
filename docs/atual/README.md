@@ -15,6 +15,7 @@ O produto mantém um catálogo de sites e de seus RSS/sitemaps, testa esses cami
 | Telas, endpoints, formatos e controles de edição | [Interface e API](API.md) |
 | Ambiente, inicialização, diagnóstico e manutenção | [Operação e desenvolvimento](OPERACAO.md) |
 | Localização dos módulos, scripts e testes | [Inventário do repositório](INVENTARIO.md) |
+| Contexto individual, lotes de IA e gravação por entidade | [Contexto por entidade](../CONTEXTO_POR_ENTIDADE.md) |
 
 Para o usuário do painel, o guia didático está em `/guia`. Para manutenção de código, comece pela arquitetura e pelo inventário; para operação, leia os pré-requisitos antes de executar comandos.
 
@@ -25,6 +26,12 @@ Para o usuário do painel, o guia didático está em `/guia`. Para manutenção 
 - **Rodada** congela links, configurações e janela. **Tarefa** é uma execução de uma etapa. Uma notícia pode aparecer em vários links e ter processamento compartilhado.
 - **Corpus** é o destino de notícias; **catálogo** é o cadastro de caminhos; **histórico de ingestão** registra o processamento. Não são a mesma tabela.
 - Valores indicados como padrões vêm do código. A configuração salva no PostgreSQL pode ser diferente.
+
+## Auditoria de cobertura preparada
+
+A [comparação das capas de 120 fontes](../AUDITORIA_COBERTURA_CAPAS.md) aguarda o
+encerramento da rodada congelada. O documento explica alvos, denominadores,
+limitações e os artefatos de resultado.
 
 ## Histórico e documentos especializados
 
@@ -38,3 +45,8 @@ Os arquivos anteriores continuam disponíveis para rastreabilidade. Contagens, h
 - O [README original](../../README.md) e o [DESIGN](../../DESIGN.md) também conservam o histórico do mapeamento e da CLI anterior. Para o comportamento operacional atual, use esta seção e confira os arquivos de implementação vinculados.
 
 A revisão percorreu os módulos Python, os recursos HTML/JavaScript, os scripts, as definições SQL, a implantação e os testes. Não executou nova coleta, não consumiu provedores e não reiniciou os serviços da rodada em andamento. As verificações desta entrega são documentais; resultados de testes citados nos relatórios anteriores pertencem às respectivas entregas.
+
+## Otimização aplicada à ingestão
+
+Consulte [mudanças, medições e limites](../PLANO_OTIMIZACAO_DESCOBERTA_CORPUS.md) para
+processamento em lote, pools de conexão, reutilização de XML e desacoplamento das filas.

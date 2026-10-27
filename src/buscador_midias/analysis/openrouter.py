@@ -14,6 +14,8 @@ DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_MODEL = "google/gemini-2.5-flash-lite"
 DEFAULT_TIMEOUT_SECONDS = 90.0
 DEFAULT_ATTEMPTS = 3
+TRUNCATED_RESPONSE = "resposta_truncada"
+_EMPTY_RESPONSE = "resposta sem conteúdo"
 _RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
 
 
@@ -162,7 +164,12 @@ class OpenRouterChat:
                 continue
             if not response.is_success:
                 return None, f"HTTP {response.status_code}"
-            return self._read(response)
+            content, reason = self._read(response)
+            if reason == _EMPTY_RESPONSE:
+                # HTTP 200 sem ``choices`` costuma ser falha momentânea do provedor de origem.
+                error = reason
+                continue
+            return content, reason
         return None, error
 
     def _read(self, response: httpx.Response) -> tuple[str | None, str | None]:
@@ -171,8 +178,10 @@ class OpenRouterChat:
             payload = response.json()
             content = payload["choices"][0]["message"]["content"]
         except (ValueError, KeyError, IndexError, TypeError):
-            return None, "resposta sem conteúdo"
+            return None, _EMPTY_RESPONSE
         self._record(usage=(payload.get("usage") if isinstance(payload, dict) else None) or {})
+        if payload["choices"][0].get("finish_reason") in ("length", "max_tokens"):
+            return None, TRUNCATED_RESPONSE
         return (content, None) if isinstance(content, str) and content else (None, "conteúdo vazio")
 
     def _record(

@@ -7,7 +7,7 @@ name = "buscador-midias"
 version = "0.1.0"
 description = "POC: varredura proativa de sitemaps de fontes confiáveis para alimentar o corpus de Mídias IA."
 requires-python = ">=3.12"
-dependencies = ["httpx>=0.27", "lxml>=5", "psycopg[binary]>=3.1", "unidecode>=1.3", "pika>=1.3.2,<2", "curl_cffi>=0.17,<0.18"]
+dependencies = ["httpx>=0.27", "lxml>=5", "psycopg[binary]>=3.1", "psycopg_pool>=3.2,<4", "unidecode>=1.3", "pika>=1.3.2,<2", "curl_cffi>=0.17,<0.18"]
 
 [project.optional-dependencies]
 # Piloto isolado de transporte; não altera o leitor usado pela ingestão.

@@ -1,6 +1,7 @@
 import json
 
 import httpx
+import pytest
 
 from buscador_midias.analysis.openrouter import OpenRouterChat
 
@@ -18,6 +19,17 @@ def completion(*entries: dict, cost: float | None = 0.0001) -> dict:
 
 
 ENTRY = {"id": 1, "entities": []}
+
+
+@pytest.mark.parametrize("reason", ["length", "max_tokens"])
+def test_resposta_truncada_mesmo_com_json_valido_nao_vira_analise_completa(reason):
+    payload = completion(ENTRY)
+    payload["choices"][0]["finish_reason"] = reason
+    chat = make(lambda request: httpx.Response(200, json=payload))
+    assert chat.complete("S", "U", max_tokens=10) is None
+    assert chat.usage.last_error == "resposta_truncada"
+    assert chat.usage.calls == 1 and chat.usage.errors == 1
+    assert chat.usage.completion_tokens == 60 and chat.usage.cost_usd == 0.0001
 
 
 def make(handler, **kwargs) -> OpenRouterChat:
@@ -130,3 +142,33 @@ def test_resposta_sem_conteudo_devolve_none():
 
     assert chat.complete("S", "U", max_tokens=10) is None
     assert chat.usage.errors == 1
+
+
+def test_resposta_200_sem_conteudo_e_repetida_antes_de_virar_falha():
+    # O OpenRouter às vezes devolve 200 com um objeto de erro do provedor de origem.
+    bodies = iter([{"error": {"message": "provedor indisponível"}}, {"choices": []}])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=next(bodies, None) or completion(ENTRY))
+
+    chat = make(handler)
+
+    assert chat.complete("S", "U", max_tokens=10) is not None
+    assert chat.usage.retries == 2
+    assert chat.usage.errors == 0
+
+
+def test_resposta_sem_conteudo_persistente_vira_falha_apos_as_tentativas():
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(200, json={"error": {"message": SECRET}})
+
+    chat = make(handler)
+
+    assert chat.complete("S", "U", max_tokens=10) is None
+    assert len(calls) > 1
+    assert chat.usage.errors == 1
+    assert chat.usage.last_error == "resposta sem conteúdo"
+    assert SECRET not in (chat.usage.last_error or "")

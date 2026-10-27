@@ -23,18 +23,28 @@ WRITE_LOCK = 674931205
 
 def connect_postgres(env: Mapping[str, str] | None = None) -> psycopg.Connection[Any]:
     """Usa exclusivamente as credenciais de Mídias, sem incluí-las em mensagens."""
+    return psycopg.connect(**postgres_parameters(env))
+
+
+def postgres_parameters(env: Mapping[str, str] | None = None) -> dict[str, Any]:
+    """Parâmetros comuns ao conector e ao pool, nunca expostos pela API."""
     values = os.environ if env is None else env
     names = ("HOST", "PORT", "DATABASE", "USERNAME", "PASSWORD")
     if any(not values.get("DB_MIDIAS_IA_" + name) for name in names):
         raise CatalogError("Configure DB_MIDIAS_IA_HOST/PORT/DATABASE/USERNAME/PASSWORD.", 503)
-    return psycopg.connect(
+    return dict(
         host=values["DB_MIDIAS_IA_HOST"],
         port=values["DB_MIDIAS_IA_PORT"],
         dbname=values["DB_MIDIAS_IA_DATABASE"],
         user=values["DB_MIDIAS_IA_USERNAME"],
         password=values["DB_MIDIAS_IA_PASSWORD"],
         connect_timeout=10,
-        options="-c timezone=UTC -c lock_timeout=15000 -c statement_timeout=120000",
+        # Sem consultas paralelas: o contêiner tem /dev/shm de 64 MB e o paralelismo esgotava
+        # esse segmento ("DiskFull") em consultas que já são curtas.
+        options=(
+            "-c timezone=UTC -c lock_timeout=15000 -c statement_timeout=120000 "
+            "-c max_parallel_workers_per_gather=0"
+        ),
     )
 
 

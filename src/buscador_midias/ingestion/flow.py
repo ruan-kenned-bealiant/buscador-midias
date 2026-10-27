@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
 QUEUE_LIMITS = dict(discovery=64, dedup=1000, fetch=64, context=32, evidence=32, persist=32)
-BACKLOG_LIMITS = dict(dedup=5000, fetch=2000, context=200, evidence=200, persist=200)
-DEDUP_BATCH = 100
+# Evidência pode acumular no PostgreSQL sem pausar a análise de contexto.
+# QUEUE_LIMITS continua limitando apenas o lote publicado no RabbitMQ.
+# Descoberta e dedup produzem metadados leves no PostgreSQL, sem aguardar downloads.
+BACKLOG_LIMITS = dict(context=200, persist=200)
+DEDUP_BATCH = 500
 RESERVE_BYTES = 256 * 1024 * 1024
 
 
@@ -53,6 +56,32 @@ def clock_slot(now: datetime, timezone: str, hours: list[int]) -> datetime | Non
     ]
     slot = max(due) if due else None
     return slot if slot and now - slot < timedelta(minutes=15) else None
+
+
+# Folga contra fuso mal rotulado em ``lastmod``: o instante real pode ser até 12 h posterior.
+LASTMOD_MARGIN = timedelta(hours=12)
+
+
+def lastmod_outside(stamp: str | None, since: datetime) -> dict[str, Any] | None:
+    """Exclui só quando ``lastmod`` prova que a publicação foi anterior à janela.
+
+    Uma página não é publicada depois da última modificação, então ``lastmod`` é um limite
+    superior da publicação: serve para excluir, nunca para datar a notícia. Data pura
+    (meia-noite exata ou sem fuso) vale o dia inteiro, porque o dia pode terminar em outro fuso.
+    """
+    if not stamp:
+        return None
+    try:
+        modified = datetime.fromisoformat(stamp)
+    except (TypeError, ValueError):
+        return None
+    whole_day = modified.tzinfo is None or modified.timetz().replace(tzinfo=None) == time.min
+    if modified.tzinfo is None:
+        modified = modified.replace(tzinfo=UTC)
+    bound = modified + (timedelta(days=1) if whole_day else timedelta()) + LASTMOD_MARGIN
+    if bound >= since:
+        return None
+    return dict(rule="lastmod_before_window", lastmod=stamp, bound=bound.isoformat())
 
 
 def publication_outside(job: dict[str, Any]) -> dict[str, Any] | None:

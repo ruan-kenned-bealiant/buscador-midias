@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shutil
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -18,7 +19,8 @@ import httpx
 from psycopg import sql
 
 from buscador_midias.analysis.context import AnalysisItem, OpenRouterContextAnalyzer
-from buscador_midias.analysis.openrouter import OpenRouterChat
+from buscador_midias.analysis.entity_context import CONTEXT_BATCH_SIZE, EntityContext
+from buscador_midias.analysis.openrouter import TRUNCATED_RESPONSE, OpenRouterChat
 from buscador_midias.analysis.prompt import PROMPT_VERSION
 from buscador_midias.catalog.http_policy import retryable
 from buscador_midias.catalog.http_transport import make_reader
@@ -40,7 +42,8 @@ from buscador_midias.ingestion.content_filter import (
     title_exclusion,
     url_exclusion,
 )
-from buscador_midias.ingestion.flow import publication_outside
+from buscador_midias.ingestion.document_memo import DocumentMemo
+from buscador_midias.ingestion.flow import lastmod_outside, publication_outside
 from buscador_midias.ingestion.routes import Routes, partition
 from buscador_midias.ingestion.schema import DEFAULTS
 from buscador_midias.ingestion.store import IngestStore
@@ -85,6 +88,7 @@ class Engine:
         evidence_store: Any = None,
         writer_factory: Any = None,
         corpus_schema: str = "public",
+        host_slots: Callable[[], int] | None = None,
     ) -> None:
         """Portas substituíveis permitem testar o pipeline completo sem gastos externos."""
         self.repository = repository
@@ -95,6 +99,9 @@ class Engine:
         self.writer_factory = writer_factory
         self.corpus_schema = corpus_schema
         self.routes = Routes(repository)
+        self.document_memo = DocumentMemo()
+        # Vagas simultâneas por host; o serviço liga isto à configuração salva.
+        self.host_slots: Callable[[], int] = host_slots or (lambda: 1)
         self._country_registry: dict[str, str] | None = None
         self._country_registry_at = 0.0
         self._country_registry_lock = threading.Lock()
@@ -113,23 +120,35 @@ class Engine:
             source_type="",
         )
 
+    @staticmethod
+    def reserve_host(lock_db: Any, host: str, slots: int = 1) -> None:
+        """Ocupa uma das ``slots`` vagas de acesso ao host até o fim da transação.
+
+        A vaga 0 usa a mesma chave de antes, então processos antigos e novos continuam
+        excluindo-se mutuamente enquanto ``slots`` for 1.
+        """
+        for slot in range(slots):
+            row = lock_db.execute(
+                "SELECT pg_try_advisory_xact_lock(hashtext(%s),%s) locked",
+                (host, 674931220 + slot),
+            ).fetchone()
+            if row["locked"]:
+                return
+        raise HostBusyError()
+
     @contextmanager
     def reader(self, job: dict[str, Any], roots: list[str]) -> Iterator[Any]:
         """Trava por host real entre processos; usa somente HTTP direto."""
         if self.reader_factory:
             yield self.reader_factory(roots, lambda _: None)
             return
-        with self.repository.connection() as lock_db:
+        with self.repository.lease_connection() as lock_db:
             acquired = set()
 
             def reserve(host: str) -> None:
                 if host in acquired:
                     return
-                row = lock_db.execute(
-                    "SELECT pg_try_advisory_xact_lock(hashtext(%s),%s) locked", (host, 674931220)
-                ).fetchone()
-                if not row["locked"]:
-                    raise HostBusyError()
+                self.reserve_host(lock_db, host, max(1, int(self.host_slots())))
                 cooldown = lock_db.execute(
                     "SELECT ceil(extract(epoch FROM available_at-now()))::bigint seconds "
                     "FROM ingest_host_cooldowns WHERE host=%s AND available_at>now()",
@@ -253,8 +272,20 @@ class Engine:
                     )
                     if value
                 }
-            response = reader.get(url)
+            headers = getattr(reader, "conditional_headers", {}).get(url, {})
+            memo_key = (
+                job["run"]["id"],
+                site.key,
+                snapshot.get("access_transport", "direct"),
+                url,
+                headers.get("If-None-Match", ""),
+                headers.get("If-Modified-Since", ""),
+            )
+            response, shared = self.document_memo.get(memo_key, lambda: reader.get(url))
             metrics = self.metrics(reader)
+            if shared:
+                metrics["shared_xml_http_hits"] = 1
+                metrics["avoided_duplicate_xml_requests"] = 1
             if not response.ok and not (response.status == 304 and cached):
                 self.http_failure(reader, response, "no XML")
             try:
@@ -277,21 +308,36 @@ class Engine:
                 self.repository.cache_document(job, document, response)
             entries = []
             outside_urls = 0
-            # Datas de publicação de feed/news sitemap são pistas; lastmod nunca vira publicação.
+            lastmod_excluded = 0
+            lastmod_mode = job["run"]["config"].get("lastmod_filter", "shadow")
+            modified = document.get("hints") or {}
+            # Datas de publicação de feed/news sitemap são pistas; lastmod nunca vira publicação,
+            # mas um lastmod anterior à janela prova que a publicação também foi.
             for address in document["entries"]:
-                if site.owns(address):
-                    candidate = dict(
-                        url=address,
-                        published_hint=document["dates"].get(address),
-                        published_hint_basis="xml_publication",
-                    )
-                    if daily and publication_outside(
-                        dict(article=dict(payload=candidate), run=job["run"])
-                    ):
-                        outside_urls += 1
-                    else:
-                        entries.append(candidate)
+                if not site.owns(address):
+                    continue
+                candidate = dict(
+                    url=address,
+                    published_hint=document["dates"].get(address),
+                    published_hint_basis="xml_publication",
+                )
+                if daily and publication_outside(
+                    dict(article=dict(payload=candidate), run=job["run"])
+                ):
+                    outside_urls += 1
+                    continue
+                if (
+                    lastmod_mode != "off"
+                    and address not in document["dates"]
+                    and (found := lastmod_outside(modified.get(address), job["run"]["since"]))
+                ):
+                    if lastmod_mode == "enforce":
+                        lastmod_excluded += 1
+                        continue
+                    candidate["shadow_lastmod_exclusion"] = found
+                entries.append(candidate)
             metrics["outside_window_urls"] = outside_urls
+            metrics["lastmod_excluded_urls"] = lastmod_excluded
             collection = mechanism.plan_collection(
                 document, job["run"]["since"], job["run"]["until"], snapshot["parameters"]
             )
@@ -387,44 +433,59 @@ class Engine:
         return self.dedup_many([job])[0]
 
     def dedup_many(self, jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Uma consulta ao corpus para até cem URLs, com entidades no mesmo resultado."""
+        """Consulta completude em lote e carrega análise/entidades apenas para reparos."""
         hashes = {j["id"]: list(url_hash_candidates(j["article"]["url"])) for j in jobs}
+        started = time.perf_counter()
         with self.repository.connection() as db:
             query = sql.SQL(
                 "SELECT a.id,a.url_hash,a.evidencia_status,a.evidencia_path,"
-                "(length(a.body)>0) has_body,a.ai_model,a.ai_verdict,a.ai_reason,"
-                "a.ai_summary,a.resumo,a.ai_score,a.content_category,a.source_country,"
-                "COALESCE((SELECT jsonb_agg(jsonb_build_object('name',e.name,"
-                "'entity_type',e.entity_type,'role',e.role)) "
-                "FROM {}.midias_ia_article_entities e WHERE e.article_id=a.id),"
-                "'[]'::jsonb) entities FROM {}.midias_ia_articles a "
-                "WHERE a.url_hash=ANY(%s)"
+                "(length(a.body)>0) has_body,a.ai_model,EXISTS(SELECT 1 FROM "
+                "{}.midias_ia_article_entities e WHERE e.article_id=a.id) has_entities "
+                "FROM {}.midias_ia_articles a WHERE a.url_hash=ANY(%s)"
             ).format(sql.Identifier(self.corpus_schema), sql.Identifier(self.corpus_schema))
-            rows = db.execute(
-                query,
-                (list({h for values in hashes.values() for h in values}),),
-            ).fetchall()
+            rows = db.execute(query, (list({h for v in hashes.values() for h in v}),)).fetchall()
+            repair_ids = [r["id"] for r in rows if not self.corpus_complete(r)]
+            if repair_ids:
+                query = sql.SQL(
+                    "SELECT a.id,a.ai_verdict,a.ai_reason,a.ai_summary,a.resumo,a.ai_score,"
+                    "a.content_category,a.source_country,COALESCE((SELECT jsonb_agg("
+                    "jsonb_build_object('name',e.name,'entity_type',e.entity_type,'role',e.role)) "
+                    "FROM {}.midias_ia_article_entities e WHERE e.article_id=a.id),"
+                    "'[]'::jsonb) entities FROM {}.midias_ia_articles a WHERE a.id=ANY(%s)"
+                ).format(sql.Identifier(self.corpus_schema), sql.Identifier(self.corpus_schema))
+                repairs = {r["id"]: r for r in db.execute(query, (repair_ids,)).fetchall()}
+                rows = [
+                    dict(r, **{k: v for k, v in repairs.get(r["id"], {}).items() if k != "id"})
+                    for r in rows
+                ]
+        lookup_seconds = time.perf_counter() - started
         existing_by_hash = {r["url_hash"]: r for r in rows}
         results = []
         for job in jobs:
             matches = [existing_by_hash[h] for h in hashes[job["id"]] if h in existing_by_hash]
             matches.sort(key=lambda r: r["evidencia_status"] == "captured", reverse=True)
-            results.append(self.dedup_result(job, matches[0] if matches else None))
+            result = self.dedup_result(job, matches[0] if matches else None)
+            result.setdefault("metrics", {}).update(
+                dedup_batch_size=len(jobs), corpus_lookup_seconds=round(lookup_seconds, 6)
+            )
+            results.append(result)
         return results
+
+    @staticmethod
+    def corpus_complete(existing: Any) -> bool:
+        """Comprova completude sem carregar entidades e resumos de artigos já conhecidos."""
+        return bool(
+            existing["evidencia_status"] == "captured"
+            and existing["evidencia_path"]
+            and existing.get("has_body")
+            and existing.get("ai_model")
+            and existing.get("has_entities", bool(existing.get("entities")))
+        )
 
     def dedup_result(self, job: dict[str, Any], existing: Any) -> dict[str, Any]:
         """Reutiliza análise existente e evita baixar publicação explicitamente fora da janela."""
-        if existing:
-            entities = existing["entities"]
-            complete = (
-                existing["evidencia_status"] == "captured"
-                and bool(existing["evidencia_path"])
-                and bool(existing.get("has_body"))
-                and bool(existing.get("ai_model"))
-                and bool(entities)
-            )
-            if complete:
-                return dict(outcome="existente", status="known", article_id=existing["id"])
+        if existing and self.corpus_complete(existing):
+            return dict(outcome="existente", status="known", article_id=existing["id"])
         outside = publication_outside(job) or self.routes.outside(
             job, job["article"]["url"], "article"
         )
@@ -574,7 +635,7 @@ class Engine:
             )
 
     def context(self, job: dict[str, Any]) -> dict[str, Any]:
-        """Analisa texto geral; resultado inválido permanece pendente e não vira negativo."""
+        """Identifica entidades e completa pareceres individuais em lotes retomáveis."""
         data = job["article"]["payload"]
         config = job["run"]["config"]
         if not self.analyzer_factory and not os.environ.get("OPENROUTER_API_KEY"):
@@ -596,27 +657,34 @@ class Engine:
                 )
             )
             before = analyzer.usage if hasattr(analyzer, "usage") else None
-            result = analyzer.analyze(
-                [
-                    AnalysisItem(
-                        1,
-                        urlsplit(job["article"]["url"]).hostname or "",
-                        data.get("title") or "",
-                        data.get("description") or "",
-                        data["body"],
-                        "text",
-                    )
-                ]
+            item = AnalysisItem(
+                1,
+                urlsplit(job["article"]["url"]).hostname or "",
+                data.get("title") or "",
+                data.get("description") or "",
+                data["body"][: config["analysis_text_chars"]],
+                "text",
             )
+            signature = hashlib.sha256(
+                json.dumps([asdict(item), config["model"], PROMPT_VERSION], sort_keys=True).encode()
+            ).hexdigest()
+            progress = data.get("entity_context_progress") or {}
+            if progress.get("signature") == signature:
+                verdict = dict(progress["analysis"])
+            else:
+                result = analyzer.analyze([item])
+                usage = asdict(analyzer.usage.minus(before)) if before else {}
+                if not result or not result[0].decided:
+                    error = usage.get("last_error")
+                    if error and error != TRUNCATED_RESPONSE:
+                        raise ProviderUnavailableError("OpenRouter indisponível: " + error, usage)
+                    raise RetryableError("Análise sem resposta válida", usage)
+                verdict = asdict(result[0])
+                verdict.update(model=config["model"], prompt_version=PROMPT_VERSION)
+                verdict["entity_limit_reached"] = len(verdict["entities"]) >= 30
+                progress = dict(signature=signature, analysis=verdict, contexts=[])
             usage = asdict(analyzer.usage.minus(before)) if before else {}
-            if not result or not result[0].decided:
-                error = usage.get("last_error")
-                if error:
-                    raise ProviderUnavailableError("OpenRouter indisponível: " + error, usage)
-                raise RetryableError("Análise sem resposta válida", usage)
-            verdict = asdict(result[0])
-            verdict.update(model=config["model"], prompt_version=PROMPT_VERSION)
-            if not meets_criteria(basis="text", entities=result[0].entities):
+            if not meets_criteria(basis="text", entities=verdict["entities"]):
                 self.artifacts.remove(job["hash"])
                 return dict(
                     status="no_entities",
@@ -638,11 +706,38 @@ class Engine:
                     article=dict(analysis=verdict, body=None, exclusion=asdict(found)),
                     metrics=usage,
                 )
+            completed = {(c["name"], c["entity_type"]): c for c in progress["contexts"]}
+            missing = [e for e in verdict["entities"] if (e["name"], e["type"]) not in completed]
+            self.repository.save_entity_context_progress(job, progress)
+            for batches, start in enumerate(range(0, len(missing), CONTEXT_BATCH_SIZE), 1):
+                batch = missing[start : start + CONTEXT_BATCH_SIZE]
+                expected = {(e["name"], e["type"]) for e in batch}
+                individual = analyzer.analyze_entities(item, batch)
+                for context in individual:
+                    key = (context.name, context.entity_type)
+                    if key in expected:
+                        completed[key] = asdict(context)
+                progress["contexts"] = list(completed.values())
+                progress["validation"] = dict(getattr(analyzer, "context_validation", {}))
+                self.repository.save_entity_context_progress(job, progress)
+                usage = asdict(analyzer.usage.minus(before)) if before else {}
+                usage.update(
+                    entity_context_batches=batches,
+                    entity_context_completed=len(completed),
+                    entity_context_validation=progress["validation"],
+                )
+                if not expected.issubset(completed):
+                    error = usage.get("last_error")
+                    if error and error != TRUNCATED_RESPONSE:
+                        raise ProviderUnavailableError("OpenRouter indisponível: " + error, usage)
+                    raise RetryableError("Contexto individual incompleto; lote pendente", usage)
+            verdict["entity_contexts"] = list(completed.values())
             return dict(
                 next="evidence",
                 outcome="analise_concluida",
                 article=dict(analysis=verdict),
                 metrics=usage,
+                coverage_partial=bool(verdict.get("entity_limit_reached")),
             )
 
     def evidence(self, job: dict[str, Any]) -> dict[str, Any]:
@@ -665,24 +760,30 @@ class Engine:
             data.get("final_url"),
         )
         # O capturador reaproveita o HTML HTTP já salvo. Transporte pago está desativado.
-        with self.reader(job, [site.url, job["snapshot"]["url"]]) as reader:
-            finding = FindingUrl(
-                data.get("existing_hash", key),
-                job["article"]["url"],
-                data.get("title"),
-                site.key,
-                tuple(e["name"] for e in analysis["entities"]),
-                analysis["finding"] or not config["evidence_paid_adverse_only"],
-            )
-            capturer = EvidenceCapturer(
-                store,
-                bright_data=None,
-                reuse=True,
-                now=lambda: datetime.now(UTC),
-            )
-            captured = capturer.capture(finding, page, expected_headline=data.get("title") or "")
-            record = asdict(captured)
-            metrics = self.metrics(reader)
+        finding = FindingUrl(
+            data.get("existing_hash", key),
+            job["article"]["url"],
+            data.get("title"),
+            site.key,
+            tuple(e["name"] for e in analysis["entities"]),
+            analysis["finding"] or not config["evidence_paid_adverse_only"],
+        )
+        capturer = EvidenceCapturer(
+            store,
+            bright_data=None,
+            reuse=True,
+            now=lambda: datetime.now(UTC),
+        )
+        captured = capturer.capture(finding, page, expected_headline=data.get("title") or "")
+        record = asdict(captured)
+        metrics = dict(
+            requests=0,
+            bright_data_requests=0,
+            connections_reused=0,
+            cookies_sent=0,
+            access_transport=job["snapshot"].get("access_transport", "direct"),
+            http_protocols=[],
+        )
         if captured.status != "captured" and job["attempts"] < min(3, config["max_attempts"]):
             raise RetryableError("Evidência não confirmada; texto e análise preservados", metrics)
         return dict(
@@ -724,6 +825,11 @@ class Engine:
             analysis["finding"],
             content_category=analysis.get("content_category"),
             article_country=analysis.get("article_country") or data.get("existing_source_country"),
+            entity_contexts=tuple(
+                EntityContext(**dict(context, themes=tuple(context.get("themes", ()))))
+                for context in analysis.get("entity_contexts", ())
+            ),
+            context_prompt_version=analysis.get("prompt_version"),
         )
         writer = (
             self.writer_factory()

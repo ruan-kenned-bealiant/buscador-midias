@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from buscador_midias.analysis.themes import THEME_SLUGS
 
-PROMPT_VERSION = "context-2026-10-26.1"
+PROMPT_VERSION = "context-2026-10-26.3-entity-context-refs"
 
 __all__ = ["PROMPT_VERSION", "SYSTEM_PROMPT", "THEME_SLUGS"]
 
@@ -45,7 +45,7 @@ themes: de 0 a 3 slugs entre os temas abaixo (vazio se finding = false).
 delação, réus e condenados
 - ciber_seguranca: vazamento de dados, ataques, ransomware
 
-entities: até 6 pessoas e organizações NOMEADAS na matéria, as mais centrais primeiro, com os \
+entities: até 30 pessoas e organizações NOMEADAS na matéria, as mais centrais primeiro, com os \
 nomes exatamente como aparecem. Preencha SEMPRE, mesmo quando finding = false. Não liste países, \
 cidades, regiões, eventos nem descrições genéricas ("o prefeito", "a polícia"). Quem é o foco da \
 matéria sem fato adverso leva role "outro". \
@@ -54,6 +54,9 @@ partido, entidade) e role (uma palavra: acusado, investigado, condenado, reu, re
 autoridade, testemunha, citado, outro; "responsavel" é quem o texto aponta como causador do fato \
 adverso, como uma empresa que poluiu). Copie cada nome exatamente como está no que foi fornecido; \
 nunca invente nem generalize nomes (ex.: não escreva "Polícia Civil" se o texto não diz isso).
+
+A avaliação individual das entidades é feita em uma etapa separada, em lotes pequenos.
+Nesta identificação, liste até 30 entidades centrais presentes no recorte fornecido.
 
 Regras:
 1. Use somente o que foi fornecido. Não complete com o que você sabe sobre o caso.

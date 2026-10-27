@@ -14,6 +14,13 @@ A rodada congela URL, site, mecanismo, parâmetros, transporte e revisões. A ja
 
 ## As seis etapas
 
+A etapa de contexto agora identifica entidades e avalia sua participação em lotes
+de até quatro. Cada entidade identificada recebe parecer próprio, salvo em
+`midias_ia_article_contexts` na transação de gravação do artigo. Respostas parciais
+mantêm checkpoints e retomam somente as entidades faltantes. Isso acrescenta chamadas
+de IA e custo; não transfere o alerta geral para vítimas ou autoridades. Veja
+[contrato, limites e convivência com KyX/powerDD](../CONTEXTO_POR_ENTIDADE.md).
+
 ```mermaid
 flowchart TD
     X[RSS / sitemap cadastrado] --> D[1. Descoberta]
@@ -30,7 +37,7 @@ flowchart TD
 | Etapa / fila | O que faz | Resultado principal |
 |---|---|---|
 | `discovery` | Lê o documento do link, interpreta pelo mecanismo, seleciona filhos pertinentes e encontra URLs pertencentes ao site | Filhos e candidatos; sem novidades também é resultado válido |
-| `dedup` | Calcula/consulta hashes compatíveis no corpus; processa lotes de até 100 tarefas | Conhecida encerra; nova segue para texto; conhecida com evidência faltante pode seguir para reparo |
+| `dedup` | Calcula/consulta hashes compatíveis no corpus; processa lotes de até 500 tarefas | Conhecida encerra; nova segue para texto; conhecida com evidência faltante pode seguir para reparo |
 | `fetch` | Acessa artigo com o transporte configurado, classifica a página e extrai título, texto, idioma e publicação | Texto confirmado segue; bloqueio, áudio dedicado, ausência de texto ou data/janela geram diagnóstico |
 | `context` | Envia texto ao OpenRouter, valida JSON, entidades, temas, categoria e origem editorial | Análise válida ou erro explícito; resposta inválida não vira parecer negativo |
 | `evidence` | Avalia e reaproveita o HTML salvo na extração, preservando origem e integridade | Evidência capturada ou pendência registrada |
@@ -89,3 +96,73 @@ Estados de notícia como `known`, `outside_window`, `date_unknown`, `no_text`, `
 A rodada termina `completed` ou `partial`. A consolidação considera falhas, cobertura parcial, datas desconhecidas e evidência pendente. Por site, o cálculo tem regras próprias: pode incluir falha anterior de notícia compartilhada, mesmo sem falha local na tabela da rodada. A barra fica indeterminada enquanto a descoberta daquele site não termina; depois usa os links resolvidos e as cinco fases posteriores por notícia. **100% significa encerrado, não 100% de notícias gravadas nem cobertura integral do site.**
 
 As notícias compartilhadas aparecem para suas fontes de origem, sem serem gravadas novamente por cada link. O detalhe por site permite abrir artigos reais do corpus e respectivas evidências. Referência do cálculo: [progress.py](../../src/buscador_midias/ingestion/progress.py).
+
+## Acúmulo independente de evidências
+
+A partir do ajuste de 26/10/2026, o backlog de `evidence` não pausa `context`.
+As análises podem continuar e deixar suas evidências pendentes no PostgreSQL.
+O publicador mantém somente um lote de até 32 mensagens de evidência prontas
+no RabbitMQ; isso não limita o total pendente no banco. Não há descarte por
+quantidade de evidências. Permanecem o controle das outras etapas, a reserva
+de disco e os workers configurados. A rodada só encerra após resolver suas
+tarefas; terminar a análise não significa que a evidência já foi capturada.
+
+## Descoberta e verificação independentes
+
+Descoberta e dedup não pausam por quantidade de verificações/downloads pendentes.
+Esses metadados permanecem no PostgreSQL e são publicados gradualmente nas mesmas
+filas. O limite de download aguardando contexto e o de evidência aguardando gravação
+continuam em 200. A proteção de disco permanece ativa.
+
+Dedup finaliza até 500 URLs numa operação SQL relacional, com checkpoint por tarefa
+e outbox transacional. A análise existente só é carregada quando é necessário reparar
+um artigo incompleto. O pool do serviço atende transações curtas; conexões que mantêm
+locks durante HTTP são separadas. O cache HTTP de XML é curto e limitado, sem
+compartilhar decisões de parsing ou escopo. Veja [implementação e medição](../PLANO_OTIMIZACAO_DESCOBERTA_CORPUS.md).
+
+## Exclusão por `lastmod` antes do download
+
+Uma página não é publicada depois da última modificação. Por isso, um `lastmod` anterior ao
+início da janela prova que a publicação também foi anterior, e a URL pode ser descartada sem
+baixar o artigo. O `lastmod` serve só para **excluir**: nunca vira data de publicação, e um
+`lastmod` posterior à janela não diz nada sobre quando a matéria foi publicada.
+
+Cautelas da regra (`lastmod_outside` em [flow.py](../../src/buscador_midias/ingestion/flow.py)):
+
+- Data pura (meia-noite exata ou sem fuso) vale o dia inteiro, porque o dia pode terminar em
+  outro fuso. Ex.: `2026-10-25` ainda pode ser 26/10 para um site do Pacífico.
+- Soma-se uma folga de 12 h contra fuso mal rotulado (horário local marcado como `Z`).
+- Publicação explícita (news sitemap, RSS) continua decidindo antes, pela regra antiga.
+
+`lastmod_filter=off|shadow|enforce` (padrão `shadow`). Em `shadow` a URL segue o fluxo e a
+descoberta registra `payload.shadow_lastmod_exclusion`, para comparar depois com a data real
+extraída. Em `enforce` a descoberta nem cria as tarefas de dedup e fetch (métrica
+`lastmod_excluded_urls`). Em rodadas já criadas, o subcomando
+`scripts/bm.sh ingest backfill-lastmod [--apply]` aplica a mesma regra às tarefas abertas,
+usando os XMLs em cache. Sem `--apply` apenas relata; com `--apply` recusa agir se alguma
+notícia já confirmada dentro da janela teria sido excluída.
+
+## Seleção de candidatos de rede por host
+
+O publicador escolhe, a cada ciclo, a primeira tarefa pronta de cada host, alternando os hosts
+pelo último horário de admissão. A coluna `ingest_outbox.host` é preenchida por gatilho na
+inserção (qualquer caminho, inclusive o lote do dedup) e indexada junto com a etapa, de modo
+que o custo cresce com o número de hosts e não com o tamanho da fila. Antes, cada ciclo
+ordenava toda a fila pronta; com ~78 mil tarefas isso levava 2 a 3 s e deixava os workers de
+`fetch` ociosos.
+
+`host_concurrency` (1 a 4, padrão 1) define quantas tarefas podem estar em trânsito no mesmo
+host. A trava de execução usa vagas por host (`Engine.reserve_host`); com 1, o comportamento
+é o anterior. Valores maiores aumentam a carga sobre cada site e só devem ser usados com
+hosts que toleram.
+
+## Resposta vazia do OpenRouter
+
+Uma resposta HTTP 200 sem `choices` (o provedor de origem falhou e o OpenRouter devolveu um
+objeto de erro) agora é repetida pelo cliente, com a mesma espera exponencial das falhas 429/5xx,
+antes de virar falha. Só depois de esgotar as tentativas o erro "resposta sem conteúdo" chega ao
+motor, que então pausa a etapa de contexto por 5 minutos em todo o processo. Em 24 h houve 40
+dessas pausas, 10 só na última hora observada; cada uma interrompe o contexto e, por contenção
+de backlog, o `fetch` também. A pausa de 5 minutos continua sendo o comportamento (um teste a fixa); ajustá-la
+é decisão pendente.
+

@@ -86,6 +86,8 @@ O runtime pode separar papéis: `ingest serve --role scheduler|publisher|worker`
 | `model`, `analysis_text_chars` | `openai/gpt-4.1-mini`, 12000 |
 | `workers` | discovery 2, dedup 1, fetch 2, context 1, evidence 1, persist 1; são padrões, não contagem atual garantida |
 | `content_filter`, `blocked_content_categories` | `shadow`, horóscopo/clima/culinária/esportes; ver ressalva sobre filtro final em [Fluxo](FLUXO_NOTICIAS.md) |
+| `lastmod_filter` | `shadow`; `off`, `shadow` ou `enforce`; exclui URLs com `lastmod` anterior à janela, ver [Fluxo](FLUXO_NOTICIAS.md) |
+| `host_concurrency` | 1; 1 a 4 tarefas simultâneas por host; mais que 1 aumenta a carga sobre o site |
 | `bright_data` | false; habilitação é rejeitada pela API da ingestão |
 | `evidence_paid_adverse_only` | true; compatibilidade da política do capturador, sem ativar provedor pago ausente |
 
@@ -184,3 +186,64 @@ seus testes redundantes: várias dessas rotinas continuam expostas na CLI ou na 
 A retirada de um subsistema legado deve remover em conjunto seu comando/rota, código,
 testes específicos e referências documentais, preservando os parsers compartilhados.
 Caches `__pycache__` podem ser recriados e não fazem parte do histórico.
+
+## Ajuste de latência de pausa e polling
+
+O runtime compartilha a checagem de capacidade por etapa/processo em cache de 0,5 segundo.
+Workers pausados por backlog voltam a checar a cada 0,5 segundo; uma consulta de fila
+vazia aguarda 0,25 segundo. A evidência reaproveitada não abre um leitor ou transação
+de rede sem uso. Limites de backlog e controle por host continuam válidos. Veja
+[medição, testes e limites da melhoria](../AJUSTE_GAPS_FILAS_20261026.md).
+
+O contexto não é mais pausado pelo acúmulo de evidências. O backlog dessa etapa
+pode crescer no PostgreSQL, enquanto o RabbitMQ recebe lotes limitados. Isso
+desacopla o avanço das análises da capacidade de captura; não aumenta por si
+só a quantidade de workers de evidência. A proteção de disco continua ativa.
+
+## Otimização de descoberta/verificação
+
+O serviço requer `psycopg_pool>=3.2,<4`, declarado no `pyproject.toml`. O pool abre
+entre 2 e 12 conexões curtas por processo, com espera máxima de 10 segundos. Publicadores
+usam um segundo pool de 0 a 12 conexões: confirmações RabbitMQ não podem ocupar os
+slots dos checkpoints. Locks HTTP mantêm conexões próprias; dimensione também os
+demais serviços no PostgreSQL. Os pools podem somar 24 conexões, além dos leitores HTTP.
+O pool encerra depois da drenagem cooperativa dos workers. Alterações no código
+exigem reiniciar o serviço de ingestão, preservando a rodada e suas tarefas.
+
+Os logs `Lote dedup` medem consulta, checkpoint e total até commit. A reserva do lote
+e o transporte RabbitMQ ficam fora desse cronômetro. Descoberta/verificação podem
+acumular metadados no banco; monitorar seu tamanho faz parte da operação. A redução
+de latência dessas etapas não elimina gargalos posteriores de rede ou contexto.
+Detalhes e testes: [plano aplicado](../PLANO_OTIMIZACAO_DESCOBERTA_CORPUS.md).
+
+## Retroativo do filtro por `lastmod`
+
+```bash
+scripts/bm.sh ingest backfill-lastmod            # relatório, não altera nada
+scripts/bm.sh ingest backfill-lastmod --apply    # encerra as tarefas comprovadamente antigas
+```
+
+Atua na rodada em execução mais recente (`--run-id` escolhe outra) e lê os XMLs interpretados
+das últimas `--hours` horas (padrão 6). Só toca tarefas abertas de dedup/fetch de artigos que
+ainda não estão no corpus; as encerradas ficam como `outside_window` com resultado
+`fora_da_janela_por_lastmod`. Com `--apply`, qualquer notícia já confirmada dentro da janela
+que a regra teria excluído (campo `violations`) cancela a aplicação inteira.
+
+## Reinício sem disputa de locks
+
+- **Versão do esquema.** `ingest_schema` guarda a versão do DDL aplicada (`SCHEMA_VERSION` em
+  [schema.py](../../src/buscador_midias/ingestion/schema.py)). `initialize()` só executa o DDL
+  quando a versão gravada é menor; com o esquema atual nem toca as tabelas de fila. Antes, todo
+  início (serviço, painel, CLI) reexecutava `CREATE INDEX IF NOT EXISTS`/`ALTER TABLE`, que pedem
+  lock de tabela e entravam em deadlock ou estouravam `lock_timeout` com o serviço no ar, o que
+  fazia o systemd falhar o restart. **Ao alterar o `DDL`, aumente `SCHEMA_VERSION`.**
+- **Ordem de travamento.** Publicador (`confirm_published`) e workers (`claim_many`) travam as
+  linhas de `ingest_jobs` sempre em ordem de `id`. Em ordens diferentes, 175 de 175 execuções de um
+  teste de concorrência acabaram em deadlock; cada deadlock derrubava um ciclo do publicador ou um
+  lote inteiro de dedup.
+- **Sem consultas paralelas.** As sessões do buscador definem `max_parallel_workers_per_gather=0`
+  ([postgres.py](../../src/buscador_midias/catalog/postgres.py)). O contêiner do PostgreSQL tem
+  `/dev/shm` de 64 MB e o paralelismo o esgotava (`could not resize shared memory segment`,
+  reportado pelo psycopg como `DiskFull`) em consultas que já são curtas.
+- **Concorrência de workers** só muda após reinício, porque os slots são abertos na inicialização.
+

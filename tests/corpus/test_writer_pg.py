@@ -6,17 +6,20 @@ pulados. As tabelas do schema temporário são cópias das reais; o corpus de ve
 
 import os
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
 
+from buscador_midias.analysis.entity_context import EntityContext
 from buscador_midias.corpus.article import (
     CorpusArticle,
     CorpusEntity,
     CorpusEvidence,
     CorpusKeyword,
 )
+from buscador_midias.corpus.contexts import entity_identity
 from buscador_midias.corpus.writer import CorpusSchemaError, PostgresCorpusWriter
 
 psycopg = pytest.importorskip("psycopg")
@@ -50,6 +53,7 @@ def schema():
             "midias_ia_articles",
             "midias_ia_article_entities",
             "midias_ia_article_keywords",
+            "midias_ia_article_contexts",
         ):
             connection.execute(f"CREATE TABLE {name}.{table} (LIKE public.{table} INCLUDING ALL)")
             connection.execute(
@@ -123,6 +127,119 @@ def rows(writer: PostgresCorpusWriter, sql: str, params=()) -> list[tuple]:
     with writer._connection.cursor() as cursor:
         cursor.execute(sql, params)
         return cursor.fetchall()
+
+
+def contextual_article():
+    return make_article(
+        entity_contexts=(
+            EntityContext(
+                "Maria Virgínia",
+                "PF",
+                "investigado",
+                True,
+                0.9,
+                "A delegada é investigada",
+                "Investigada por vazamento",
+                "Maria Virgínia é investigada por vazamento",
+                ("criminal",),
+            ),
+            EntityContext(
+                "PCC",
+                "PJ",
+                "citado",
+                False,
+                0.8,
+                "Apenas citado neste trecho",
+                "",
+                "O PCC é citado na investigação",
+            ),
+        )
+    )
+
+
+def test_contextos_individuais_sao_atomicos_idempotentes_e_sem_vinculo_de_cliente(writer):
+    article = contextual_article()
+    [first] = writer.write([article])
+    [second] = writer.write([article])
+    assert first.error is None and second.error is None
+    assert first.contexts == second.contexts == 2
+    records = rows(
+        writer,
+        "SELECT entity_name,alerta,fato_adverso,process_id,client_id,group_id,"
+        "theme_id,tema_confirmado,entity_document,raw_context->>'identity_basis',"
+        "raw_context->>'evidence' FROM midias_ia_article_contexts ORDER BY entity_name",
+    )
+    assert len(records) == 2
+    assert records[0][:3] == ("Maria Virgínia", True, "Investigada por vazamento")
+    assert records[1][:3] == ("PCC", False, "")
+    assert records[0][3:9] == (None,) * 6
+    assert records[0][9:] == ("name_only", "Maria Virgínia é investigada por vazamento")
+
+
+@pytest.mark.parametrize("process_id,producer", [(77, "buscador-midias"), (None, "kyx")])
+def test_contexto_de_outro_escritor_e_contexto_tematico_nao_sao_sobrescritos(
+    writer, process_id, producer
+):
+    article = contextual_article()
+    [outcome] = writer.write([article])
+    assert outcome.error is None
+    kind, key = entity_identity("Maria Virgínia", "PF")
+    writer._connection.execute(
+        "UPDATE midias_ia_article_contexts SET process_id=%s,alerta=false,"
+        "justificativa='Parecer preservado',raw_context=json_build_object('producer',%s::text) "
+        "WHERE entity_hash=%s",
+        (process_id, producer, key),
+    )
+    writer._connection.execute(
+        "INSERT INTO midias_ia_article_contexts(article_id,theme_id,entity_name,entity_type,"
+        "entity_hash,alerta,created_at,updated_at) VALUES(%s,12,%s,%s,%s,false,now(),now())",
+        (outcome.article_id, "Maria Virgínia", kind, key),
+    )
+    writer._connection.commit()
+    [repeated] = writer.write([article])
+    assert repeated.error is None and repeated.contexts == 1
+    assert rows(
+        writer,
+        "SELECT justificativa,alerta FROM midias_ia_article_contexts "
+        "WHERE entity_hash=%s AND theme_id IS NULL",
+        (key,),
+    ) == [("Parecer preservado", False)]
+    assert rows(writer, "SELECT alerta FROM midias_ia_article_contexts WHERE theme_id=12") == [
+        (False,)
+    ]
+
+
+def test_falha_de_contexto_desfaz_artigo_entidades_e_contextos_da_transacao(writer):
+    writer._connection.execute(
+        "ALTER TABLE midias_ia_article_contexts ADD CHECK(entity_name<>'PCC')"
+    )
+    writer._connection.commit()
+    [outcome] = writer.write([contextual_article()])
+    assert outcome.error == "CheckViolation" and outcome.article_id is None
+    assert rows(writer, "SELECT count(*) FROM midias_ia_articles") == [(0,)]
+    assert rows(writer, "SELECT count(*) FROM midias_ia_article_entities") == [(0,)]
+    assert rows(writer, "SELECT count(*) FROM midias_ia_article_contexts") == [(0,)]
+
+
+def test_regravacao_legada_nao_inventa_nem_apaga_contextos(writer):
+    [first] = writer.write([contextual_article()])
+    assert first.error is None
+    [second] = writer.write([replace(contextual_article(), entity_contexts=())])
+    assert second.error is None
+    assert rows(writer, "SELECT count(*) FROM midias_ia_article_contexts") == [(2,)]
+
+
+def test_contexto_preserva_versao_da_analise_e_resumo_individual(writer):
+    [outcome] = writer.write([replace(contextual_article(), context_prompt_version="version-old")])
+    assert outcome.error is None
+    assert rows(
+        writer,
+        "SELECT raw_context->>'prompt_version',ai_summary "
+        "FROM midias_ia_article_contexts ORDER BY entity_name",
+    ) == [
+        ("version-old", "A delegada é investigada"),
+        ("version-old", "Apenas citado neste trecho"),
+    ]
 
 
 def test_schema_com_as_colunas_esperadas_passa_na_checagem(writer):

@@ -6,10 +6,18 @@ import json
 import logging
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
 from buscador_midias.analysis.classification import content_category
+from buscador_midias.analysis.entity_context import (
+    CONTEXT_BATCH_SIZE,
+    CONTEXT_SYSTEM_PROMPT,
+    EntityContext,
+    evidence_options,
+    parse_entity_contexts,
+    resolve_evidence,
+)
 from buscador_midias.analysis.headline import tokens
 from buscador_midias.analysis.openrouter import OpenRouterChat, Usage
 from buscador_midias.analysis.prompt import SYSTEM_PROMPT
@@ -22,12 +30,12 @@ DEFAULT_BATCH_SIZE = 6
 DEFAULT_MAX_TEXT_CHARS = 1500
 HEADLINE_ONLY_MAX_CONFIDENCE = 0.6
 _MAX_THEMES = 3
-_MAX_ENTITIES = 6
+_MAX_ENTITIES = 30
 _MAX_NAME = 120
 _MAX_ROLE = 30
 _MAX_FACT = 300
 _MAX_SUMMARY = 400
-_TOKENS_PER_ITEM = 520
+_TOKENS_PER_ITEM = 2200
 _BASE_TOKENS = 300
 _ENTITY_TYPES = frozenset({"PF", "PJ", "OUTRO"})
 _MIN_NAME_WORD = 3
@@ -69,6 +77,7 @@ class ContextVerdict:
         summary: Resumo curto.
         confidence: Confiança (0 a 1; no máximo 0,6 quando só havia a manchete).
         basis: ``text`` ou ``headline`` (vem do item, não do modelo).
+        entity_contexts: Pareceres individuais opcionais; a ingestão os completa em lotes.
     """
 
     id: int
@@ -83,6 +92,7 @@ class ContextVerdict:
     content_category: str | None = None
     article_country: str | None = None
     article_country_evidence: str = ""
+    entity_contexts: tuple[EntityContext, ...] = ()
 
 
 class ContextAnalyzer(Protocol):
@@ -199,6 +209,7 @@ class OpenRouterContextAnalyzer:
         self._chat = chat
         self._system_prompt = system_prompt
         self._max_text_chars = max_text_chars
+        self.context_validation: dict[str, int] = {}
 
     @property
     def model(self) -> str:
@@ -219,7 +230,48 @@ class OpenRouterContextAnalyzer:
         )
         if content is None:
             return [_undecided(item) for item in items]
-        return parse_analysis(content, items)
+        # As provas do contexto precisam existir no recorte efetivamente enviado ao modelo.
+        bounded = [replace(item, text=item.text[: self._max_text_chars]) for item in items]
+        return parse_analysis(content, bounded)
+
+    def analyze_entities(
+        self, item: AnalysisItem, entities: Sequence[dict[str, str]]
+    ) -> tuple[EntityContext, ...]:
+        """Avalia um lote limitado, separado da identificação de entidades."""
+        if not 0 < len(entities) <= CONTEXT_BATCH_SIZE:
+            raise ValueError("O contexto individual aceita entre uma e quatro entidades")
+        bounded = replace(item, text=item.text[: self._max_text_chars])
+        available = f"{bounded.headline} {bounded.description} {bounded.text}"
+        options = {(e["name"], e["type"]): evidence_options(e["name"], available) for e in entities}
+        content = self._chat.complete(
+            CONTEXT_SYSTEM_PROMPT,
+            json.dumps(
+                {
+                    "noticia": json.loads(build_user_message([bounded])),
+                    "entities": [
+                        dict(
+                            e,
+                            evidencias=[
+                                dict(id=k, texto=v)
+                                for k, v in options[(e["name"], e["type"])].items()
+                            ],
+                        )
+                        for e in entities
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            max_tokens=300 + 650 * len(entities),
+        )
+        self.context_validation = {}
+        result = parse_entity_contexts(
+            resolve_evidence(json_items(content), options) if content else [],
+            tuple(entities),
+            available,
+            headline_only=bounded.basis != "text",
+            diagnostics=self.context_validation,
+        )
+        return result
 
 
 def _undecided(item: AnalysisItem) -> ContextVerdict:
@@ -262,6 +314,12 @@ def _verdict(item: AnalysisItem, entry: dict[str, Any] | None) -> ContextVerdict
         content_category=content_category(entry.get("content_category")),
         article_country=country,
         article_country_evidence=evidence,
+        entity_contexts=parse_entity_contexts(
+            entry.get("entities"),
+            entities,
+            f"{item.headline} {item.description} {item.text}",
+            headline_only=item.basis != "text",
+        ),
     )
 
 
@@ -286,6 +344,7 @@ def _entities(raw: Any, item: AnalysisItem) -> tuple[dict[str, str], ...]:
     sem isso a matéria poderia virar achado por causa de um nome que não consta nela.
     """
     clean: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
     available = set(tokens(f"{item.headline} {item.description} {item.text}"))
     for entity in raw if isinstance(raw, list) else []:
         if not isinstance(entity, dict):
@@ -294,6 +353,10 @@ def _entities(raw: Any, item: AnalysisItem) -> tuple[dict[str, str], ...]:
         if not name or not _grounded(name, available):
             continue
         kind = str(entity.get("type", "")).strip().upper()
+        identity = (name.casefold(), kind)
+        if identity in seen:
+            continue
+        seen.add(identity)
         role = normalize_role(str(entity.get("role", "")))[:_MAX_ROLE] or "outro"
         clean.append(
             {"name": name, "type": kind if kind in _ENTITY_TYPES else "OUTRO", "role": role}

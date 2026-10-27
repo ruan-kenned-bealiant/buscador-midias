@@ -2,8 +2,12 @@
 
 STAGES = ("discovery", "dedup", "fetch", "context", "evidence", "persist")
 CONTENT_FILTER_MODES = ("off", "shadow", "enforce")
+LASTMOD_FILTER_MODES = CONTENT_FILTER_MODES
 # Notícia e opinião nunca são bloqueadas: o restante é rotina sem interesse para o corpus.
 BLOCKABLE_CATEGORIES = ("weather", "cooking", "sports", "entertainment", "lifestyle", "horoscope")
+# Versão do DDL. Aumente ao alterar ``DDL``: o esquema só é reaplicado quando a versão gravada
+# é menor, para que reinícios e ferramentas não disputem locks com o serviço em execução.
+SCHEMA_VERSION = 1
 DEFAULTS = dict(
     enabled=False,
     workers_enabled=True,
@@ -22,6 +26,8 @@ DEFAULTS = dict(
     analysis_text_chars=12000,
     content_filter="shadow",
     blocked_content_categories=["horoscope", "weather", "cooking", "sports"],
+    lastmod_filter="shadow",
+    host_concurrency=1,
     workers=dict(discovery=2, dedup=1, fetch=2, context=1, evidence=1, persist=1),
 )
 DDL = """
@@ -115,6 +121,30 @@ CREATE INDEX IF NOT EXISTS ingest_outbox_stage_pending ON ingest_outbox(stage,re
  WHERE published_at IS NULL;
 CREATE INDEX IF NOT EXISTS ingest_outbox_stage_ready ON ingest_outbox(stage,ready_at,id)
  WHERE published_at IS NULL AND discarded_at IS NULL;
+ALTER TABLE ingest_outbox ADD COLUMN IF NOT EXISTS host TEXT;
+CREATE OR REPLACE FUNCTION ingest_url_host(url TEXT) RETURNS TEXT LANGUAGE sql IMMUTABLE AS $fn$
+ SELECT rtrim(trim(both '[]' FROM regexp_replace(split_part(lower(COALESCE(url,'')),'/',3),
+ ':[0-9]+$','')),'.')
+$fn$;
+CREATE OR REPLACE FUNCTION ingest_outbox_fill_host() RETURNS trigger LANGUAGE plpgsql AS $fn$
+BEGIN
+ SELECT ingest_url_host(COALESCE(a.url,j.payload->>'url')) INTO NEW.host
+ FROM ingest_jobs j LEFT JOIN ingest_articles a ON a.hash=j.hash WHERE j.id=NEW.job_id;
+ RETURN NEW;
+END
+$fn$;
+DO $b$ BEGIN
+ IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='ingest_outbox_host'
+  AND tgrelid='ingest_outbox'::regclass) THEN
+  CREATE TRIGGER ingest_outbox_host BEFORE INSERT ON ingest_outbox
+  FOR EACH ROW WHEN (NEW.host IS NULL) EXECUTE FUNCTION ingest_outbox_fill_host();
+ END IF;
+END $b$;
+UPDATE ingest_outbox o SET host=ingest_url_host(COALESCE(a.url,j.payload->>'url'))
+ FROM ingest_jobs j LEFT JOIN ingest_articles a ON a.hash=j.hash
+ WHERE o.job_id=j.id AND o.host IS NULL AND o.published_at IS NULL;
+CREATE INDEX IF NOT EXISTS ingest_outbox_host_ready ON ingest_outbox(stage,host,ready_at,id)
+ WHERE published_at IS NULL AND discarded_at IS NULL;
 CREATE TABLE IF NOT EXISTS ingest_host_cooldowns (
  host TEXT PRIMARY KEY,available_at TIMESTAMPTZ NOT NULL
 );
@@ -138,5 +168,8 @@ CREATE TABLE IF NOT EXISTS ingest_document_cache (
  url TEXT NOT NULL,content_hash TEXT NOT NULL,etag TEXT,last_modified TEXT,document BYTEA NOT NULL,
  checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
  PRIMARY KEY(source_id,url_hash,revision)
+);
+CREATE TABLE IF NOT EXISTS ingest_schema (
+ version INT PRIMARY KEY,applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """

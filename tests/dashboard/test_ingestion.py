@@ -10,6 +10,7 @@ from test_catalog_postgres import local, schema  # noqa: F401
 from test_catalog_testing import FakeReader, article
 
 from buscador_midias.analysis.context import ContextVerdict
+from buscador_midias.analysis.entity_context import EntityContext
 from buscador_midias.catalog.migrate_postgres import migrate_catalog
 from buscador_midias.catalog.postgres import PostgresCatalogStore
 from buscador_midias.catalog.store import CatalogError
@@ -529,6 +530,21 @@ def test_outbox_publish_failure_rolls_back_and_can_replay(ingest, monkeypatch):
 
 
 class Analyzer:
+    def analyze_entities(self, item, entities):
+        return tuple(
+            EntityContext(
+                e["name"],
+                e["type"],
+                e["role"],
+                False,
+                0.9,
+                "A pessoa é citada, sem fato adverso atribuído a ela.",
+                "",
+                e["name"],
+            )
+            for e in entities
+        )
+
     def analyze(self, items):
         return [
             ContextVerdict(
@@ -620,6 +636,9 @@ def test_pipeline_separate_stages_through_text_evidence_and_persistence(
     ingest.maintain()
     assert ingest.overview()["runs"][0]["state"] == "completed"
     assert len(saved) == 1 and saved[0].entities[0].name == "João Silva"
+    assert len(saved[0].entity_contexts) == 1
+    assert saved[0].entity_contexts[0].name == "João Silva"
+    assert saved[0].entity_contexts[0].alert is False
     assert saved[0].evidence.status == "captured"
     assert saved[0].content_category == "opinion"
     assert (saved[0].source_country, saved[0].source_country_method) == ("PT", "article")
@@ -857,7 +876,8 @@ def test_batch_claim_and_commit_preserve_individual_checkpoints(ingest):
         )
 
 
-def test_corpus_lookup_is_one_query_for_whole_batch(ingest):
+@pytest.mark.parametrize("evidence_status", ["captured", "pending"])
+def test_corpus_lookup_shares_connection_and_preserves_repair(ingest, evidence_status):
     from buscador_midias.domain.url import url_hash
 
     ingest.create_run({})
@@ -876,9 +896,9 @@ def test_corpus_lookup_is_one_query_for_whole_batch(ingest):
             "entity_type text,role text)"
         )
         db.execute(
-            "INSERT INTO midias_ia_articles VALUES(1,%s,'captured','evidence.html',"
+            "INSERT INTO midias_ia_articles VALUES(1,%s,%s,'evidence.html',"
             "'Texto completo','model','neutro','','','',0.9,NULL,NULL)",
-            (url_hash(urls[0]),),
+            (url_hash(urls[0]), evidence_status),
         )
         db.execute("INSERT INTO midias_ia_article_entities VALUES(1,'João Silva','PER','citado')")
         ids = [
@@ -897,8 +917,14 @@ def test_corpus_lookup_is_one_query_for_whole_batch(ingest):
     engine = Engine(spy, corpus_schema=ingest.store.schema)
     results = engine.dedup_many(jobs)
     assert spy.calls == 1
-    assert sum(r.get("status") == "known" for r in results) == 1
-    assert sum(r.get("next") == "fetch" for r in results) == 19
+    assert sum(r.get("status") == "known" for r in results) == int(evidence_status == "captured")
+    assert sum(r.get("next") == "fetch" for r in results) == (
+        19 if evidence_status == "captured" else 20
+    )
+    if evidence_status == "pending":
+        repaired = next(r for r in results if r.get("article_id") == 1)
+        assert repaired["outcome"] == "existente_reparar_evidencia"
+        assert repaired["article"]["analysis"]["entities"][0]["name"] == "João Silva"
 
 
 def test_publication_filter_does_not_trust_unknown_legacy_dates(ingest):
@@ -1469,3 +1495,17 @@ def test_manual_round_by_day_rejects_invalid_or_mixed_options(ingest, extra):
         ingest.create_run(extra)
     with ingest.connection() as db:
         assert db.execute("SELECT count(*) n FROM ingest_runs").fetchone()["n"] == 0
+
+
+def test_evidence_backlog_does_not_pause_context(ingest):
+    run = ingest.create_run({})
+    with ingest.connection() as db:
+        poll = db.execute("SELECT id FROM ingest_polls").fetchone()["id"]
+        for i in range(205):
+            ingest.enqueue(db, "evidence", f"evidence-backlog-{i}", run["id"], poll, {})
+    assert ingest.capacity("context") == (True, "")
+    with ingest.connection() as db:
+        assert (
+            db.execute("SELECT count(*) n FROM ingest_jobs WHERE stage='evidence'").fetchone()["n"]
+            == 205
+        )
