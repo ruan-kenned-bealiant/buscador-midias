@@ -43,7 +43,12 @@ from buscador_midias.ingestion.content_filter import (
     url_exclusion,
 )
 from buscador_midias.ingestion.document_memo import DocumentMemo
-from buscador_midias.ingestion.flow import lastmod_outside, publication_outside
+from buscador_midias.ingestion.flow import (
+    is_last_attempt,
+    lastmod_outside,
+    publication_outside,
+    url_outside,
+)
 from buscador_midias.ingestion.routes import Routes, partition
 from buscador_midias.ingestion.schema import DEFAULTS
 from buscador_midias.ingestion.store import IngestStore
@@ -309,7 +314,10 @@ class Engine:
             entries = []
             outside_urls = 0
             lastmod_excluded = 0
+            url_excluded = 0
             lastmod_mode = job["run"]["config"].get("lastmod_filter", "shadow")
+            url_mode = job["run"]["config"].get("url_filter", "shadow")
+            zone = job["run"]["config"].get("timezone", "America/Sao_Paulo")
             modified = document.get("hints") or {}
             # Datas de publicação de feed/news sitemap são pistas; lastmod nunca vira publicação,
             # mas um lastmod anterior à janela prova que a publicação também foi.
@@ -326,6 +334,18 @@ class Engine:
                 ):
                     outside_urls += 1
                     continue
+                if url_mode != "off" and (
+                    shape := url_outside(
+                        address,
+                        job["run"]["since"],
+                        zone,
+                        explicit_date=address in document["dates"],
+                    )
+                ):
+                    if url_mode == "enforce":
+                        url_excluded += 1
+                        continue
+                    candidate["shadow_url_exclusion"] = shape
                 if (
                     lastmod_mode != "off"
                     and address not in document["dates"]
@@ -338,6 +358,7 @@ class Engine:
                 entries.append(candidate)
             metrics["outside_window_urls"] = outside_urls
             metrics["lastmod_excluded_urls"] = lastmod_excluded
+            metrics["url_excluded_urls"] = url_excluded
             collection = mechanism.plan_collection(
                 document, job["run"]["since"], job["run"]["until"], snapshot["parameters"]
             )
@@ -709,6 +730,9 @@ class Engine:
             completed = {(c["name"], c["entity_type"]): c for c in progress["contexts"]}
             missing = [e for e in verdict["entities"] if (e["name"], e["type"]) not in completed]
             self.repository.save_entity_context_progress(job, progress)
+            # Na última tentativa o parcial validado é gravado: repetir a mesma entrada com
+            # temperatura 0 tende a repetir a rejeição e o artigo inteiro seria perdido.
+            final = is_last_attempt(job["failures"], config["max_attempts"])
             for batches, start in enumerate(range(0, len(missing), CONTEXT_BATCH_SIZE), 1):
                 batch = missing[start : start + CONTEXT_BATCH_SIZE]
                 expected = {(e["name"], e["type"]) for e in batch}
@@ -730,14 +754,25 @@ class Engine:
                     error = usage.get("last_error")
                     if error and error != TRUNCATED_RESPONSE:
                         raise ProviderUnavailableError("OpenRouter indisponível: " + error, usage)
+                    if not final:
+                        raise RetryableError("Contexto individual incompleto; lote pendente", usage)
+            unresolved = [
+                e["name"] for e in verdict["entities"] if (e["name"], e["type"]) not in completed
+            ]
+            if unresolved:
+                # Sem nenhum parecer válido o artigo não apareceria no PowerDD e, gravado, deixaria
+                # a fila de falhas: segue falhando para permitir o reprocesso.
+                if not completed:
                     raise RetryableError("Contexto individual incompleto; lote pendente", usage)
+                verdict["entity_context_missing"] = unresolved
+                usage.update(entity_context_unresolved=len(unresolved))
             verdict["entity_contexts"] = list(completed.values())
             return dict(
                 next="evidence",
                 outcome="analise_concluida",
                 article=dict(analysis=verdict),
                 metrics=usage,
-                coverage_partial=bool(verdict.get("entity_limit_reached")),
+                coverage_partial=bool(verdict.get("entity_limit_reached") or unresolved),
             )
 
     def evidence(self, job: dict[str, Any]) -> dict[str, Any]:

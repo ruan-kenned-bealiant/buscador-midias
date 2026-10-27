@@ -72,8 +72,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--target-free-gib", type=int, default=12)
+    parser.add_argument("--min-age-hours", type=int, default=24)
     args = parser.parse_args()
-    cutoff = time.time() - 86400
+    if args.min_age_hours < 1 or args.target_free_gib < 1:
+        parser.error("Informe idade mínima e espaço desejado positivos.")
+    cutoff = time.time() - args.min_age_hours * 3600
     paths = sorted(
         (p for root in ROOTS for p in root.glob("*.html") if p.stat().st_mtime < cutoff),
         key=lambda p: p.stat().st_mtime,
@@ -81,7 +84,7 @@ def main():
     if not args.apply:
         print("candidate_files", len(paths), "original_bytes", sum(p.stat().st_size for p in paths))
         return
-    folder = ROOT / "var/maintenance/space-20261026"
+    folder = ROOT / "var/maintenance" / datetime.now(UTC).strftime("space-%Y%m%d")
     folder.mkdir(parents=True, exist_ok=True)
     free_before = shutil.disk_usage(ROOT).free
     total = 0
@@ -106,6 +109,7 @@ def main():
     summary = dict(
         finished_at=datetime.now(UTC).isoformat(),
         files=count,
+        min_age_hours=args.min_age_hours,
         saved_bytes=total,
         free_before=free_before,
         free_after=shutil.disk_usage(ROOT).free,

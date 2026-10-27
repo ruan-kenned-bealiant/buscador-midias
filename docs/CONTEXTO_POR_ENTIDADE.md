@@ -41,10 +41,15 @@ Cada avaliação usa limite de saída próprio: `300 + 650 × entidades_do_lote`
 O lote máximo de quatro admite 2.900 tokens. Isso reduz risco de truncamento, sem
 prometer que qualquer modelo sempre respeitará o contrato. Falha de JSON ou conteúdo
 incompleto segue a política limitada de retentativas; não vira um parecer negativo.
+Na última tentativa o job grava os pareceres que o validador aceitou e lista os demais em
+`entity_context_missing`; a rodada fica `partial`. Entidade rejeitada (por exemplo,
+`incompatible_alert`: alerta para papel não adverso) não ganha parecer, e se nenhuma
+validou o job falha como antes. Medido em 27/10: ~13% das tentativas voltavam com lote
+pendente e a maioria desses jobs terminava `failed`, perdendo também as entidades válidas.
 O transporte também recusa `finish_reason=length/max_tokens`, mesmo que o fragmento
 devolvido ainda seja JSON válido. O consumo cobrado dessa resposta continua registrado.
 Truncamento não é tratado como indisponibilidade global do provedor: fica pendente
-na própria tarefa, sem pausar a etapa inteira por cinco minutos.
+na própria tarefa, sem acionar o disjuntor da etapa.
 
 ## Gravação no corpus
 

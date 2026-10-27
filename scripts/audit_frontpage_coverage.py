@@ -17,7 +17,7 @@ import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from itertools import zip_longest
 from pathlib import Path
 from typing import Any
@@ -43,6 +43,7 @@ from buscador_midias.extraction.sample_audit import audit_page
 
 ROOT = Path(__file__).resolve().parents[1]
 TERMINAL = {"completed", "partial"}
+WAIT_SECONDS = 180
 PROOF_LOCK = threading.Lock()
 PROOF_BYTES = 0
 MAX_PROOF_BYTES = 1024 * 1024 * 1024
@@ -100,15 +101,22 @@ def wait_for_run(run_id: str, output: Path) -> dict[str, Any]:
         if not rows:
             raise ValueError("Rodada não encontrada")
         run = rows[0]
+        observed_at = datetime.now(UTC)
         write(
             output / "status.json",
-            dict(state="waiting_for_run", run_id=run_id, observed_at=datetime.now(UTC)),
+            dict(
+                state="waiting_for_run",
+                run_id=run_id,
+                observed_at=observed_at,
+                poll_interval_seconds=WAIT_SECONDS,
+                next_check_at=observed_at + timedelta(seconds=WAIT_SECONDS),
+            ),
         )
         if run["state"] in TERMINAL and run["finished_at"] is not None:
             return run
         if run["state"] != "running":
             raise ValueError("Rodada não terminou em estado auditável")
-        time.sleep(30)
+        time.sleep(WAIT_SECONDS)
 
 
 def store_body(directory: Path, body: bytes) -> str:

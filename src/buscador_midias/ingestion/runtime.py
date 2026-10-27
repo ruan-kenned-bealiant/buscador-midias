@@ -17,14 +17,24 @@ from psycopg import InterfaceError, OperationalError
 
 from buscador_midias.catalog.postgres import PostgresCatalogStore
 from buscador_midias.ingestion import broker
-from buscador_midias.ingestion.admission import confirm_published, network_candidates
+from buscador_midias.ingestion.admission import (
+    confirm_published,
+    network_candidates,
+    primary_hosts,
+)
 from buscador_midias.ingestion.engine import (
     Engine,
     HostBusyError,
     ProviderUnavailableError,
     RetryableError,
 )
-from buscador_midias.ingestion.flow import DEDUP_BATCH, QUEUE_LIMITS, publication_outside
+from buscador_midias.ingestion.flow import (
+    DEDUP_BATCH,
+    QUEUE_LIMITS,
+    ProviderBreaker,
+    publication_outside,
+    recovery_workers,
+)
 from buscador_midias.ingestion.schema import STAGES
 from buscador_midias.ingestion.store import IngestStore
 
@@ -43,7 +53,9 @@ class Service:
         self.stop = threading.Event()
         self.instance = uuid.uuid4().hex
         self.threads: list[threading.Thread] = []
-        self.cooldowns: dict[str, tuple[float, str]] = {}
+        self.breaker = ProviderBreaker()
+        self.cleanup_every = 30.0
+        self.cleaned_at: dict[tuple[str | None, bool], float] = {}
         self.config_lock = threading.Lock()
         self.config_until = 0.0
         self.cached_config: dict[str, Any] = {}
@@ -74,6 +86,19 @@ class Service:
             result = self.repository.capacity(stage)
             self.capacity_cache[stage] = (time.monotonic() + 0.5, result)
             return result
+
+    def cleanup_due(self, stage: str | None, recovery: bool) -> bool:
+        """A faxina de eventos obsoletos varre toda a outbox; basta repeti-la a cada 30 s.
+
+        Eventos obsoletos nunca são publicados de qualquer forma (a seleção exige a mesma
+        geração e a tarefa aberta), então adiar o descarte só posterga a limpeza do banco.
+        Cada publicador, por etapa e faixa, tem o seu próprio relógio.
+        """
+        key, now = (stage, recovery), time.monotonic()
+        if now - self.cleaned_at.get(key, float("-inf")) < self.cleanup_every:
+            return False
+        self.cleaned_at[key] = now
+        return True
 
     def publish_once(
         self, channel: Any, stage: str | None = None, *, recovery: bool = False
@@ -118,28 +143,19 @@ class Service:
                     occupied[host] = occupied.get(host, 0) + 1
                 if recovery:
                     # Não reservar um host para retentativa se há trabalho novo pronto nele.
-                    primary = db.execute(
-                        "SELECT COALESCE(a.url,j.payload->>'url') url FROM ingest_outbox o "
-                        "JOIN ingest_jobs j ON j.id=o.job_id "
-                        "LEFT JOIN ingest_articles a ON a.hash=j.hash "
-                        "WHERE o.published_at IS NULL AND o.discarded_at IS NULL "
-                        "AND o.ready_at<=now() AND o.dispatch=j.dispatch AND o.kind='work' "
-                        "AND j.stage IN ('discovery','fetch') AND j.state IN ('pending','retry') "
-                        "AND j.failures=0 AND NOT j.payload @> '{\"recovery\":true}'"
-                    ).fetchall()
-                    for r in primary:
-                        host = (urlsplit(r["url"] or "").hostname or "").rstrip(".")
+                    for host in primary_hosts(db):
                         occupied[host] = per_host
-            db.execute(
-                "WITH obsolete AS (SELECT o.id FROM ingest_outbox o JOIN ingest_jobs j "
-                "ON j.id=o.job_id WHERE o.published_at IS NULL AND o.discarded_at IS NULL "
-                "AND (%s::text IS NULL OR o.stage=%s) AND (o.dispatch<>j.dispatch OR "
-                "(o.kind='work' AND j.state IN ('succeeded','failed','skipped','cancelled'))) "
-                "LIMIT 1000 FOR UPDATE OF o SKIP LOCKED) UPDATE ingest_outbox o "
-                "SET discarded_at=now(),discard_reason='completed_or_superseded' "
-                "FROM obsolete x WHERE o.id=x.id",
-                (stage, stage),
-            )
+            if self.cleanup_due(stage, recovery):
+                db.execute(
+                    "WITH obsolete AS (SELECT o.id FROM ingest_outbox o JOIN ingest_jobs j "
+                    "ON j.id=o.job_id WHERE o.published_at IS NULL AND o.discarded_at IS NULL "
+                    "AND (%s::text IS NULL OR o.stage=%s) AND (o.dispatch<>j.dispatch OR "
+                    "(o.kind='work' AND j.state IN ('succeeded','failed','skipped','cancelled'))) "
+                    "LIMIT 1000 FOR UPDATE OF o SKIP LOCKED) UPDATE ingest_outbox o "
+                    "SET discarded_at=now(),discard_reason='completed_or_superseded' "
+                    "FROM obsolete x WHERE o.id=x.id",
+                    (stage, stage),
+                )
             if network:
                 rows = network_candidates(
                     db, str(stage), recovery, occupied, allowance, per_host=per_host
@@ -269,13 +285,13 @@ class Service:
                 defer_seconds=error.retry_after_seconds,
             )
         except ProviderUnavailableError as error:
-            self.cooldowns[job["stage"]] = (time.monotonic() + 300, str(error))
+            self.breaker.failure(job["stage"], str(error))
             self.repository.failure(
                 job,
                 str(error),
                 busy=True,
                 metrics=error.metrics,
-                defer_seconds=300,
+                defer_seconds=int(self.breaker.pause),
                 recovery=True,
             )
         except RetryableError as error:
@@ -364,8 +380,8 @@ class Service:
                 heartbeat_at = 0.0
                 while not self.stop.is_set():
                     config = self.configuration()
-                    cooldown, reason = self.cooldowns.get(stage, (0, ""))
-                    if cooldown > time.monotonic():
+                    reason = self.breaker.paused(stage)
+                    if reason is not None:
                         if time.monotonic() >= heartbeat_at:
                             self.heartbeat(owner, stage, "error", reason)
                             heartbeat_at = time.monotonic() + 10
@@ -455,7 +471,8 @@ class Service:
             config = self.repository.settings()["config"]
             for selected in [stage] if stage else STAGES:
                 # Alterar concorrência exige reiniciar o serviço se ultrapassar os slots abertos.
-                targets.append((self.worker, (selected, 0, True)))
+                for number in range(recovery_workers(config["workers"][selected])):
+                    targets.append((self.worker, (selected, number, True)))
                 for number in range(config["workers"][selected]):
                     targets.append((self.worker, (selected, number)))
         for target, args in targets:
@@ -487,6 +504,7 @@ def main(argv: list[str] | None = None) -> int:
             "sources-pilot",
             "backfill-lastmod",
             "backfill-context-themes",
+            "stop-runs",
         ),
     )
     parser.add_argument(
@@ -536,6 +554,11 @@ def main(argv: list[str] | None = None) -> int:
 
         with connect_postgres() as corpus:
             print(json.dumps(backfill_themes(corpus, apply=args.apply), ensure_ascii=False))
+    elif args.command == "stop-runs":
+        if not args.apply:
+            print("Cancela o trabalho não analisado das rodadas abertas; confirme com --apply.")
+            return 1
+        print(json.dumps(repository.stop_runs(), ensure_ascii=False))
     elif args.command == "status":
         print(
             json.dumps(repository.jsonable(repository.overview()), ensure_ascii=False, default=str)

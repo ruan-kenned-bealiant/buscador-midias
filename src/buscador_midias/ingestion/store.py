@@ -9,6 +9,7 @@ import re
 import shutil
 import threading
 import uuid
+from collections import Counter
 from contextlib import AbstractContextManager, nullcontext
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -21,12 +22,13 @@ from buscador_midias.catalog.health_store import HealthStore
 from buscador_midias.catalog.postgres import WRITE_LOCK
 from buscador_midias.catalog.store import CatalogError
 from buscador_midias.domain.url import url_hash
-from buscador_midias.ingestion.connections import IngestConnections
+from buscador_midias.ingestion.connections import CHECKPOINT_POOL_SIZE, IngestConnections
 from buscador_midias.ingestion.flow import (
     BACKLOG_LIMITS,
     RESERVE_BYTES,
     clock_slot,
     day_window,
+    is_last_attempt,
     today_start,
 )
 from buscador_midias.ingestion.schema import (
@@ -37,9 +39,14 @@ from buscador_midias.ingestion.schema import (
     LASTMOD_FILTER_MODES,
     SCHEMA_VERSION,
     STAGES,
+    URL_FILTER_MODES,
 )
 
 TERMINAL = ("succeeded", "failed", "skipped", "cancelled")
+# Teto de workers por etapa; o pool de checkpoints (connections.py) é dimensionado para ele.
+MAX_WORKERS = 64
+# Etapas que ``stop_runs`` cancela: ainda não gastaram análise de IA.
+STOPPABLE = ("discovery", "dedup", "fetch", "context")
 
 
 class IngestStore:
@@ -69,7 +76,9 @@ class IngestStore:
     def start_pool(self) -> None:
         """O serviço habilita reutilização; ferramentas e testes podem usar conexão direta."""
         if self.pool is None:
-            self.pool = IngestConnections(self.store.schema, self.store.env)
+            self.pool = IngestConnections(
+                self.store.schema, self.store.env, max_size=CHECKPOINT_POOL_SIZE
+            )
             try:
                 self.publisher_pool = IngestConnections(
                     self.store.schema, self.store.env, name="ingest-publish", min_size=0
@@ -324,15 +333,18 @@ class IngestStore:
                 if (
                     not isinstance(value, dict)
                     or set(value) != set(STAGES)
-                    or any(type(v) is not int or not 1 <= v <= 32 for v in value.values())
+                    or any(type(v) is not int or not 1 <= v <= MAX_WORKERS for v in value.values())
                 ):
-                    raise CatalogError("Informe 1 a 32 workers por etapa.")
+                    raise CatalogError(f"Informe 1 a {MAX_WORKERS} workers por etapa.")
             elif key == "content_filter":
                 if value not in CONTENT_FILTER_MODES:
                     raise CatalogError("Selecione o modo do filtro de conteúdo válido.")
             elif key == "lastmod_filter":
                 if value not in LASTMOD_FILTER_MODES:
                     raise CatalogError("Selecione o modo do filtro por lastmod válido.")
+            elif key == "url_filter":
+                if value not in URL_FILTER_MODES:
+                    raise CatalogError("Selecione o modo do filtro por forma da URL válido.")
             elif key == "blocked_content_categories":
                 if (
                     not isinstance(value, list)
@@ -668,7 +680,7 @@ class IngestStore:
                 return "stale"
             exhausted = not busy and (
                 not retryable
-                or current["failures"] + 1 >= min(3, job["run"]["config"]["max_attempts"])
+                or is_last_attempt(current["failures"], job["run"]["config"]["max_attempts"])
             )
             state = "failed" if exhausted else "retry"
             delay = (
@@ -798,7 +810,7 @@ class IngestStore:
                     "((a.payload->>'published_at')::timestamptz BETWEEN %s AND %s "
                     "OR ((a.payload->>'route_period_since')::timestamptz<=%s "
                     "AND (a.payload->>'route_period_until')::timestamptz>=%s))) "
-                    "OR (a.status='date_unknown' AND %s)) "
+                    "OR (a.status='date_unknown' AND %s) OR a.status='cancelled') "
                     "AND NOT EXISTS(SELECT 1 FROM ingest_jobs j WHERE j.hash=a.hash "
                     "AND j.state NOT IN ('succeeded','failed','skipped','cancelled')) "
                     "RETURNING hash,generation), "
@@ -904,7 +916,7 @@ class IngestStore:
                 "WHERE j.state='running' AND j.lease_until<now() FOR UPDATE OF j SKIP LOCKED"
             ).fetchall()
             for row in abandoned:
-                failed = row["failures"] + 1 >= min(3, row["config"]["max_attempts"])
+                failed = is_last_attempt(row["failures"], row["config"]["max_attempts"])
                 db.execute(
                     "UPDATE ingest_jobs SET "
                     "state=%s,failures=failures+1,owner=NULL,lease_until=NULL,"
@@ -947,7 +959,7 @@ class IngestStore:
             # Inclui URLs compartilhadas em trânsito, mesmo quando processadas por outra rodada.
             db.execute(
                 "UPDATE ingest_runs r SET state=CASE WHEN EXISTS(SELECT 1 FROM "
-                "ingest_jobs j WHERE j.run_id=r.id AND (j.state='failed' OR "
+                "ingest_jobs j WHERE j.run_id=r.id AND (j.state IN ('failed','cancelled') OR "
                 "COALESCE((j.result->>'coverage_partial')::boolean,false))) "
                 "OR EXISTS(SELECT 1 FROM ingest_occurrences o JOIN ingest_articles a "
                 "ON a.hash=o.hash WHERE o.run_id=r.id AND a.status IN "
@@ -959,6 +971,51 @@ class IngestStore:
                 "ON j.hash=o.hash WHERE o.run_id=r.id "
                 "AND j.state NOT IN ('succeeded','failed','skipped','cancelled'))"
             )
+
+    def stop_runs(self) -> dict[str, Any]:
+        """Cancela o trabalho ainda não analisado das rodadas abertas e libera seus artigos.
+
+        Só ``STOPPABLE`` é cancelado, e apenas o que ninguém executa: evidência e persistência
+        seguem porque o artigo já foi analisado (e pago) e concluí-las custa quase nada.
+        Os artigos interrompidos ficam ``cancelled``, estado que a descoberta readmite; sem
+        isso a próxima rodada os trataria como já conhecidos e a notícia se perderia.
+        A ordem de locks (outbox, jobs) é a do publicador, para não gerar deadlock.
+        """
+        with self.connection() as db:
+            db.execute("SELECT pg_advisory_xact_lock(%s)", (WRITE_LOCK + 10,))
+            targets = (
+                "SELECT j.id FROM ingest_jobs j JOIN ingest_runs r ON r.id=j.run_id "
+                "WHERE r.state='running' AND j.stage=ANY(%s) "
+                "AND j.state IN ('pending','queued','retry')"
+            )
+            db.execute(
+                f"WITH locked AS (SELECT o.id FROM ingest_outbox o WHERE o.job_id IN ({targets}) "
+                "AND o.published_at IS NULL AND o.discarded_at IS NULL ORDER BY o.id FOR UPDATE) "
+                "UPDATE ingest_outbox o SET discarded_at=now() FROM locked l WHERE o.id=l.id",
+                (list(STOPPABLE),),
+            )
+            cancelled = db.execute(
+                f"WITH locked AS ({targets} ORDER BY j.id FOR UPDATE OF j) "
+                "UPDATE ingest_jobs j SET state='cancelled',owner=NULL,lease_until=NULL,"
+                "finished_at=now(),outcome='cancelada',updated_at=now() FROM locked l "
+                "WHERE j.id=l.id RETURNING j.stage,j.hash",
+                (list(STOPPABLE),),
+            ).fetchall()
+            hashes = sorted({row["hash"] for row in cancelled if row["hash"]})
+            if hashes:
+                db.execute(
+                    "WITH locked AS (SELECT a.hash FROM ingest_articles a WHERE a.hash=ANY(%s) "
+                    "AND a.status IN ('pending','fetch','context','evidence','persist') "
+                    "AND NOT EXISTS(SELECT 1 FROM ingest_jobs j WHERE j.hash=a.hash AND "
+                    "j.state NOT IN ('succeeded','failed','skipped','cancelled')) "
+                    "ORDER BY a.hash FOR UPDATE OF a) "
+                    "UPDATE ingest_articles a SET status='cancelled',updated_at=now() "
+                    "FROM locked l WHERE a.hash=l.hash",
+                    (hashes,),
+                )
+        return dict(
+            cancelled=len(cancelled), by_stage=dict(Counter(row["stage"] for row in cancelled))
+        )
 
     def heartbeat(self, owner: str, role: str, status: str, detail: str = "") -> None:
         """Sinaliza serviço real e falhas sem expor credenciais."""

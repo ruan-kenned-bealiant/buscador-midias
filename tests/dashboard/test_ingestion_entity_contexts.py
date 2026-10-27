@@ -107,3 +107,61 @@ def test_mudanca_de_modelo_invalida_checkpoint_sem_reaproveitar_parecer_antigo(i
     result = engine.context(job)
     assert analyzer.identifications == 2
     assert result["article"]["analysis"]["model"] == "model/new-version"
+
+
+class Rejecting(ManyEntities):
+    """O validador recusa o parecer das entidades de ``refused``, como em ``incompatible_alert``."""
+
+    def __init__(self, refused):
+        super().__init__()
+        self.refused = set(refused)
+
+    def analyze_entities(self, item, entities):
+        self.batches.append([e["name"] for e in entities])
+        return Analyzer.analyze_entities(
+            self, item, [e for e in entities if e["name"] not in self.refused]
+        )
+
+
+def final_attempt(job):
+    """Terceira tentativa: ``failure()`` marcaria o job como ``failed`` se ela também falhar."""
+    job["failures"] = 2
+    return job
+
+
+def test_ultima_tentativa_grava_o_parcial_validado_sem_parar_no_primeiro_lote_incompleto(ingest):
+    job = final_attempt(context_job(ingest))
+    analyzer = Rejecting({"Pessoa 05", "Pessoa 17"})
+    result = Engine(ingest, analyzer_factory=lambda: analyzer).context(job)
+    analysis = result["article"]["analysis"]
+    assert len(analysis["entity_contexts"]) == 28
+    assert analysis["entity_context_missing"] == ["Pessoa 05", "Pessoa 17"]
+    assert list(map(len, analyzer.batches)) == [4] * 7 + [2]
+
+
+def test_parcial_marca_a_cobertura_como_incompleta(ingest):
+    job = final_attempt(context_job(ingest))
+    result = Engine(ingest, analyzer_factory=lambda: Rejecting({"Pessoa 05"})).context(job)
+    assert result["coverage_partial"] is True
+    assert result["next"] == "evidence"
+
+
+def test_antes_da_ultima_tentativa_o_lote_incompleto_continua_pendente(ingest):
+    job = context_job(ingest)
+    engine = Engine(ingest, analyzer_factory=lambda: Rejecting({"Pessoa 05"}))
+    with pytest.raises(RetryableError, match="lote pendente"):
+        engine.context(job)
+
+
+def test_ultima_tentativa_sem_nenhum_parecer_valido_continua_falhando(ingest):
+    job = final_attempt(context_job(ingest))
+    everyone = {f"Pessoa {i:02}" for i in range(30)}
+    engine = Engine(ingest, analyzer_factory=lambda: Rejecting(everyone))
+    with pytest.raises(RetryableError, match="lote pendente"):
+        engine.context(job)
+
+
+def test_parcial_nao_inventa_lista_quando_tudo_foi_validado(ingest):
+    job = final_attempt(context_job(ingest))
+    result = Engine(ingest, analyzer_factory=lambda: Rejecting(set())).context(job)
+    assert "entity_context_missing" not in result["article"]["analysis"]

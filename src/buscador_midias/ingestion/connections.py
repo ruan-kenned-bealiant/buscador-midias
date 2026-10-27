@@ -12,6 +12,9 @@ from psycopg_pool import ConnectionPool
 
 from buscador_midias.catalog.postgres import postgres_parameters
 
+# Pool de checkpoints: atende as threads de worker (até MAX_WORKERS por etapa) e o agendador.
+CHECKPOINT_POOL_SIZE = 24
+
 
 class IngestConnections:
     """Evita reconectar por checkpoint sem emprestar conexões entre threads simultâneas."""
@@ -23,13 +26,14 @@ class IngestConnections:
         *,
         name: str = "ingest-short",
         min_size: int = 2,
+        max_size: int = 12,
     ) -> None:
-        """Abre no máximo doze conexões curtas por processo de ingestão."""
+        """Abre no máximo ``max_size`` conexões curtas por processo de ingestão."""
         self.schema = schema
         self.pool: ConnectionPool[Any] = ConnectionPool(
             kwargs={**postgres_parameters(env), "row_factory": dict_row},
             min_size=min_size,
-            max_size=12,
+            max_size=max_size,
             max_idle=30,
             timeout=10,
             name=name,

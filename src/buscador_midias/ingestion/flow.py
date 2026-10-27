@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import re
+import threading
+import time as monotonic_time
+from collections import deque
+from collections.abc import Callable
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 QUEUE_LIMITS = dict(discovery=64, dedup=1000, fetch=64, context=32, evidence=32, persist=32)
@@ -13,6 +19,72 @@ QUEUE_LIMITS = dict(discovery=64, dedup=1000, fetch=64, context=32, evidence=32,
 BACKLOG_LIMITS = dict(context=200, persist=200)
 DEDUP_BATCH = 500
 RESERVE_BYTES = 256 * 1024 * 1024
+
+
+def recovery_workers(workers: int) -> int:
+    """Workers da fila de recuperação: um para cada oito principais, nunca menos de um.
+
+    Os principais só ajudam a recuperação quando sua fila esvazia, o que não ocorre enquanto a
+    etapa anterior a alimenta; com um único worker dedicado, as retentativas se acumulavam.
+    """
+    return max(1, workers // 8)
+
+
+class ProviderBreaker:
+    """Pausa uma etapa só quando o provedor falha de forma repetida, não em erro isolado.
+
+    Com dezenas de workers na mesma etapa, uma resposta vazia ou um HTTP 502 por minuto é
+    normal; pausar todos por causa de um deixava a etapa parada por minutos seguidos. A etapa
+    abre após ``threshold`` falhas em ``window`` segundos (somadas entre os workers), pausa por
+    ``pause`` segundos e recomeça a contar do zero. Falhas de jobs que já estavam em andamento
+    durante a pausa não a prolongam.
+    """
+
+    def __init__(
+        self,
+        threshold: int = 5,
+        window: float = 60,
+        pause: float = 60,
+        clock: Callable[[], float] = monotonic_time.monotonic,
+    ) -> None:
+        """``clock`` é injetável para testar a janela sem esperar."""
+        self.threshold = threshold
+        self.window = window
+        self.pause = pause
+        self.clock = clock
+        self.lock = threading.Lock()
+        self.failures: dict[str, deque[float]] = {}
+        self.open_until: dict[str, tuple[float, str]] = {}
+
+    def failure(self, stage: str, reason: str) -> bool:
+        """Registra a falha; devolve ``True`` apenas quando ela abre a etapa."""
+        with self.lock:
+            now = self.clock()
+            if self._reason(stage, now) is not None:
+                return False
+            recent = self.failures.setdefault(stage, deque())
+            recent.append(now)
+            while recent and now - recent[0] > self.window:
+                recent.popleft()
+            if len(recent) < self.threshold:
+                return False
+            recent.clear()
+            self.open_until[stage] = (now + self.pause, reason)
+            return True
+
+    def paused(self, stage: str) -> str | None:
+        """Motivo da pausa em vigor para a etapa, ou ``None`` quando ela pode trabalhar."""
+        with self.lock:
+            return self._reason(stage, self.clock())
+
+    def _reason(self, stage: str, now: float) -> str | None:
+        until, reason = self.open_until.get(stage, (0.0, ""))
+        return reason if until > now else None
+
+
+def is_last_attempt(failures: int, max_attempts: int) -> bool:
+    """A tentativa em curso é a última: se falhar, o job vira ``failed`` em vez de ``retry``."""
+    return failures + 1 >= min(3, max_attempts)
 
 
 def today_start(now: datetime, timezone: str = "America/Sao_Paulo") -> datetime:
@@ -82,6 +154,53 @@ def lastmod_outside(stamp: str | None, since: datetime) -> dict[str, Any] | None
     if bound >= since:
         return None
     return dict(rule="lastmod_before_window", lastmod=stamp, bound=bound.isoformat())
+
+
+# Dia no caminho da URL (/AAAA/MM/DD), sem aceitar dígitos colados que formariam outro número.
+PATH_DATE = re.compile(r"/(20\d{2})/(\d{2})/(\d{2})(?!\d)")
+# Primeiro segmento que identifica listagem de assunto, tag ou autor, nunca uma notícia.
+INDEX_SEGMENTS = frozenset({"topic", "topics", "tag", "tags", "author", "authors", "taxonomy"})
+
+
+def path_date_outside(
+    url: str, since: datetime, timezone: str = "America/Sao_Paulo"
+) -> dict[str, Any] | None:
+    """Exclui quando o dia do caminho terminou antes do início da janela, no fuso da rodada.
+
+    O dia do caminho é uma pista, não uma data de publicação: serve só para excluir, e só
+    quando o dia inteiro já passou. Dias iguais ou posteriores ao início da janela, datas
+    impossíveis e URLs sem data nunca são excluídos.
+    """
+    match = PATH_DATE.search(urlsplit(url).path) if isinstance(url, str) else None
+    if not match:
+        return None
+    try:
+        day = date(*map(int, match.groups()))
+        end = datetime.combine(day + timedelta(days=1), time.min, ZoneInfo(timezone))
+    except (ValueError, KeyError):
+        return None
+    if end > since:
+        return None
+    return dict(rule="path_date_before_window", path_date=day.isoformat(), bound=end.isoformat())
+
+
+def index_page(url: str) -> dict[str, Any] | None:
+    """Reconhece página de índice pelo primeiro segmento do caminho, nunca por posição solta.
+
+    ``/native/negocios/topics/x/article/123`` é uma notícia que só contém a palavra mais
+    adiante; por isso só o primeiro segmento decide.
+    """
+    if not isinstance(url, str):
+        return None
+    segment = urlsplit(url).path.lstrip("/").split("/", 1)[0].lower()
+    return dict(rule="index_page", segment=segment) if segment in INDEX_SEGMENTS else None
+
+
+def url_outside(
+    url: str, since: datetime, timezone: str = "America/Sao_Paulo", *, explicit_date: bool = False
+) -> dict[str, Any] | None:
+    """Decide pela forma da URL: índice sempre; data do caminho só sem publicação explícita."""
+    return index_page(url) or (None if explicit_date else path_date_outside(url, since, timezone))
 
 
 def publication_outside(job: dict[str, Any]) -> dict[str, Any] | None:

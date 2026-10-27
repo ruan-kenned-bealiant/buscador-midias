@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from buscador_midias.ingestion import broker
+from buscador_midias.ingestion.flow import recovery_workers
 from buscador_midias.ingestion.runtime import Service
 
 
@@ -195,3 +196,11 @@ def test_context_capacity_does_not_query_database_for_evidence_backlog():
 
     repository.connection = forbidden
     assert repository.capacity("context") == (True, "")
+
+
+@pytest.mark.parametrize(
+    ("workers", "expected"),
+    [(1, 1), (7, 1), (8, 1), (9, 1), (16, 2), (18, 2), (28, 3), (45, 5), (64, 8)],
+)
+def test_recovery_lane_has_one_worker_per_eight_primary_workers_and_never_none(workers, expected):
+    assert recovery_workers(workers) == expected

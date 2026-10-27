@@ -17,8 +17,12 @@ A rodada congela URL, site, mecanismo, parâmetros, transporte e revisões. A ja
 A etapa de contexto agora identifica entidades e avalia sua participação em lotes
 de até quatro. Cada entidade identificada recebe parecer próprio, salvo em
 `midias_ia_article_contexts` na transação de gravação do artigo. Respostas parciais
-mantêm checkpoints e retomam somente as entidades faltantes. Isso acrescenta chamadas
-de IA e custo; não transfere o alerta geral para vítimas ou autoridades. Veja
+mantêm checkpoints e retomam somente as entidades faltantes. Na última tentativa do job
+(`is_last_attempt`) o parcial validado é gravado: a rodada fica `partial`, a análise lista
+as entidades sem parecer em `entity_context_missing` e o artigo não é perdido. Se nenhuma
+entidade validou, o job segue falhando. Isso acrescenta chamadas de IA e custo, em série
+por artigo (uma de análise mais uma por lote); não transfere o alerta geral para vítimas
+ou autoridades. Veja
 [contrato, limites e convivência com KyX/powerDD](../CONTEXTO_POR_ENTIDADE.md).
 
 ```mermaid
@@ -142,6 +146,29 @@ extraída. Em `enforce` a descoberta nem cria as tarefas de dedup e fetch (métr
 usando os XMLs em cache. Sem `--apply` apenas relata; com `--apply` recusa agir se alguma
 notícia já confirmada dentro da janela teria sido excluída.
 
+## Filtro pela forma da URL
+
+`url_filter=off|shadow|enforce` (padrão `shadow`, como o `lastmod_filter`) decide só pela URL, na
+descoberta, antes de criar as tarefas de dedup e fetch. Duas regras, ambas só para excluir:
+
+- **Página de índice:** o **primeiro** segmento do caminho é `topic`, `topics`, `tag`, `tags`,
+  `author`, `authors` ou `taxonomy` (`/author/ana`, `/topics/economia`). Só o primeiro segmento
+  decide: `/native/negocios/topics/x/article/123` é notícia e não é barrada. No histórico, de
+  19.267 URLs com esse primeiro segmento só 3 viraram artigo aceito.
+- **Dia do caminho anterior à janela:** `/AAAA/MM/DD` no caminho, com o dia inteiro encerrado
+  antes do início da janela no fuso da rodada (`timezone`). O dia do caminho é pista, nunca data
+  de publicação. Dias iguais ou posteriores ao início da janela, datas impossíveis e URLs sem
+  data nunca são excluídos. Não vale para URL com publicação explícita no XML (news sitemap,
+  RSS), que continua decidindo pela regra antiga. Na checagem histórica de 3 dias, das URLs
+  com caminho anterior à janela da própria rodada, 7.062 terminaram `outside_window` e 218
+  (cerca de 3%) foram aceitas: esse é o custo conhecido da regra, aceito para não baixar
+  milhares de notícias da véspera.
+
+Em `shadow` a URL segue o fluxo e a descoberta registra `payload.shadow_url_exclusion`; em
+`enforce` ela nem vira tarefa (métrica `url_excluded_urls`). Como a configuração da rodada é
+congelada na criação, **rodadas já abertas não mudam de modo**: só a próxima rodada usa o valor
+atual. O filtro age na descoberta; tarefas já criadas continuam seguindo o fluxo.
+
 ## Seleção de candidatos de rede por host
 
 O publicador escolhe, a cada ciclo, a primeira tarefa pronta de cada host, alternando os hosts
@@ -150,6 +177,14 @@ inserção (qualquer caminho, inclusive o lote do dedup) e indexada junto com a 
 que o custo cresce com o número de hosts e não com o tamanho da fila. Antes, cada ciclo
 ordenava toda a fila pronta; com ~78 mil tarefas isso levava 2 a 3 s e deixava os workers de
 `fetch` ociosos.
+
+O ciclo do publicador também foi enxugado: a faxina de eventos obsoletos (que varre toda a
+outbox não publicada, ~0,9 s com 33 mil linhas) roda no máximo a cada 30 s por publicador, o que
+é seguro porque evento obsoleto nunca é publicado mesmo sem a faxina; e a lista de hosts com
+trabalho novo, que o publicador de recuperação consulta segurando a trava global, deixou de
+varrer e interpretar todas as linhas em Python (1.304 ms) para saltar de host em host pelo
+índice `(stage, host)` (6 ms, mesmo resultado). Os dois custos pesavam em cada ciclo e
+disputavam a trava com o publicador principal, o que espaçava os lotes do `fetch`.
 
 `host_concurrency` (1 a 4, padrão 1) define quantas tarefas podem estar em trânsito no mesmo
 host. A trava de execução usa vagas por host (`Engine.reserve_host`); com 1, o comportamento
@@ -161,8 +196,10 @@ hosts que toleram.
 Uma resposta HTTP 200 sem `choices` (o provedor de origem falhou e o OpenRouter devolveu um
 objeto de erro) agora é repetida pelo cliente, com a mesma espera exponencial das falhas 429/5xx,
 antes de virar falha. Só depois de esgotar as tentativas o erro "resposta sem conteúdo" chega ao
-motor, que então pausa a etapa de contexto por 5 minutos em todo o processo. Em 24 h houve 40
-dessas pausas, 10 só na última hora observada; cada uma interrompe o contexto e, por contenção
-de backlog, o `fetch` também. A pausa de 5 minutos continua sendo o comportamento (um teste a fixa); ajustá-la
-é decisão pendente.
+motor, que registra a falha no disjuntor do serviço (`ProviderBreaker`, em `flow.py`). Em 24 h de
+26/10 houve 40 pausas de 5 minutos por um único erro, que paravam o contexto e, por contenção de
+backlog, o `fetch`. Hoje uma falha isolada só adia o próprio job por 60 s; a etapa só pausa por
+60 s quando há 5 falhas do provedor em 60 s, somadas entre todos os workers dela, e a contagem
+recomeça do zero depois da pausa. Falhas de jobs que já estavam em andamento durante a pausa não a
+prolongam. Uma queda real do OpenRouter ainda paralisa a etapa em segundos; um erro transitório não.
 

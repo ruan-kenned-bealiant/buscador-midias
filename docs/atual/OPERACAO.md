@@ -87,6 +87,7 @@ O runtime pode separar papéis: `ingest serve --role scheduler|publisher|worker`
 | `workers` | discovery 2, dedup 1, fetch 2, context 1, evidence 1, persist 1; são padrões, não contagem atual garantida |
 | `content_filter`, `blocked_content_categories` | `shadow`, horóscopo/clima/culinária/esportes; ver ressalva sobre filtro final em [Fluxo](FLUXO_NOTICIAS.md) |
 | `lastmod_filter` | `shadow`; `off`, `shadow` ou `enforce`; exclui URLs com `lastmod` anterior à janela, ver [Fluxo](FLUXO_NOTICIAS.md) |
+| `url_filter` | `shadow`; `off`, `shadow` ou `enforce`; exclui páginas de índice (`/topics/`, `/author/`, `/tag/`, `/taxonomy/`) e URLs cujo dia no caminho terminou antes da janela, ver [Fluxo](FLUXO_NOTICIAS.md) |
 | `host_concurrency` | 1; 1 a 4 tarefas simultâneas por host; mais que 1 aumenta a carga sobre o site |
 | `bright_data` | false; habilitação é rejeitada pela API da ingestão |
 | `evidence_paid_adverse_only` | true; compatibilidade da política do capturador, sem ativar provedor pago ausente |
@@ -110,7 +111,7 @@ Consulte `/buscador` para a rodada/etapas/sites e `/saude` para as verificaçõe
 | Rabbit mostra zero consumidores | Runtime usa `basic_get`; conferir heartbeat, tarefas e logs |
 | Fila diminui e fim fica lento | Hosts restantes, cooldown, retentativas, backpressure e conteúdo de tarefas; não concluir que workers foram reduzidos |
 | Descoberta para de produzir | Reserva de disco, backlog seguinte, host ocupado, configuração de workers e outbox |
-| Contexto acumula | Credencial/modelo, limites/resposta do OpenRouter, cooldown e custo/uso registrado |
+| Contexto acumula | Credencial/modelo, limites/resposta do OpenRouter, disjuntor (pausa de 60 s após 5 falhas do provedor em 60 s) e custo/uso registrado |
 | 403/503 abre no navegador | Comparar transporte/headers/sessão, resposta e conteúdo; executar amostra finita pelo teste, sem presumir artigo válido |
 | Site com 100% e pendências | Abrir tarefas e diagnósticos: falhas atuais/herdadas, cobertura parcial, data/evidência pendente |
 | Evidência em branco | Conferir arquivo e resposta original, conteúdo realmente capturado, dependência de recursos externos e rejeições do capturador |
@@ -203,10 +204,19 @@ só a quantidade de workers de evidência. A proteção de disco continua ativa.
 ## Otimização de descoberta/verificação
 
 O serviço requer `psycopg_pool>=3.2,<4`, declarado no `pyproject.toml`. O pool abre
-entre 2 e 12 conexões curtas por processo, com espera máxima de 10 segundos. Publicadores
+entre 2 e 24 conexões curtas por processo (`CHECKPOINT_POOL_SIZE`), com espera máxima de
+10 segundos; com 12 ele estourava `PoolTimeout` quando dezenas de threads acordavam juntas
+(início do serviço, abertura de rodada, religar workers). Publicadores
 usam um segundo pool de 0 a 12 conexões: confirmações RabbitMQ não podem ocupar os
-slots dos checkpoints. Locks HTTP mantêm conexões próprias; dimensione também os
-demais serviços no PostgreSQL. Os pools podem somar 24 conexões, além dos leitores HTTP.
+slots dos checkpoints. Locks HTTP mantêm conexões próprias (só leitores de fetch e
+descoberta); dimensione também os demais serviços no PostgreSQL. Os pools podem somar 36
+conexões, além dos leitores HTTP. A concorrência aceita 1 a 64 workers por etapa; mais
+slots que os abertos na inicialização exigem reiniciar o serviço.
+A fila de recuperação (tarefas com falha anterior) tem workers próprios: um para cada oito
+principais da etapa, no mínimo um (`recovery_workers`; 45 de contexto dão 5). Os principais
+só ajudam a recuperação quando sua fila esvazia, o que não acontece enquanto a etapa
+anterior a alimenta; com um único worker dedicado as retentativas se acumulavam (505 jobs
+de contexto elegíveis e parados em 27/10).
 O pool encerra depois da drenagem cooperativa dos workers. Alterações no código
 exigem reiniciar o serviço de ingestão, preservando a rodada e suas tarefas.
 
@@ -228,6 +238,20 @@ das últimas `--hours` horas (padrão 6). Só toca tarefas abertas de dedup/fetc
 ainda não estão no corpus; as encerradas ficam como `outside_window` com resultado
 `fora_da_janela_por_lastmod`. Com `--apply`, qualquer notícia já confirmada dentro da janela
 que a regra teria excluído (campo `violations`) cancela a aplicação inteira.
+
+## Parar as rodadas abertas
+
+```bash
+scripts/bm.sh ingest stop-runs --apply   # sem --apply só mostra o aviso
+```
+
+Cancela as tarefas ainda não executadas de descoberta, dedup, fetch e contexto das rodadas
+em andamento (as que um worker está rodando terminam sozinhas), descarta as mensagens ainda
+não publicadas e marca os artigos interrompidos como `cancelled`. A descoberta seguinte
+readmite `cancelled` com nova geração; sem isso a próxima rodada trataria o artigo como já
+conhecido e a notícia se perderia. Evidência e persistência seguem até o fim, pois o artigo
+já foi analisado. As rodadas fecham como `partial` quando a última tarefa termina. Pausar
+os workers (`workers_enabled`) não cancela nada: o serviço fica ativo, mas ocioso.
 
 ## Reinício sem disputa de locks
 

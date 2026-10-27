@@ -515,6 +515,11 @@ A seleção abaixo é um mapa, não um relatório de execução. Suítes de Post
 - [test_ingestion_fast_batch.py](../../tests/dashboard/test_ingestion_fast_batch.py): consistência, rollback, retomada e benchmark PostgreSQL isolado.
 - [test_ingestion_document_memo.py](../../tests/dashboard/test_ingestion_document_memo.py): concorrência, isolamento, expiração e limites da reutilização HTTP.
 - [ingestion/admission.py](../../src/buscador_midias/ingestion/admission.py): primeiro candidato pronto de cada host por salto no índice do outbox, com `host_concurrency` tarefas por host.
+- [tests/dashboard/test_ingestion_stop_runs.py](../../tests/dashboard/test_ingestion_stop_runs.py): `ingest stop-runs`, cancela o trabalho não analisado, libera os artigos (`cancelled`) e fecha a rodada como `partial`.
+- [tests/dashboard/test_ingestion_pool.py](../../tests/dashboard/test_ingestion_pool.py): tamanho dos pools de checkpoint (24) e de publicação (12).
+- [tests/dashboard/test_ingestion_breaker.py](../../tests/dashboard/test_ingestion_breaker.py): disjuntor do provedor (5 falhas em 60 s, pausa de 60 s, etapas independentes).
+- [tests/dashboard/test_ingestion_url_filter.py](../../tests/dashboard/test_ingestion_url_filter.py): `url_filter` (página de índice e dia do caminho anterior à janela), modos `off/shadow/enforce` e validação.
+- [tests/dashboard/test_ingestion_publisher.py](../../tests/dashboard/test_ingestion_publisher.py): faxina periódica de obsoletos e hosts com trabalho novo por salto de índice.
 - [ingestion/lastmod_backfill.py](../../src/buscador_midias/ingestion/lastmod_backfill.py): `ingest backfill-lastmod`, aplica o filtro por `lastmod` às tarefas já criadas.
 - [test_ingestion_host_index.py](../../tests/dashboard/test_ingestion_host_index.py): coluna `host`, gatilho, seleção por host, vagas por host e trava de execução.
 - [test_ingestion_lastmod.py](../../tests/dashboard/test_ingestion_lastmod.py): regra de `lastmod`, modos `off|shadow|enforce` e validação da configuração.

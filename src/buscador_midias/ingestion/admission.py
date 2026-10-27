@@ -34,6 +34,25 @@ _WORK = (
     "LIMIT %(limit)s FOR UPDATE OF o SKIP LOCKED"
 )
 
+# Hosts com trabalho novo (nunca tentado, fora da recuperação) pronto agora. Salta de host em
+# host pelo índice (stage, host) e sonda cada um com EXISTS, em vez de listar todas as linhas:
+# o custo cresce com o número de hosts, não com o tamanho do backlog.
+_PRIMARY = (
+    "WITH RECURSIVE hosts(host) AS ("
+    "(SELECT host FROM ingest_outbox WHERE stage=%(stage)s AND published_at IS NULL "
+    "AND discarded_at IS NULL AND host IS NOT NULL ORDER BY host LIMIT 1) "
+    "UNION ALL "
+    "SELECT (SELECT o.host FROM ingest_outbox o WHERE o.stage=%(stage)s "
+    "AND o.published_at IS NULL AND o.discarded_at IS NULL AND o.host>h.host "
+    "ORDER BY o.host LIMIT 1) FROM hosts h WHERE h.host IS NOT NULL) "
+    "SELECT h.host FROM hosts h WHERE h.host IS NOT NULL AND EXISTS ("
+    "SELECT 1 FROM ingest_outbox o JOIN ingest_jobs j ON j.id=o.job_id "
+    "WHERE o.stage=%(stage)s AND o.host=h.host AND o.published_at IS NULL "
+    "AND o.discarded_at IS NULL AND o.ready_at<=now() AND o.dispatch=j.dispatch "
+    "AND o.kind='work' AND j.state IN ('pending','retry') AND j.failures=0 "
+    "AND NOT j.payload @> '{\"recovery\":true}')"
+)
+
 _FAILED = (
     "SELECT o.id,o.job_id,o.kind,o.stage,COALESCE(a.url,j.payload->>'url') url "
     "FROM ingest_outbox o JOIN ingest_jobs j ON j.id=o.job_id "
@@ -43,6 +62,15 @@ _FAILED = (
     "AND o.dispatch=j.dispatch ORDER BY o.ready_at,o.id LIMIT %(limit)s "
     "FOR UPDATE OF o SKIP LOCKED"
 )
+
+
+def primary_hosts(db: Any) -> set[str]:
+    """Hosts de descoberta ou fetch com trabalho novo pronto, que a recuperação deve respeitar."""
+    return {
+        row["host"]
+        for stage in ("discovery", "fetch")
+        for row in db.execute(_PRIMARY, dict(stage=stage)).fetchall()
+    }
 
 
 def network_candidates(

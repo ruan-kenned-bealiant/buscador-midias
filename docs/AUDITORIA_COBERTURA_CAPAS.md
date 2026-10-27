@@ -3,6 +3,8 @@
 A auditoria acompanha a rodada `3727178f41234734aa62b1bd48243609`. A referência é
 congelada **enquanto a rodada ainda processa**, e a comparação definitiva espera
 seu encerramento (`completed` ou `partial`, com `finished_at`). Não inicia ingestão.
+A espera consulta a rodada a cada **3 minutos** e avança automaticamente quando
+detecta seu encerramento. `status.json` informa o instante da próxima verificação.
 
 Painel: **http://127.0.0.1:8765/testes/cobertura**. Enquanto a captura acontece,
 o relatório informa a quantidade de fontes observadas e não é um resultado final.

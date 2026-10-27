@@ -140,7 +140,7 @@ def test_waits_for_exact_run_completion_without_http(monkeypatch, tmp_path):
     monkeypatch.setattr(audit, "read_db", read)
     monkeypatch.setattr(audit.time, "sleep", pauses.append)
     result = audit.wait_for_run("a" * 32, tmp_path)
-    assert result["state"] == "partial" and pauses == [30]
+    assert result["state"] == "partial" and pauses == [180]
     assert queries == [("a" * 32,), ("a" * 32,)]
 
 

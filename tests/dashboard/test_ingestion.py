@@ -792,7 +792,25 @@ def test_provider_failure_defers_stage_without_rejecting_source(ingest):
     assert job["state"] == "retry"
     assert job["failures"] == 0
     assert job["available_at"] > job["updated_at"]
-    assert "discovery" in service.cooldowns
+    assert service.breaker.paused("discovery") is None
+
+
+def test_repeated_provider_failures_pause_the_stage_for_every_worker(ingest):
+    from buscador_midias.ingestion.engine import ProviderUnavailableError
+
+    class Unavailable:
+        def execute(self, job):
+            raise ProviderUnavailableError("OpenRouter indisponível: HTTP 502", {"errors": 1})
+
+    ingest.create_run({})
+    with ingest.connection() as db:
+        ident = db.execute("SELECT id FROM ingest_jobs").fetchone()["id"]
+    service = Service(ingest, Unavailable())
+    for _ in range(service.breaker.threshold):
+        with ingest.connection() as db:
+            db.execute("UPDATE ingest_jobs SET state='queued', available_at=now()")
+        assert service.process(ident, "test-provider")
+    assert service.breaker.paused("discovery") == "OpenRouter indisponível: HTTP 502"
 
 
 def test_retry_uses_current_config_and_preserves_original_run_config(ingest):
@@ -1207,7 +1225,18 @@ def test_worker_configuration_accepts_requested_concurrency(ingest):
     assert updated["config"]["workers"] == workers
     with pytest.raises(CatalogError):
         ingest.configure(
-            dict(version=updated["version"], config=dict(workers=dict(workers, fetch=33)))
+            dict(version=updated["version"], config=dict(workers=dict(workers, fetch=65)))
+        )
+
+
+def test_worker_configuration_accepts_up_to_sixty_four_per_stage(ingest):
+    setting = ingest.settings()
+    workers = dict(setting["config"]["workers"], context=64)
+    updated = ingest.configure(dict(version=setting["version"], config=dict(workers=workers)))
+    assert updated["config"]["workers"]["context"] == 64
+    with pytest.raises(CatalogError):
+        ingest.configure(
+            dict(version=updated["version"], config=dict(workers=dict(workers, context=0)))
         )
 
 
