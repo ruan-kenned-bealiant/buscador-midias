@@ -479,7 +479,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Buscador contínuo por filas RabbitMQ")
     parser.add_argument(
         "command",
-        choices=("serve", "init", "status", "g1-pilot", "sources-pilot", "backfill-lastmod"),
+        choices=(
+            "serve",
+            "init",
+            "status",
+            "g1-pilot",
+            "sources-pilot",
+            "backfill-lastmod",
+            "backfill-context-themes",
+        ),
     )
     parser.add_argument(
         "--role", choices=("all", "scheduler", "publisher", "worker"), default="all"
@@ -511,17 +519,23 @@ def main(argv: list[str] | None = None) -> int:
         from buscador_midias.ingestion.lastmod_backfill import backfill, load_hints
 
         with repository.connection() as db:
-            run = db.execute(
+            target = db.execute(
                 "SELECT id FROM ingest_runs WHERE (%s::text IS NULL AND state='running') "
                 "OR id=%s ORDER BY created_at DESC LIMIT 1",
                 (args.run_id, args.run_id),
             ).fetchone()
-            hints = load_hints(db, args.hours) if run else {}
-        if not run:
+            hints = load_hints(db, args.hours) if target else {}
+        if not target:
             print("Nenhuma rodada encontrada.")
             return 1
-        report = backfill(repository, run["id"], hints, apply=args.apply)
+        report = backfill(repository, target["id"], hints, apply=args.apply)
         print(json.dumps(report, ensure_ascii=False, default=str))
+    elif args.command == "backfill-context-themes":
+        from buscador_midias.catalog.postgres import connect_postgres
+        from buscador_midias.corpus.theme_backfill import backfill_themes
+
+        with connect_postgres() as corpus:
+            print(json.dumps(backfill_themes(corpus, apply=args.apply), ensure_ascii=False))
     elif args.command == "status":
         print(
             json.dumps(repository.jsonable(repository.overview()), ensure_ascii=False, default=str)

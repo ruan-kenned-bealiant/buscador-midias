@@ -24,6 +24,7 @@ where = ["src"]
 [tool.setuptools.package-data]
 "buscador_midias.dashboard" = ["manager.html", "health.js", "guide.html", "search.html", "search.js", "evidence.html", "evidence.js", "evidence_prepare.js"]
 "buscador_midias.labeling" = ["index.html"]
+"buscador_midias.corpus" = ["theme_catalog.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

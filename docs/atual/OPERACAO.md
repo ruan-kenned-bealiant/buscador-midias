@@ -247,3 +247,22 @@ que a regra teria excluído (campo `violations`) cancela a aplicação inteira.
   reportado pelo psycopg como `DiskFull`) em consultas que já são curtas.
 - **Concorrência de workers** só muda após reinício, porque os slots são abertos na inicialização.
 
+## Retroativo do tema nos contextos
+
+```bash
+scripts/bm.sh ingest backfill-context-themes            # relatório, não altera nada
+scripts/bm.sh ingest backfill-context-themes --apply    # troca as linhas sem tema pelas temáticas
+```
+
+Atua nas linhas de contexto deste escritor sem `theme_id` e sem vínculo de processo, cliente ou
+grupo. O tema vem das palavras-chave do próprio artigo, sem chamar o OpenRouter. Cada lote de 500
+é uma transação; um erro desfaz o lote e interrompe. Idempotente. O relatório informa `rows`
+(linhas sem tema), `themed_rows` (linhas temáticas que seriam criadas) e `applied`.
+
+**Testes do corpus.** `tests/conftest.py` redireciona o banco para `buscador_midias_test`, que
+precisa conter a estrutura das quatro tabelas `midias_ia_*` em `public` para os testes do writer
+rodarem; sem ela eles são pulados em silêncio. Para criar (só estrutura, sem dados):
+`pg_dump -s -t public.midias_ia_articles -t public.midias_ia_article_entities
+-t public.midias_ia_article_keywords -t public.midias_ia_article_contexts <banco do corpus>`
+aplicado no banco de testes.
+

@@ -1,0 +1,257 @@
+{
+ "_comment": "Catálogo de temas do KyX (tabela temas) em 26/10/2026. person_type 1=PF nacional, 2=PJ nacional, 3=PF estrangeira, 4=PJ estrangeira. map lista, por slug da análise e tipo (pf/pj), os ids nacional e estrangeiro. processos_judiciais fica de fora de propósito (os temas do KyX são Resumo, de outro risco).",
+ "themes": {
+  "1": {
+   "name": "Corrupção",
+   "description": "Corrupção: suborno, propina, tráfico de influência, fraude em licitação/contrato público, desvio de recursos públicos, caixa 2 eleitoral, corrupção ativa ou passiva. Inclui investigação, indiciamento, condenação, acordo de leniência/delação e operações policiais nomeadas com apreensão de valores. Não inclui litígio cível comum sem menção a propina/suborno, nem a entidade apenas como fornecedora/contratada de órgão público sem indício de irregularidade."
+  },
+  "2": {
+   "name": "Corrupção",
+   "description": "Corrupção: suborno, propina, tráfico de influência, fraude em licitação/contrato público, desvio de recursos públicos, caixa 2 eleitoral, corrupção ativa ou passiva. Inclui investigação, indiciamento, condenação, acordo de leniência/delação e operações policiais nomeadas com apreensão de valores. Não inclui litígio cível comum sem menção a propina/suborno, nem a entidade apenas como fornecedora/contratada de órgão público sem indício de irregularidade."
+  },
+  "3": {
+   "name": "Financeiro",
+   "description": "Financeiro: dificuldades econômico-financeiras como insolvência, falência, recuperação judicial ou extrajudicial, calote, default de dívida relevante, protesto de título significativo e intervenção/liquidação. Inclui pedido ou deferimento de recuperação judicial, decretação de falência e rebaixamento de rating por risco de crédito. Não inclui prejuízo trimestral isolado, volatilidade normal de mercado ou dívida cotidiana sem sinal de inadimplência."
+  },
+  "4": {
+   "name": "Financeiro",
+   "description": "Financeiro: dificuldades econômico-financeiras como insolvência, falência, recuperação judicial ou extrajudicial, calote, default de dívida relevante, protesto de título significativo e intervenção/liquidação. Inclui pedido ou deferimento de recuperação judicial, decretação de falência e rebaixamento de rating por risco de crédito. Não inclui prejuízo trimestral isolado, volatilidade normal de mercado ou dívida cotidiana sem sinal de inadimplência."
+  },
+  "5": {
+   "name": "Trabalhista",
+   "description": "Trabalhista: irregularidades trabalhistas graves como trabalho análogo à escravidão, trabalho infantil, condições degradantes, fraude trabalhista em massa e autuação/embargo do Ministério do Trabalho. Inclui fiscalização com resgate de trabalhadores e inclusão na lista suja do trabalho escravo. Não inclui reclamação trabalhista individual comum (verbas rescisórias, horas extras) nem greve ou dissídio coletivo de rotina."
+  },
+  "6": {
+   "name": "Trabalhista",
+   "description": "Trabalhista: irregularidades trabalhistas graves como trabalho análogo à escravidão, trabalho infantil, condições degradantes, fraude trabalhista em massa e autuação/embargo do Ministério do Trabalho. Inclui fiscalização com resgate de trabalhadores e inclusão na lista suja do trabalho escravo. Não inclui reclamação trabalhista individual comum (verbas rescisórias, horas extras) nem greve ou dissídio coletivo de rotina."
+  },
+  "7": {
+   "name": "Ambiental",
+   "description": "Ambiental: danos e crimes ambientais como desmatamento ilegal, poluição, vazamento, multa ou embargo do IBAMA/órgão estadual, rompimento de barragem e extração ilegal de recursos naturais. Inclui autuação ambiental relevante, embargo de área e investigação por crime ambiental. Não inclui licenciamento de rotina sem irregularidade nem ação de sustentabilidade/ESG positiva."
+  },
+  "8": {
+   "name": "Ambiental",
+   "description": "Ambiental: danos e crimes ambientais como desmatamento ilegal, poluição, vazamento, multa ou embargo do IBAMA/órgão estadual, rompimento de barragem e extração ilegal de recursos naturais. Inclui autuação ambiental relevante, embargo de área e investigação por crime ambiental. Não inclui licenciamento de rotina sem irregularidade nem ação de sustentabilidade/ESG positiva."
+  },
+  "11": {
+   "name": "Fiscal",
+   "description": "Fiscal: irregularidades fiscais e tributárias como sonegação, evasão fiscal, fraude tributária e operação da Receita Federal ou Fazenda estadual. Inclui investigação/denúncia por sonegação e condenação por crime contra a ordem tributária. Não inclui débito tributário comum, parcelamento de dívida fiscal ou autuação administrativa de rotina sem indício de fraude."
+  },
+  "12": {
+   "name": "Fiscal",
+   "description": "Fiscal: irregularidades fiscais e tributárias como sonegação, evasão fiscal, fraude tributária e operação da Receita Federal ou Fazenda estadual. Inclui investigação/denúncia por sonegação e condenação por crime contra a ordem tributária. Não inclui débito tributário comum, parcelamento de dívida fiscal ou autuação administrativa de rotina sem indício de fraude."
+  },
+  "13": {
+   "name": "Criminal",
+   "description": "Criminal: envolvimento em crimes em geral não cobertos por temas mais específicos — investigação, inquérito, prisão, tráfico, organização criminosa, estelionato. Inclui operação policial com a entidade como alvo, indiciamento e condenação criminal. Não inclui a entidade como VÍTIMA do crime (furto, invasão, golpe sofrido) nem como testemunha — nesses casos normalmente não deve gerar alerta."
+  },
+  "14": {
+   "name": "Criminal",
+   "description": "Criminal: envolvimento em crimes em geral não cobertos por temas mais específicos — investigação, inquérito, prisão, tráfico, organização criminosa, estelionato. Inclui operação policial com a entidade como alvo, indiciamento e condenação criminal. Não inclui a entidade como VÍTIMA do crime (furto, invasão, golpe sofrido) nem como testemunha — nesses casos normalmente não deve gerar alerta."
+  },
+  "15": {
+   "name": "Corrupção",
+   "description": "Corrupção: suborno, propina, tráfico de influência, fraude em licitação/contrato público, desvio de recursos públicos, caixa 2 eleitoral, corrupção ativa ou passiva. Inclui investigação, indiciamento, condenação, acordo de leniência/delação e operações policiais nomeadas com apreensão de valores. Não inclui litígio cível comum sem menção a propina/suborno, nem a entidade apenas como fornecedora/contratada de órgão público sem indício de irregularidade."
+  },
+  "16": {
+   "name": "Corrupção",
+   "description": "Corrupção: suborno, propina, tráfico de influência, fraude em licitação/contrato público, desvio de recursos públicos, caixa 2 eleitoral, corrupção ativa ou passiva. Inclui investigação, indiciamento, condenação, acordo de leniência/delação e operações policiais nomeadas com apreensão de valores. Não inclui litígio cível comum sem menção a propina/suborno, nem a entidade apenas como fornecedora/contratada de órgão público sem indício de irregularidade."
+  },
+  "17": {
+   "name": "Ambiental",
+   "description": "Ambiental: danos e crimes ambientais como desmatamento ilegal, poluição, vazamento, multa ou embargo do IBAMA/órgão estadual, rompimento de barragem e extração ilegal de recursos naturais. Inclui autuação ambiental relevante, embargo de área e investigação por crime ambiental. Não inclui licenciamento de rotina sem irregularidade nem ação de sustentabilidade/ESG positiva."
+  },
+  "18": {
+   "name": "Ambiental",
+   "description": "Ambiental: danos e crimes ambientais como desmatamento ilegal, poluição, vazamento, multa ou embargo do IBAMA/órgão estadual, rompimento de barragem e extração ilegal de recursos naturais. Inclui autuação ambiental relevante, embargo de área e investigação por crime ambiental. Não inclui licenciamento de rotina sem irregularidade nem ação de sustentabilidade/ESG positiva."
+  },
+  "19": {
+   "name": "Financeiro",
+   "description": "Financeiro: dificuldades econômico-financeiras como insolvência, falência, recuperação judicial ou extrajudicial, calote, default de dívida relevante, protesto de título significativo e intervenção/liquidação. Inclui pedido ou deferimento de recuperação judicial, decretação de falência e rebaixamento de rating por risco de crédito. Não inclui prejuízo trimestral isolado, volatilidade normal de mercado ou dívida cotidiana sem sinal de inadimplência."
+  },
+  "20": {
+   "name": "Financeiro",
+   "description": "Financeiro: dificuldades econômico-financeiras como insolvência, falência, recuperação judicial ou extrajudicial, calote, default de dívida relevante, protesto de título significativo e intervenção/liquidação. Inclui pedido ou deferimento de recuperação judicial, decretação de falência e rebaixamento de rating por risco de crédito. Não inclui prejuízo trimestral isolado, volatilidade normal de mercado ou dívida cotidiana sem sinal de inadimplência."
+  },
+  "21": {
+   "name": "Fiscal",
+   "description": "Fiscal: irregularidades fiscais e tributárias como sonegação, evasão fiscal, fraude tributária e operação da Receita Federal ou Fazenda estadual. Inclui investigação/denúncia por sonegação e condenação por crime contra a ordem tributária. Não inclui débito tributário comum, parcelamento de dívida fiscal ou autuação administrativa de rotina sem indício de fraude."
+  },
+  "22": {
+   "name": "Fiscal",
+   "description": "Fiscal: irregularidades fiscais e tributárias como sonegação, evasão fiscal, fraude tributária e operação da Receita Federal ou Fazenda estadual. Inclui investigação/denúncia por sonegação e condenação por crime contra a ordem tributária. Não inclui débito tributário comum, parcelamento de dívida fiscal ou autuação administrativa de rotina sem indício de fraude."
+  },
+  "23": {
+   "name": "Reputacional",
+   "description": "Imagem: danos à imagem/reputação veiculados na mídia que não se enquadram em nenhum tema mais específico. Inclui escândalo de conduta sem tipificação penal clara, crise pública de grande repercussão e boicote de consumidores. Não inclui notícia institucional neutra (lançamento de produto, resultado positivo) nem crítica de opinião isolada sem repercussão."
+  },
+  "24": {
+   "name": "Reputacional",
+   "description": "Imagem: danos à imagem/reputação veiculados na mídia que não se enquadram em nenhum tema mais específico. Inclui escândalo de conduta sem tipificação penal clara, crise pública de grande repercussão e boicote de consumidores. Não inclui notícia institucional neutra (lançamento de produto, resultado positivo) nem crítica de opinião isolada sem repercussão."
+  },
+  "25": {
+   "name": "Trabalhista",
+   "description": "Trabalhista: irregularidades trabalhistas graves como trabalho análogo à escravidão, trabalho infantil, condições degradantes, fraude trabalhista em massa e autuação/embargo do Ministério do Trabalho. Inclui fiscalização com resgate de trabalhadores e inclusão na lista suja do trabalho escravo. Não inclui reclamação trabalhista individual comum (verbas rescisórias, horas extras) nem greve ou dissídio coletivo de rotina."
+  },
+  "26": {
+   "name": "Trabalhista",
+   "description": "Trabalhista: irregularidades trabalhistas graves como trabalho análogo à escravidão, trabalho infantil, condições degradantes, fraude trabalhista em massa e autuação/embargo do Ministério do Trabalho. Inclui fiscalização com resgate de trabalhadores e inclusão na lista suja do trabalho escravo. Não inclui reclamação trabalhista individual comum (verbas rescisórias, horas extras) nem greve ou dissídio coletivo de rotina."
+  },
+  "27": {
+   "name": "Reputacional",
+   "description": "Reputacional: fatos que afetam a reputação de forma ampla ou recorrente. Inclui série de denúncias públicas, investigação jornalística de grande repercussão e perda de confiança de mercado por conduta questionável. Não inclui notícia isolada de baixa repercussão nem boato sem fonte verificável."
+  },
+  "28": {
+   "name": "Reputacional",
+   "description": "Reputacional: fatos que afetam a reputação de forma ampla ou recorrente. Inclui série de denúncias públicas, investigação jornalística de grande repercussão e perda de confiança de mercado por conduta questionável. Não inclui notícia isolada de baixa repercussão nem boato sem fonte verificável."
+  },
+  "29": {
+   "name": "Ética e integridade",
+   "description": "Ética e Integridade: violações de conduta ética e de compliance — conflito de interesse não revelado, quebra de código de conduta, nepotismo, fraude interna. Inclui investigação interna vazada à imprensa e demissão por violação de código de ética. Não inclui troca de governança neutra nem adoção de novas políticas de compliance (fato positivo)."
+  },
+  "30": {
+   "name": "Ética e integridade",
+   "description": "Ética e Integridade: violações de conduta ética e de compliance — conflito de interesse não revelado, quebra de código de conduta, nepotismo, fraude interna. Inclui investigação interna vazada à imprensa e demissão por violação de código de ética. Não inclui troca de governança neutra nem adoção de novas políticas de compliance (fato positivo)."
+  },
+  "33": {
+   "name": "PLD/FT",
+   "description": "PLD/FT (Prevenção à Lavagem de Dinheiro e ao Financiamento do Terrorismo): ocultação ou dissimulação de origem ilícita de recursos, financiamento a organizações terroristas, inclusão em listas restritivas (OFAC, ONU, COAF) e estruturação de depósitos. Inclui menção a COAF, sanções internacionais e investigação por lavagem de capitais. Não inclui menção genérica a \"investigação financeira\" sem elemento de ocultação/dissimulação."
+  },
+  "34": {
+   "name": "PLD/FT",
+   "description": "PLD/FT (Prevenção à Lavagem de Dinheiro e ao Financiamento do Terrorismo): ocultação ou dissimulação de origem ilícita de recursos, financiamento a organizações terroristas, inclusão em listas restritivas (OFAC, ONU, COAF) e estruturação de depósitos. Inclui menção a COAF, sanções internacionais e investigação por lavagem de capitais. Não inclui menção genérica a \"investigação financeira\" sem elemento de ocultação/dissimulação."
+  },
+  "35": {
+   "name": "PLD/FT",
+   "description": "PLD/FT (Prevenção à Lavagem de Dinheiro e ao Financiamento do Terrorismo): ocultação ou dissimulação de origem ilícita de recursos, financiamento a organizações terroristas, inclusão em listas restritivas (OFAC, ONU, COAF) e estruturação de depósitos. Inclui menção a COAF, sanções internacionais e investigação por lavagem de capitais. Não inclui menção genérica a \"investigação financeira\" sem elemento de ocultação/dissimulação."
+  },
+  "36": {
+   "name": "PLD/FT",
+   "description": "PLD/FT (Prevenção à Lavagem de Dinheiro e ao Financiamento do Terrorismo): ocultação ou dissimulação de origem ilícita de recursos, financiamento a organizações terroristas, inclusão em listas restritivas (OFAC, ONU, COAF) e estruturação de depósitos. Inclui menção a COAF, sanções internacionais e investigação por lavagem de capitais. Não inclui menção genérica a \"investigação financeira\" sem elemento de ocultação/dissimulação."
+  },
+  "37": {
+   "name": "Criminal",
+   "description": "Criminal: envolvimento em crimes em geral não cobertos por temas mais específicos — investigação, inquérito, prisão, tráfico, organização criminosa, estelionato. Inclui operação policial com a entidade como alvo, indiciamento e condenação criminal. Não inclui a entidade como VÍTIMA do crime (furto, invasão, golpe sofrido) nem como testemunha — nesses casos normalmente não deve gerar alerta."
+  },
+  "38": {
+   "name": "Criminal",
+   "description": "Criminal: envolvimento em crimes em geral não cobertos por temas mais específicos — investigação, inquérito, prisão, tráfico, organização criminosa, estelionato. Inclui operação policial com a entidade como alvo, indiciamento e condenação criminal. Não inclui a entidade como VÍTIMA do crime (furto, invasão, golpe sofrido) nem como testemunha — nesses casos normalmente não deve gerar alerta."
+  },
+  "43": {
+   "name": "Privacidade e Cibersegurança",
+   "description": "Ciber Segurança: incidentes de segurança da informação envolvendo a entidade — vazamento de dados pessoais/sensíveis, ataque cibernético, ransomware, invasão de sistemas. Inclui vazamento noticiado (LGPD), ataque de ransomware confirmado e notificação à ANPD. Não inclui a entidade como fornecedora de solução de segurança nem simulação/teste interno sem incidente real."
+  },
+  "53": {
+   "name": "Privacidade e Cibersegurança",
+   "description": "Ciber Segurança: incidentes de segurança da informação envolvendo a entidade — vazamento de dados pessoais/sensíveis, ataque cibernético, ransomware, invasão de sistemas. Inclui vazamento noticiado (LGPD), ataque de ransomware confirmado e notificação à ANPD. Não inclui a entidade como fornecedora de solução de segurança nem simulação/teste interno sem incidente real."
+  },
+  "54": {
+   "name": "Privacidade e Cibersegurança",
+   "description": "Ciber Segurança: incidentes de segurança da informação envolvendo a entidade — vazamento de dados pessoais/sensíveis, ataque cibernético, ransomware, invasão de sistemas. Inclui vazamento noticiado (LGPD), ataque de ransomware confirmado e notificação à ANPD. Não inclui a entidade como fornecedora de solução de segurança nem simulação/teste interno sem incidente real."
+  },
+  "55": {
+   "name": "Privacidade e Cibersegurança",
+   "description": "Ciber Segurança: incidentes de segurança da informação envolvendo a entidade — vazamento de dados pessoais/sensíveis, ataque cibernético, ransomware, invasão de sistemas. Inclui vazamento noticiado (LGPD), ataque de ransomware confirmado e notificação à ANPD. Não inclui a entidade como fornecedora de solução de segurança nem simulação/teste interno sem incidente real."
+  }
+ },
+ "map": {
+  "corrupcao": {
+   "pf": [
+    1,
+    15
+   ],
+   "pj": [
+    2,
+    16
+   ]
+  },
+  "financeiro": {
+   "pf": [
+    3,
+    19
+   ],
+   "pj": [
+    4,
+    20
+   ]
+  },
+  "trabalhista": {
+   "pf": [
+    5,
+    25
+   ],
+   "pj": [
+    6,
+    26
+   ]
+  },
+  "ambiental": {
+   "pf": [
+    7,
+    17
+   ],
+   "pj": [
+    8,
+    18
+   ]
+  },
+  "fiscal": {
+   "pf": [
+    11,
+    21
+   ],
+   "pj": [
+    12,
+    22
+   ]
+  },
+  "criminal": {
+   "pf": [
+    13,
+    37
+   ],
+   "pj": [
+    14,
+    38
+   ]
+  },
+  "reputacional": {
+   "pf": [
+    27,
+    23
+   ],
+   "pj": [
+    28,
+    24
+   ]
+  },
+  "etica_integridade": {
+   "pf": [
+    29
+   ],
+   "pj": [
+    30
+   ]
+  },
+  "pldft": {
+   "pf": [
+    33,
+    35
+   ],
+   "pj": [
+    34,
+    36
+   ]
+  },
+  "ciber_seguranca": {
+   "pf": [
+    53,
+    54
+   ],
+   "pj": [
+    43,
+    55
+   ]
+  }
+ }
+}

@@ -521,6 +521,9 @@ A seleção abaixo é um mapa, não um relatório de execução. Suítes de Post
 - [test_ingestion_lock_order.py](../../tests/dashboard/test_ingestion_lock_order.py): publicador e workers disputando as mesmas tarefas sem deadlock.
 - [test_ingestion_schema_version.py](../../tests/dashboard/test_ingestion_schema_version.py): `initialize()` pula o DDL na versão atual e não espera locks da fila.
 - [test_postgres_parameters.py](../../tests/dashboard/test_postgres_parameters.py): opções de sessão (sem paralelismo, limites de lock e de tempo).
+- [corpus/theme_catalog.py](../../src/buscador_midias/corpus/theme_catalog.py) e `theme_catalog.json`: ligação slug da análise → `theme_id` do KyX, por tipo de pessoa.
+- [corpus/theme_backfill.py](../../src/buscador_midias/corpus/theme_backfill.py): `ingest backfill-context-themes`.
+- [test_theme_catalog.py](../../tests/corpus/test_theme_catalog.py) e [test_theme_backfill.py](../../tests/corpus/test_theme_backfill.py): catálogo e retroativo de tema.
 - [test_ingestion_lastmod_backfill.py](../../tests/dashboard/test_ingestion_lastmod_backfill.py): relatório, aplicação idempotente e trava de segurança do retroativo.
 
 ## Auditoria de cobertura por capa

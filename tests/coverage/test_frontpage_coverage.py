@@ -7,7 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from buscador_midias.analysis.coverage import diagnose, eligible, frontpage_candidates, metrics
+from buscador_midias.analysis.coverage import (
+    diagnose,
+    editorial_sections,
+    eligible,
+    frontpage_candidates,
+    metrics,
+)
 from buscador_midias.domain.site import Site
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -69,6 +75,13 @@ def test_no_reference_is_unknown_instead_of_zero_percent():
     result = metrics([dict(reference="access_inconclusive"), dict(reference="after_window")])
     assert result["reference_articles"] == 0
     assert result["corpus_percent"] is None
+
+
+def test_uncompared_reference_never_claims_zero_coverage_or_discovery_failure():
+    result = metrics([dict(reference="in_window")], compared=False)
+    assert result["reference_articles"] == 1
+    assert result["corpus"] is None and result["corpus_percent"] is None
+    assert "discovery_gap" not in result["diagnostics"]
 
 
 def test_known_articles_count_as_covered_without_claiming_new_capture():
@@ -213,9 +226,6 @@ def test_failed_homepage_never_counts_as_zero_coverage(monkeypatch, tmp_path):
         def get(self, url):
             return FetchResult(url, 403, b"Forbidden", None)
 
-        def close(self):
-            pass
-
     monkeypatch.setattr(audit, "make_reader", lambda *a, **kw: Reader())
     result = audit.audit_source(
         dict(source_id=1, name="Exemplo", homepage="https://news.example", transport="direct"),
@@ -225,3 +235,69 @@ def test_failed_homepage_never_counts_as_zero_coverage(monkeypatch, tmp_path):
     assert result["state"] == "inconclusive"
     assert result["reason"] == "homepage_inaccessible_or_challenge"
     assert metrics(result["articles"])["corpus_percent"] is None
+
+
+def test_sections_use_real_editorial_navigation_with_bounded_same_site_scope():
+    body = b"""<nav><a href="/politica">Politica</a><a href="/business">Business</a>
+    <a href="/world">World</a><a href="https://other.example/world">World</a>
+    <a href="/subscribe">Subscribe</a><a href="/politica?redirect=a">Politica</a></nav>"""
+    assert editorial_sections(body, site().url, site()) == [
+        "https://news.example/politica",
+        "https://news.example/business",
+    ]
+
+
+def test_frozen_reference_is_reused_and_compared_only_after_run_finishes(monkeypatch, tmp_path):
+    import json
+
+    target = dict(source_id=1, name="Exemplo", homepage=site().url, transport="direct")
+    original = dict(
+        target=target,
+        articles=[
+            dict(
+                url=site().url + "/story",
+                headline="Uma noticia de referencia",
+                reference="in_window",
+                hashes=["hash"],
+            )
+        ],
+        state="sampled",
+    )
+    frozen = tmp_path / "references/1.json"
+    audit.write(frozen, original)
+    before = frozen.read_bytes()
+    audit.write(tmp_path / "catalog-before.json", {})
+    run = dict(
+        id="a" * 32,
+        since="2026-10-26T03:00:00Z",
+        until="2026-10-26T22:00:00Z",
+        state="running",
+        finished_at=None,
+    )
+    events = []
+    monkeypatch.setattr(
+        audit, "read_db", lambda query, params: [run] if "SELECT *" in query else []
+    )
+
+    def wait(*_):
+        events.append("finished")
+        return dict(run, state="completed", finished_at="2026-10-27T03:00:00Z")
+
+    def compare(rows, source_id, run_id, cutoff):
+        assert events == ["finished"]
+        assert cutoff == "2026-10-27T03:00:00Z"
+        rows[0].update(corpus_id=12, discovered=True, diagnostic="corpus_new")
+
+    monkeypatch.setattr(audit, "wait_for_run", wait)
+    monkeypatch.setattr(audit, "compare", compare)
+    monkeypatch.setattr(
+        audit, "audit_source", lambda *_: pytest.fail("Amostra deve ser reutilizada")
+    )
+    assert (
+        audit.frozen_audit(dict(run_id=run["id"], targets=[target]), tmp_path, correct_routes=False)
+        == 0
+    )
+    assert frozen.read_bytes() == before
+    assert json.loads((tmp_path / "summary.json").read_text())["metrics"]["corpus"] == 1
+    assert (tmp_path / "sites.csv").is_file()
+    assert "1/1 no corpus" in (tmp_path / "report.html").read_text()

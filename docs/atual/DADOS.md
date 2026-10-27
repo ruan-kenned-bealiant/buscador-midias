@@ -156,3 +156,21 @@ S3 é alternativa de armazenamento (`MIDIAS_IA_STORAGE_DISK=s3`, extra `s3`). Ch
 Preservar IDs, unicidade, FKs, exclusões, revisões, eventos, codificações BYTEA e caminhos externos. Não transportar somente `sites/links` descartando testes e snapshots. [migrate_postgres.py](../../src/buscador_midias/catalog/migrate_postgres.py) confere contagens/hashes e sequências, sem sobrescrever silenciosamente destino já importado.
 
 Os SQLs numerados 001–008 de `sql/postgres` pertencem majoritariamente ao estado legado; `009_link_access_transport.sql` acrescenta transporte ao catálogo atual. [sql/corpus/001_article_classification.sql](../../sql/corpus/001_article_classification.sql) acrescenta categoria/método de país ao corpus existente. `999_drop_midias_crawler_tables.sql` é rollback destrutivo do legado, não passo de instalação. A migração histórica de backlog em [daily_migration.py](../../src/buscador_midias/ingestion/daily_migration.py) exige workers e agenda pausados e preserva os dados em esquema de arquivo; não é rotina de limpeza de mensagens.
+
+## Contextos por entidade e tema
+
+Cada entidade citada gera linhas em `midias_ia_article_contexts` (produtor `buscador-midias`, sem
+`process_id`/`client_id`/`group_id`, identidade só por nome). O front lista por `theme_id`, então
+**toda entidade recebe os temas da notícia** (palavras-chave do artigo que existem no catálogo), uma
+linha por tema e por variante nacional/estrangeira do tipo da entidade (ex.: Corrupção PF = 1 e 15,
+PJ = 2 e 16). O `alerta`, a justificativa e o trecho continuam individuais; o `tema_confirmado`
+fica nulo. O tema próprio que a IA aponta para uma entidade com alerta não substitui o da notícia.
+
+- **Catálogo:** [theme_catalog.json](../../src/buscador_midias/corpus/theme_catalog.json), espelho da
+  tabela `temas` do KyX (`person_type` 1 = PF nacional, 2 = PJ nacional, 3 = PF estrangeira,
+  4 = PJ estrangeira). `processos_judiciais` fica de fora de propósito: os temas do KyX para ele são
+  "Resumo", de outro risco. Mudou o catálogo do KyX, mude o arquivo e o teste do catálogo.
+- **Sem tema do catálogo** (notícia neutra, só `diversos`): uma única linha sem `theme_id` por entidade.
+- **Reprocessar** troca a linha sem tema deste escritor pelas temáticas; linhas de outro produtor ou
+  com vínculo de processo/cliente/grupo nunca são apagadas nem sobrescritas.
+

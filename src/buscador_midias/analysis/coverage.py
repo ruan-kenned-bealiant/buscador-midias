@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from datetime import datetime
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 from lxml import html
 
@@ -14,6 +15,41 @@ from buscador_midias.domain.site import Site
 from buscador_midias.domain.url import canonicalize_url
 from buscador_midias.extraction.html import decode_html
 from buscador_midias.strategy.page_classification import classify_url
+
+
+def editorial_sections(body: bytes, url: str, site: Site, limit: int = 2) -> list[str]:
+    """Escolhe editorias reais do menu; nunca inventa caminhos ou muda de edição."""
+    labels = (
+        "política",
+        "politica",
+        "politics",
+        "economia",
+        "economy",
+        "business",
+        "brasil",
+        "brazil",
+        "mundo",
+        "world",
+        "international",
+        "tecnologia",
+        "technology",
+    )
+    tree: Any = html.document_fromstring(decode_html(body))
+    found: dict[str, int] = {}
+    for anchor in tree.xpath("//nav//a[@href]|//header//a[@href]"):
+        title = " ".join(anchor.text_content().lower().split())
+        if title not in labels:
+            continue
+        address = urljoin(url, anchor.get("href", ""))
+        try:
+            if not site.owns(address) or urlsplit(address).query:
+                continue
+            key = canonicalize_url(address)
+            if key != canonicalize_url(url):
+                found.setdefault(key, labels.index(title))
+        except ValueError:
+            continue
+    return sorted(found, key=lambda key: found[key])[:limit]
 
 
 def frontpage_candidates(body: bytes, url: str, site: Site) -> list[dict[str, str]]:
@@ -37,6 +73,11 @@ def frontpage_candidates(body: bytes, url: str, site: Site) -> list[dict[str, st
             continue
         if (
             not owned
+            or re.search(
+                r"/(?:plus|creativegroup|sponsored|branded|advertising)(?:/|$)",
+                urlsplit(address).path,
+                re.I,
+            )
             or l0_filter(address) in (FilterReason.HOME, FilterReason.ASSET, FilterReason.LISTING)
             or classify_url(address).page_type == "service"
         ):
@@ -80,10 +121,21 @@ def diagnose(row: dict[str, Any]) -> str:
     return "processing_unresolved"
 
 
-def metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def metrics(rows: list[dict[str, Any]], *, compared: bool = True) -> dict[str, Any]:
     """Não publica porcentagem de cobertura quando não existe referência comparável."""
     comparable = [row for row in rows if row.get("reference") == "in_window"]
     total = len(comparable)
+    if not compared:
+        return dict(
+            reference_articles=total,
+            corpus=None,
+            discovered=None,
+            policy_excluded=None,
+            discovery_percent=None,
+            corpus_percent=None,
+            corpus_percent_without_policy_exclusions=None,
+            diagnostics=dict(Counter(str(row.get("reference", "inconclusive")) for row in rows)),
+        )
     captured = sum(bool(row.get("corpus_id")) for row in comparable)
     discovered = sum(bool(row.get("discovered")) for row in comparable)
     excluded = sum(diagnose(row) == "policy_exclusion" for row in comparable)

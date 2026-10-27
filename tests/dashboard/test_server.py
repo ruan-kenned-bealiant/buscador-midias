@@ -195,7 +195,7 @@ def test_cache_nao_mistura_parametros_diferentes(base: str):
     assert len(a["hourly"]) == 3 and len(b["hourly"]) == 5
 
 
-@pytest.mark.parametrize("probe_kind", ["prioritarios", "feeder", "feeder-pendentes"])
+@pytest.mark.parametrize("probe_kind", ["prioritarios", "feeder", "feeder-pendentes", "cobertura"])
 def test_evidencia_do_teste_prioritario_reutiliza_visualizador_sem_acesso_ao_corpus(
     tmp_path: Path,
     probe_kind: str,
@@ -215,12 +215,15 @@ def test_evidencia_do_teste_prioritario_reutiliza_visualizador_sem_acesso_ao_cor
         priority_probe_directory=probe,
         feeder_mapping_directory=probe,
         feeder_pending_directory=probe,
+        coverage_directory=probe,
     )
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     base = f"http://127.0.0.1:{server.server_address[1]}"
     try:
         assert get(base + "/testes/" + probe_kind)[0] == 200
+        if probe_kind == "cobertura":
+            return  # Este relatório não expõe rotas de captura de evidências.
         evidence_prefix = "teste-prioritarios" if probe_kind == "prioritarios" else probe_kind
         url = base + "/evidencias/" + evidence_prefix + "/" + digest
         status, headers, body = get(url)

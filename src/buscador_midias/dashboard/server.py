@@ -62,6 +62,7 @@ def make_server(
     priority_probe_directory: Path | None = None,
     feeder_mapping_directory: Path | None = None,
     feeder_pending_directory: Path | None = None,
+    coverage_directory: Path | None = None,
 ) -> ThreadingHTTPServer:
     """Cria o servidor do painel (sem iniciá-lo).
 
@@ -86,6 +87,7 @@ def make_server(
         priority_probe_directory: Pasta local do teste finito de notícias e evidências.
         feeder_mapping_directory: Artefatos da descoberta complementar via Feeder.
         feeder_pending_directory: Artefatos da conclusão dos candidatos RSS pendentes.
+        coverage_directory: Referências e comparação da cobertura dos veículos prioritários.
 
     Returns:
         O servidor, pronto para ``serve_forever``.
@@ -100,6 +102,8 @@ def make_server(
         Path(__file__).resolve().parents[3] / "var/gerenciador/feeder-pendentes-20261026"
     )
     audit_reports = {
+        "/testes/cobertura": coverage_directory
+        or Path(__file__).resolve().parents[3] / "var/gerenciador/cobertura-capas-3727178f",
         "/testes/prioritarios": priority_probe,
         "/testes/feeder": feeder_mapping,
         "/testes/feeder-pendentes": feeder_pending,

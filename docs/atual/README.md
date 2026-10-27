@@ -27,11 +27,14 @@ Para o usuário do painel, o guia didático está em `/guia`. Para manutenção 
 - **Corpus** é o destino de notícias; **catálogo** é o cadastro de caminhos; **histórico de ingestão** registra o processamento. Não são a mesma tabela.
 - Valores indicados como padrões vêm do código. A configuração salva no PostgreSQL pode ser diferente.
 
-## Auditoria de cobertura preparada
+## Auditoria de cobertura dos veículos prioritários
 
-A [comparação das capas de 120 fontes](../AUDITORIA_COBERTURA_CAPAS.md) aguarda o
-encerramento da rodada congelada. O documento explica alvos, denominadores,
-limitações e os artefatos de resultado.
+A [comparação de capa/editorias de 120 fontes](../AUDITORIA_COBERTURA_CAPAS.md)
+congela a referência durante o processamento e compara após encerrar a rodada.
+Há uma única passagem limitada de correção e conferência de rotas oficiais para
+lacunas demonstradas. O relatório está em `/testes/cobertura`; novas rotas não
+aumentam retroativamente a cobertura da rodada original. O documento explica
+alvos, denominadores, limites, preservação de estados e artefatos de resultado.
 
 ## Histórico e documentos especializados
 

@@ -130,7 +130,9 @@ def rows(writer: PostgresCorpusWriter, sql: str, params=()) -> list[tuple]:
 
 
 def contextual_article():
+    """Artigo sem tema do catálogo: cada entidade gera uma única linha sem ``theme_id``."""
     return make_article(
+        keywords=(CorpusKeyword("diversos", "diversos", "analysis", 0.9),),
         entity_contexts=(
             EntityContext(
                 "Maria Virgínia",
@@ -141,7 +143,6 @@ def contextual_article():
                 "A delegada é investigada",
                 "Investigada por vazamento",
                 "Maria Virgínia é investigada por vazamento",
-                ("criminal",),
             ),
             EntityContext(
                 "PCC",
@@ -153,7 +154,7 @@ def contextual_article():
                 "",
                 "O PCC é citado na investigação",
             ),
-        )
+        ),
     )
 
 
@@ -473,3 +474,129 @@ def test_unknown_existing_category_is_filled_even_for_another_origin(writer):
         )[0][0]
         == "opinion"
     )
+
+
+def themed_article(**kw):
+    """Artigo de corrupção: Maria é acusada; PCC e Zé são citados sem alerta."""
+    base = dict(
+        keywords=(CorpusKeyword("corrupção", "corrupcao", "analysis", 0.9),),
+        entities=(
+            CorpusEntity("Maria Virgínia", "maria virginia", "PER", "investigado", "Presa"),
+            CorpusEntity("PCC", "pcc", "ORG", "mencionado", None),
+            CorpusEntity("Zé Silva", "ze silva", "PER", "mencionado", None),
+        ),
+        entity_contexts=(
+            EntityContext(
+                "Maria Virgínia",
+                "PF",
+                "investigado",
+                True,
+                0.9,
+                "Investigada",
+                "Propina",
+                "Maria Virgínia recebeu propina",
+                ("criminal",),
+            ),
+            EntityContext("PCC", "PJ", "citado", False, 0.8, "Apenas citado", "", "O PCC é citado"),
+            EntityContext(
+                "Zé Silva", "PF", "citado", False, 0.7, "Apenas citado", "", "Zé Silva é citado"
+            ),
+        ),
+    )
+    base.update(kw)
+    return make_article(**base)
+
+
+def unthemed(article):
+    """Mesmo artigo sem nenhum tema do catálogo (palavra-chave genérica)."""
+    return replace(article, keywords=(CorpusKeyword("diversos", "diversos", "analysis", 0.9),))
+
+
+def themed_rows(writer, name):
+    return rows(
+        writer,
+        "SELECT theme_id,theme,alerta,tema_confirmado,theme_description IS NOT NULL "
+        "FROM midias_ia_article_contexts WHERE entity_name=%s ORDER BY theme_id NULLS FIRST",
+        (name,),
+    )
+
+
+def test_toda_entidade_recebe_o_tema_da_noticia_nas_duas_variantes_do_seu_tipo(writer):
+    [outcome] = writer.write([themed_article()])
+    assert outcome.error is None
+    assert themed_rows(writer, "Maria Virgínia") == [
+        (1, "Corrupção", True, None, True),
+        (15, "Corrupção", True, None, True),
+    ]
+    assert themed_rows(writer, "Zé Silva") == [
+        (1, "Corrupção", False, None, True),
+        (15, "Corrupção", False, None, True),
+    ]
+    assert themed_rows(writer, "PCC") == [
+        (2, "Corrupção", False, None, True),
+        (16, "Corrupção", False, None, True),
+    ]
+
+
+def test_o_tema_proprio_do_alerta_nao_substitui_o_tema_da_noticia(writer):
+    # Maria tem themes=("criminal",), mas a notícia é de corrupção: vale o tema da notícia.
+    writer.write([themed_article()])
+    assert {r[1] for r in themed_rows(writer, "Maria Virgínia")} == {"Corrupção"}
+
+
+def test_noticia_com_varios_temas_gera_uma_linha_por_tema_e_variante(writer):
+    article = themed_article(
+        keywords=(
+            CorpusKeyword("corrupção", "corrupcao", "analysis", 0.9),
+            CorpusKeyword("criminal", "criminal", "analysis", 0.9),
+        )
+    )
+    writer.write([article])
+    assert [r[0] for r in themed_rows(writer, "PCC")] == [2, 14, 16, 38]
+
+
+def test_a_contagem_de_contextos_cobre_todas_as_linhas_tematicas(writer):
+    [outcome] = writer.write([themed_article()])
+    assert outcome.contexts == 6
+    assert rows(writer, "SELECT count(*) FROM midias_ia_article_contexts") == [(6,)]
+
+
+def test_sem_tema_do_catalogo_grava_uma_linha_sem_tema_por_entidade(writer):
+    [outcome] = writer.write([unthemed(themed_article())])
+    assert outcome.contexts == 3
+    for name in ("Maria Virgínia", "PCC", "Zé Silva"):
+        assert [r[0] for r in themed_rows(writer, name)] == [None]
+
+
+def test_tema_da_noticia_fora_do_catalogo_nao_vira_tema(writer):
+    article = themed_article(
+        keywords=(CorpusKeyword("processos", "processos_judiciais", "analysis", 0.9),)
+    )
+    writer.write([article])
+    assert [r[0] for r in themed_rows(writer, "PCC")] == [None]
+
+
+def test_regravar_e_idempotente(writer):
+    article = themed_article()
+    writer.write([article])
+    writer.write([article])
+    assert rows(writer, "SELECT count(*) FROM midias_ia_article_contexts") == [(6,)]
+
+
+def test_linha_sem_tema_deste_escritor_e_trocada_pelas_tematicas(writer):
+    writer.write([unthemed(themed_article())])
+    writer.write([themed_article()])
+    assert [r[0] for r in themed_rows(writer, "Maria Virgínia")] == [1, 15]
+    assert rows(
+        writer, "SELECT count(*) FROM midias_ia_article_contexts WHERE theme_id IS NULL"
+    ) == [(0,)]
+
+
+def test_linha_sem_tema_de_outro_escritor_nao_e_apagada(writer):
+    writer.write([unthemed(themed_article())])
+    writer._connection.execute(
+        "UPDATE midias_ia_article_contexts SET raw_context=json_build_object('producer','kyx'::text)"
+    )
+    writer._connection.commit()
+    writer.write([themed_article()])
+    assert [r[0] for r in themed_rows(writer, "Maria Virgínia")] == [None, 1, 15]
