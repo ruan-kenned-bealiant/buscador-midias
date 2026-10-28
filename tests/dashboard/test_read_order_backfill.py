@@ -7,7 +7,10 @@ import pytest
 from test_link_review import HOSTS, add_link, store  # noqa: F401
 from test_read_order import document
 
-from buscador_midias.catalog.read_order_backfill import backfill_read_order
+from buscador_midias.catalog.read_order_backfill import (
+    backfill_read_order,
+    demote_unproven_read_order,
+)
 
 
 def order(store, link_id):
@@ -79,3 +82,29 @@ def test_one_audit_event_summarises_the_whole_backfill(store, links):
             "SELECT action FROM events WHERE entity='catalog' AND action='backfill_read_order'"
         ).fetchall()
     assert len(rows) == 1
+
+
+def test_a_label_the_document_no_longer_proves_is_demoted_and_a_proven_one_kept(store, links):
+    for key in ("novo", "antigo"):
+        link = links[key]
+        store.save("endpoint", dict(version=link["version"], read_order="newest_first"), link["id"])
+    undated = document([*range(40, 30, -1), None])
+    done = demote_unproven_read_order(
+        store,
+        [
+            (1, f"https://{HOSTS[1]}/novo", document(list(range(40, 0, -1)))),
+            (1, f"https://{HOSTS[1]}/antigo", undated),
+        ],
+    )
+    assert order(store, links["novo"]["id"])[0] == "newest_first"
+    assert order(store, links["antigo"]["id"])[0] == "unknown"
+    assert done == {"kept": 1, "demoted": 1}
+
+
+def test_demotion_never_touches_labels_other_than_newest_first(store, links):
+    link = links["bagunca"]
+    store.save("endpoint", dict(version=link["version"], read_order="unordered"), link["id"])
+    done = demote_unproven_read_order(
+        store, [(2, f"https://{HOSTS[2]}/bagunca", document(list(range(40, 0, -1))))]
+    )
+    assert order(store, link["id"])[0] == "unordered" and not done

@@ -13,6 +13,7 @@ from buscador_midias.catalog.link_review import (
     review_link,
     review_sites,
     review_with_retry,
+    review_with_transports,
 )
 from buscador_midias.catalog.reader import TestLimitError
 from buscador_midias.catalog.store import CatalogError, CatalogStore
@@ -413,3 +414,88 @@ def test_every_review_outcome_carries_a_stable_cause(response, cause):
 def test_the_sports_review_has_its_own_cause():
     found = review_link(link(url="https://a.example/esportes/feed.xml"), ok(feed(1)), NOW)
     assert found["proposal"] == "review" and found["cause"] == "sports"
+
+
+class ByTransport:
+    """Fábrica de leitores falsa: a resposta depende do transporte do link e fica registrada."""
+
+    def __init__(self, answers, default=None):
+        self.answers, self.default, self.asked = answers, default, []
+
+    def __call__(self, item):
+        factory = self
+        transport = item.get("access_transport", "direct")
+
+        class One:
+            def get(self, url):
+                factory.asked.append(transport)
+                answer = factory.answers.get(transport, factory.default)
+                return (
+                    answer
+                    if isinstance(answer, FetchResult)
+                    else FetchResult(url, 200, answer, None)
+                )
+
+        return One()
+
+
+CYCLE = FetchResult("u", None, b"", "redirect_cycle: ciclo de redirecionamento")
+
+
+def test_a_refused_link_is_retried_with_other_transports_and_reports_the_one_that_worked():
+    factory = ByTransport({"direct": CYCLE, "curl_chrome_h1": feed(1)}, default=CYCLE)
+    found = review_with_transports(link(access_transport="direct"), factory, NOW)
+    assert found["proposal"] == "keep"
+    assert found["transport"] == "curl_chrome_h1" and found["transport_changed"] is True
+
+
+@pytest.mark.parametrize("status", [401, 402, 403, 406])
+def test_refusals_also_justify_trying_other_transports(status):
+    refused = FetchResult("u", status, b"", None)
+    factory = ByTransport({"curl_chrome_h2": feed(1)}, default=refused)
+    found = review_with_transports(link(access_transport="curl_firefox_h2"), factory, NOW)
+    assert found["proposal"] == "keep" and found["transport"] == "curl_chrome_h2"
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        FetchResult("u", 404, b"", None),
+        FetchResult("u", 410, b"", None),
+        FetchResult("u", 503, b"", None),
+        FetchResult("u", None, b"", "timed out"),
+    ],
+)
+def test_gone_or_passing_failures_are_not_transport_problems(response):
+    factory = ByTransport({}, default=response)
+    found = review_with_transports(link(), factory, NOW, sleep=lambda s: None)
+    assert found["proposal"] == "review" and not found.get("transport_changed")
+    assert set(factory.asked) == {"direct"}
+
+
+def test_when_no_transport_works_the_original_failure_is_reported():
+    factory = ByTransport({}, default=CYCLE)
+    found = review_with_transports(link(access_transport="direct"), factory, NOW)
+    assert found["proposal"] == "review" and found["cause"] == "access"
+    assert found["transport"] == "direct" and not found.get("transport_changed")
+    assert set(factory.asked) == {"direct", "curl_chrome_h1", "curl_chrome_h2", "curl_firefox_h2"}
+
+
+def test_a_working_link_never_tries_other_transports():
+    factory = ByTransport({"direct": feed(1)})
+    found = review_with_transports(link(), factory, NOW)
+    assert found["proposal"] == "keep" and not found.get("transport_changed")
+    assert factory.asked == ["direct"]
+
+
+def test_a_transport_that_returns_a_captcha_page_is_not_a_fix():
+    factory = ByTransport({"curl_chrome_h1": b"<html>captcha</html>"}, default=CYCLE)
+    found = review_with_transports(link(), factory, NOW)
+    assert found["cause"] == "access" and not found.get("transport_changed")
+
+
+def test_the_current_transport_is_not_tried_twice_and_bot_profiles_are_never_used():
+    factory = ByTransport({}, default=CYCLE)
+    review_with_transports(link(access_transport="curl_chrome_h1"), factory, NOW)
+    assert factory.asked.count("curl_chrome_h1") == 1
+    assert not any("bot" in t for t in factory.asked)

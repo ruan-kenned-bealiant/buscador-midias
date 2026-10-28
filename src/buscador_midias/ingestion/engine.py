@@ -28,8 +28,6 @@ from buscador_midias.catalog.http_transport import make_reader
 from buscador_midias.catalog.mechanisms import get_mechanism
 from buscador_midias.catalog.read_order import (
     NEWEST_FIRST,
-    OLDEST_FIRST,
-    UNORDERED,
     detect_read_order,
     newest_stamp,
 )
@@ -352,7 +350,7 @@ class Engine:
             head_cut = None
             if read_order == NEWEST_FIRST and head_mode != "off":
                 observed = detect_read_order(document)
-                if observed in (UNORDERED, OLDEST_FIRST):
+                if observed != NEWEST_FIRST:
                     # O site mudou a ordem: o rótulo deixa de valer, a leitura segue completa.
                     metrics["read_order_contradicted"] = 1
                     self.repository.demote_read_order(snapshot["link_id"], observed)

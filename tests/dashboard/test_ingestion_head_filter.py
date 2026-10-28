@@ -23,9 +23,11 @@ needs_postgres = pytest.mark.skipif(
 
 def feed(ages_in_hours, since):
     """Feed com um item por idade (horas antes do início da janela; negativa = dentro dela)."""
+    # Minutos fora do zero: nenhum item cai na meia-noite exata, que vale "o dia inteiro".
+    stamp = "%a, %d %b %Y %H:%M:%S +0000"
     items = "".join(
-        f"<item><link>https://jose.example/n{i}</link><pubDate>"
-        f"{(since - timedelta(hours=h)).strftime('%a, %d %b %Y %H:%M:%S +0000')}</pubDate></item>"
+        f"<item><link>https://jose.example/n{i}</link>"
+        f"<pubDate>{(since - timedelta(hours=h, minutes=7)).strftime(stamp)}</pubDate></item>"
         for i, h in enumerate(ages_in_hours)
     )
     return f"<rss><channel>{items}</channel></rss>".encode()
@@ -192,3 +194,34 @@ def test_a_contradicted_label_is_corrected_in_the_catalog(ingest):
     with ingest.connection() as db:
         found = db.execute("SELECT read_order FROM links WHERE id=%s", (link_id,)).fetchone()
     assert found["read_order"] == "unordered"
+
+
+@needs_postgres
+def test_an_undated_entry_in_a_labelled_document_blocks_the_cut_and_demotes_the_label(ingest):
+    ingest.configure(dict(version=ingest.settings()["version"], config=dict(head_filter="enforce")))
+    ingest.create_run({})
+    job = next_job(ingest, "discovery")
+    link_id = job["snapshot"]["link_id"]
+    with ingest.connection() as db:
+        db.execute("UPDATE links SET read_order='newest_first' WHERE id=%s", (link_id,))
+    job["snapshot"].update(
+        model="rss",
+        kind="feed",
+        parameters=get_mechanism("rss").defaults(),
+        read_order="newest_first",
+    )
+    since = job["run"]["since"]
+    body = feed(OLD, since).replace(
+        b"</channel>", b"<item><link>https://jose.example/donate</link></item></channel>"
+    )
+    engine = Engine(
+        ingest,
+        reader_factory=lambda roots, progress: FakeReader({job["payload"]["url"]: body}, progress),
+    )
+    result = engine.discovery(job)
+    assert result["metrics"]["read_order_contradicted"] == 1
+    assert not result["metrics"].get("head_cut")
+    assert "donate" in " ".join(c["url"] for c in result["candidates"])
+    with ingest.connection() as db:
+        found = db.execute("SELECT read_order FROM links WHERE id=%s", (link_id,)).fetchone()
+    assert found["read_order"] == "unknown"

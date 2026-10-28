@@ -45,8 +45,14 @@ def activate_recovered(db: Any, snapshot: dict[str, Any], result: dict[str, Any]
         return False
     after = db.execute(
         "UPDATE links SET active=1,deleted_at=NULL,version=version+1,updated_at=now(),"
-        "last_test=%s,evidence=%s WHERE id=%s RETURNING *",
-        (Jsonb(result), Jsonb(CatalogStore._test_evidence(result)), snapshot["link_id"]),
+        "last_test=%s,evidence=%s,access_transport=%s,read_order=%s WHERE id=%s RETURNING *",
+        (
+            Jsonb(result),
+            Jsonb(CatalogStore._test_evidence(result)),
+            result.get("access_transport", "direct"),
+            result.get("read_order", "unknown"),
+            snapshot["link_id"],
+        ),
     ).fetchone()
     db.execute(
         "INSERT INTO link_test_results(link_id,model,test_id,model_version,"

@@ -808,7 +808,7 @@ def _dated_sitemap(hours):
     """Sitemap com ``lastmod`` (em horas depois de 01/01/2026) por posição."""
     from datetime import UTC, datetime, timedelta
 
-    base = datetime(2026, 1, 1, tzinfo=UTC)
+    base = datetime(2026, 1, 1, 0, 7, tzinfo=UTC)
     return (
         "<urlset>"
         + "".join(

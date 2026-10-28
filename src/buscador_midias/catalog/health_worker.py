@@ -5,17 +5,18 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
+from collections import Counter
 from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import UTC, datetime
 from typing import Any
 
-from buscador_midias.catalog.health_actions import apply_decision
+from buscador_midias.catalog.health_actions import apply_decision, change_transport
 from buscador_midias.catalog.health_activation import activate_recovered
 from buscador_midias.catalog.health_policy import classify
 from buscador_midias.catalog.health_rules import decide, next_run
 from buscador_midias.catalog.health_store import HealthStore
-from buscador_midias.catalog.link_review import review_with_retry
+from buscador_midias.catalog.link_review import ALTERNATE_TRANSPORTS, review_with_transports
 from buscador_midias.catalog.postgres import WRITE_LOCK, connect_postgres
 from buscador_midias.catalog.store import CatalogError
 from buscador_midias.catalog.testing import ReaderFactory, run_test
@@ -26,6 +27,11 @@ LEADER_KEY = 674931206
 
 class HealthWorker:
     """Executa enquanto o serviço do gerenciador está ligado, inclusive sem navegador aberto."""
+
+    # Um site com muitos links na rodada (OCCRP tem milhares) aceita algumas leituras ao mesmo
+    # tempo; lido um a um, ele sozinho prolongaria a rodada inteira por mais de uma hora.
+    big_host_links = 100
+    big_host_slots = 3
 
     def __init__(
         self,
@@ -117,6 +123,15 @@ class HealthWorker:
 
     def execute_run(self, run: dict[str, Any], leader: Any = None) -> None:
         """Um host por vez; nenhuma descoberta aumenta a fila congelada."""
+        with self.repository.connection() as db:
+            big_hosts = {
+                r["host"]
+                for r in db.execute(
+                    "SELECT host FROM health_results WHERE run_id=%s GROUP BY host "
+                    "HAVING count(*)>%s",
+                    (run["id"], self.big_host_links),
+                )
+            }
         with ThreadPoolExecutor(
             max_workers=run["configuration"]["workers"], thread_name_prefix="health-link"
         ) as pool:
@@ -141,10 +156,16 @@ class HealthWorker:
                         )
                     else:
                         for _ in range(run["configuration"]["workers"] - len(tasks)):
+                            busy = Counter([*tasks.values(), *(r["host"] for r in reserved)])
+                            full = [
+                                host
+                                for host, count in busy.items()
+                                if count >= (self.big_host_slots if host in big_hosts else 1)
+                            ]
                             row = db.execute(
                                 "SELECT * FROM health_results WHERE run_id=%s AND state='pending' "
                                 "AND host<>ALL(%s) ORDER BY link_id LIMIT 1 FOR UPDATE SKIP LOCKED",
-                                (run["id"], [*tasks.values(), *(r["host"] for r in reserved)]),
+                                (run["id"], full),
                             ).fetchone()
                             if not row:
                                 break
@@ -225,7 +246,7 @@ class HealthWorker:
         reader = self.probe_reader
         if reader is None:
             from buscador_midias.catalog.review_cli import _real_reader as reader
-        return review_with_retry(link, reader, datetime.now(UTC))
+        return review_with_transports(link, reader, datetime.now(UTC))
 
     def _owned_and_running(self, run: dict[str, Any]) -> bool:
         with self.repository.connection() as db:
@@ -300,6 +321,16 @@ class HealthWorker:
             ).fetchone()
             decision = decide(outcome, previous["failures"] if previous else 0)
             link_version = apply_decision(db, snapshot, run["id"], decision) or versions[0]
+            if outcome.get("transport_changed") and decision.action in ("keep", "review"):
+                link_version = (
+                    change_transport(
+                        db,
+                        dict(snapshot, link_version=link_version),
+                        run["id"],
+                        outcome["transport"],
+                    )
+                    or link_version
+                )
             db.execute(
                 "INSERT INTO health_attempts(run_id,link_id,attempt,category,result) "
                 "VALUES(%s,%s,1,%s,%s)",
@@ -368,6 +399,11 @@ class HealthWorker:
                     "Cadastro alterado durante o teste",
                 )
                 return
+            reactivating = run["kind"] == "recovery" and run["configuration"].get(
+                "activate_recovered"
+            )
+            if final and reactivating and category == "access_error":
+                result, category = self._other_transports(config, snapshot, result, category)
             gate = None
             if (
                 final
@@ -387,6 +423,28 @@ class HealthWorker:
             if final:
                 self.stop.wait(0.3)
                 return
+
+    def _other_transports(
+        self,
+        config: dict[str, Any],
+        snapshot: dict[str, Any],
+        result: dict[str, Any],
+        category: str,
+    ) -> tuple[dict[str, Any], str]:
+        """Refaz o teste completo nos outros transportes; vale o primeiro que sai saudável."""
+        current = config.get("access_transport", "direct")
+        for transport in ALTERNATE_TRANSPORTS:
+            if transport == current or self.stop.is_set():
+                continue
+            retry = dict(config, access_transport=transport, test_id=uuid.uuid4().hex)
+            try:
+                found = run_test(retry, snapshot["source"], lambda step: None, self.factory)
+            except Exception:
+                _LOG.exception("Erro ao testar o link %s com %s", snapshot["link_id"], transport)
+                continue
+            if classify(found) == "healthy":
+                return found, "healthy"
+        return result, category
 
     def _gate(self, snapshot: dict[str, Any]) -> str | None:
         """Motivo para NÃO reativar (frescor, período, tema, esporte); ``None`` libera."""

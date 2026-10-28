@@ -216,3 +216,133 @@ def test_a_link_inactivated_by_this_check_waits_for_the_next_one(health):
     worker.execute_run(worker.next_run())
     worker.execute_run(worker.next_run())
     assert not health.store.endpoint(1)["active"]
+
+
+class Concurrent(Probe):
+    """Sonda que mede quantas leituras acontecem ao mesmo tempo no mesmo site."""
+
+    def __init__(self, body):
+        super().__init__(body)
+        import threading
+
+        self.lock, self.now, self.max_seen = threading.Lock(), 0, 0
+
+    def get(self, url):
+        import time
+
+        with self.lock:
+            self.now += 1
+            self.max_seen = max(self.max_seen, self.now)
+        time.sleep(0.15)
+        with self.lock:
+            self.now -= 1
+        return super().get(url)
+
+
+def many_links(health, extra=5):
+    for n in range(extra):
+        health.store.save(
+            "endpoint",
+            dict(url=f"https://jose.example/f{n}.xml", kind="feed", model="rss"),
+            source_id=1,
+        )
+    settings(health, "active", mode="probe", workers=8)
+
+
+def test_a_small_site_is_read_one_link_at_a_time(health):
+    many_links(health)
+    reader = Concurrent(rss(1))
+    worker = HealthWorker(health, old_news, probe_reader=reader)
+    health.create("active")
+    worker.recover()
+    worker.execute_run(worker.next_run())
+    assert reader.max_seen == 1 and len(reader.asked) == 6
+
+
+def test_a_site_with_many_links_gets_a_few_reads_at_a_time_but_never_more(health):
+    many_links(health)
+    reader = Concurrent(rss(1))
+    worker = HealthWorker(health, old_news, probe_reader=reader)
+    worker.big_host_links, worker.big_host_slots = 3, 3
+    run = health.create("active")
+    worker.recover()
+    worker.execute_run(worker.next_run())
+    assert reader.max_seen == 3 and len(reader.asked) == 6
+    assert health.details(run["id"])["total"] == 6
+
+
+class ByTransportProbe:
+    """Sonda cuja resposta depende do transporte gravado no link."""
+
+    def __init__(self, answers, default):
+        self.answers, self.default = answers, default
+
+    def __call__(self, link):
+        probe = self
+        transport = link.get("access_transport", "direct")
+
+        class One:
+            def get(self, url):
+                answer = probe.answers.get(transport, probe.default)
+                return (
+                    answer
+                    if isinstance(answer, FetchResult)
+                    else FetchResult(url, 200, answer, None, url)
+                )
+
+        return One()
+
+
+CYCLE = FetchResult("u", None, b"", "redirect_cycle: ciclo de redirecionamento")
+
+
+def transport_of(health):
+    with health.connection() as db:
+        return db.execute("SELECT access_transport FROM links WHERE id=1").fetchone()[
+            "access_transport"
+        ]
+
+
+def test_a_link_refused_by_its_transport_is_kept_and_moved_to_the_one_that_works(health):
+    probe = ByTransportProbe({"curl_chrome_h1": rss(1)}, CYCLE)
+    run_probe(health, probe)
+    link, row, events = state(health)
+    assert link["active"] and (row["category"], row["failures"]) == ("healthy", 0)
+    assert transport_of(health) == "curl_chrome_h1"
+    assert "health_transport" in events
+
+
+def test_a_link_no_transport_can_open_is_still_inactivated_at_once(health):
+    run_probe(health, ByTransportProbe({}, CYCLE))
+    link, row, _ = state(health)
+    assert not link["active"] and row["category"] == "access_error"
+    assert transport_of(health) == "direct"
+
+
+def test_changing_the_transport_resets_the_proof_that_belonged_to_the_old_one(health):
+    link = health.store.endpoint(1)
+    health.store.save("endpoint", dict(version=link["version"], read_order="newest_first"), 1)
+    run_probe(health, ByTransportProbe({"curl_chrome_h1": rss(1)}, CYCLE))
+    with health.connection() as db:
+        row = db.execute("SELECT read_order,last_test FROM links WHERE id=1").fetchone()
+    assert row["read_order"] == "unknown" and not row["last_test"]
+
+
+def test_an_inactive_link_is_recovered_with_the_transport_that_passes_the_full_test(
+    health, monkeypatch
+):
+    from buscador_midias.catalog import testing
+
+    real = testing.run_test
+
+    def by_transport(config, source, progress, factory):
+        from test_catalog_testing import FakeReader
+
+        ok = config["access_transport"] == "curl_chrome_h1"
+        return real(config, source, progress, old_news if ok else (lambda r, p: FakeReader({}, p)))
+
+    monkeypatch.setattr("buscador_midias.catalog.health_worker.run_test", by_transport)
+    run = inactive_run(health, ByTransportProbe({"curl_chrome_h1": rss(2)}, CYCLE))
+    assert health.store.endpoint(1)["active"]
+    assert transport_of(health) == "curl_chrome_h1"
+    assert health.details(run["id"])["items"][0]["activated"]

@@ -11,7 +11,10 @@ import gzip
 import json
 
 from buscador_midias.catalog.postgres import PostgresCatalogStore
-from buscador_midias.catalog.read_order_backfill import backfill_read_order
+from buscador_midias.catalog.read_order_backfill import (
+    backfill_read_order,
+    demote_unproven_read_order,
+)
 
 COLUMN = (
     "ALTER TABLE links ADD COLUMN IF NOT EXISTS read_order TEXT NOT NULL DEFAULT 'unknown' "
@@ -52,7 +55,9 @@ def main() -> int:
                 document.setdefault(key, {})
             yield row["source_id"], row["url"], document
 
-    print(dict(backfill_read_order(store, documents(), apply=apply)))
+    if apply:
+        print("rebaixados:", dict(demote_unproven_read_order(store, documents())))
+    print("preenchidos:", dict(backfill_read_order(store, documents(), apply=apply)))
     return 0
 
 

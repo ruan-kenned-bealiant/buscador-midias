@@ -14,7 +14,8 @@ from buscador_midias.catalog.read_order import (
     detect_read_order,
 )
 
-BASE = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
+BASE = datetime(2026, 10, 1, 12, 7, tzinfo=UTC)  # nunca cai na meia-noite exata
+MIDNIGHT = datetime(2026, 10, 1, 0, 0, tzinfo=UTC)  # data só de dia
 
 
 def document(hours: list[int | None], *, key="dates", index=False):
@@ -68,6 +69,42 @@ def test_mostly_undated_is_unknown():
     assert detect_read_order(document(hours)) == UNKNOWN
 
 
+def test_a_single_undated_entry_makes_the_order_unprovable():
+    # O corte descartaria a entrada sem data junto com o resto: só vale com tudo datado.
+    hours = [*range(40, 30, -1), None]
+    assert detect_read_order(document(hours)) == UNKNOWN
+
+
+def day_only(days_ago: list[int]):
+    """Documento cujas datas são só o dia (meia-noite exata), como muitos ``lastmod``."""
+    urls = [f"https://a.example/n{n}" for n in range(len(days_ago))]
+    stamps = {
+        u: (MIDNIGHT - timedelta(days=d)).isoformat() for u, d in zip(urls, days_ago, strict=True)
+    }
+    return dict(entries=urls, dates={}, hints=stamps, children=[], child_dates={}, index=False)
+
+
+def test_a_document_with_only_day_precision_keeps_a_provable_order():
+    assert detect_read_order(day_only(list(range(0, 12)))) == NEWEST_FIRST
+
+
+def test_a_day_only_entry_that_may_end_after_the_top_makes_the_order_unprovable():
+    # O dia inteiro de uma data só-dia pode acabar depois do horário da entrada do topo.
+    doc = day_only(list(range(0, 12)))  # a primeira é do mesmo dia do topo
+    top = "https://a.example/top"
+    doc["entries"].insert(0, top)
+    doc["hints"][top] = (MIDNIGHT + timedelta(hours=14)).isoformat()
+    assert detect_read_order(doc) == UNKNOWN
+
+
+def test_an_old_midnight_timestamp_below_a_later_top_does_not_spoil_the_order():
+    doc = day_only(list(range(3, 12)))
+    top = "https://a.example/top"
+    doc["entries"].insert(0, top)
+    doc["hints"][top] = (MIDNIGHT + timedelta(hours=14)).isoformat()
+    assert detect_read_order(doc) == NEWEST_FIRST
+
+
 def test_update_hints_are_used_when_there_is_no_publication_date():
     assert detect_read_order(document(list(range(40, 0, -1)), key="hints")) == NEWEST_FIRST
 
@@ -89,7 +126,7 @@ def test_sub_minute_jitter_is_tolerated_but_real_inversions_are_not():
 
 
 @pytest.mark.parametrize("bad", ["", "lixo", None, 0])
-def test_unreadable_dates_are_ignored(bad):
+def test_an_unreadable_date_counts_as_undated_and_blocks_the_order(bad):
     doc = document(list(range(40, 0, -1)))
     doc["dates"]["https://a.example/n3"] = bad
-    assert detect_read_order(doc) == NEWEST_FIRST
+    assert detect_read_order(doc) == UNKNOWN

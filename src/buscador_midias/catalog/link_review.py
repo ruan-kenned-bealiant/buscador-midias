@@ -34,6 +34,11 @@ TRANSIENT_ERRORS = (
     "Connection reset",
 )
 MAX_WAIT = 60
+# Quando o transporte do link é recusado, estes são tentados antes de desistir. Perfis de robô
+# declarado (``curl_bot_*``) ficam de fora: identificam-se como robô, que é justo o que bloqueia.
+ALTERNATE_TRANSPORTS = ("curl_chrome_h1", "curl_chrome_h2", "curl_firefox_h2", "direct")
+TRANSPORT_STATUS = (401, 402, 403, 406)
+TRANSPORT_ERRORS = ("redirect_cycle", "SSL", "Remote end closed", "Connection reset")
 # Sites sondados ao mesmo tempo: mantém sites x links por vez abaixo dos 32 trabalhadores de DNS.
 MAX_SITES = 12
 
@@ -152,6 +157,42 @@ def review_with_retry(
             return found
         sleep(min(found.get("retry_after") or 2 * attempt, MAX_WAIT))
     return found
+
+
+def transport_fixable(outcome: dict[str, Any]) -> bool:
+    """Recusa que outro transporte costuma resolver: ciclo, 401/402/403/406, falha de TLS."""
+    if outcome.get("cause") != "access":
+        return False
+    reason = outcome.get("reason", "")
+    return outcome.get("status") in TRANSPORT_STATUS or any(m in reason for m in TRANSPORT_ERRORS)
+
+
+def review_with_transports(
+    link: dict[str, Any],
+    make_reader: Callable[[dict[str, Any]], Reader],
+    now: datetime,
+    *,
+    sleep: Callable[[float], None] = wait_seconds,
+) -> dict[str, Any]:
+    """Sonda o link e, se o transporte dele foi recusado, tenta os outros uma vez cada.
+
+    Só uma recusa que outro transporte costuma resolver dispara a busca (404, 410, timeout e 5xx
+    não). Um transporte só conta se chega a um documento legível; página de captcha não conta.
+    O resultado traz ``transport`` (o que funcionou) e ``transport_changed``.
+    """
+    first = review_with_retry(link, make_reader, now, sleep=sleep)
+    if not transport_fixable(first):
+        return first
+    current = link.get("access_transport", "direct")
+    for transport in ALTERNATE_TRANSPORTS:
+        if transport == current:
+            continue
+        found = review_with_retry(
+            {**link, "access_transport": transport}, make_reader, now, attempts=1, sleep=sleep
+        )
+        if found.get("cause") not in ("access", "unreadable"):
+            return {**found, "transport_changed": True}
+    return first
 
 
 def load_links(store: CatalogStore, site_ids: Iterable[int]) -> list[dict[str, Any]]:

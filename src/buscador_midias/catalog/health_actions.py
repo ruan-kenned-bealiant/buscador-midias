@@ -46,3 +46,31 @@ def apply_decision(
         (before["id"], event, Jsonb(HealthStore.jsonable(before)), Jsonb(audited)),
     )
     return int(after["version"])
+
+
+def change_transport(db: Any, snapshot: dict[str, Any], run_id: str, transport: str) -> int | None:
+    """Passa o link ativo para o transporte que a sonda comprovou; a prova antiga é descartada.
+
+    Segue o contrato do cadastro: a prova pertence ao transporte testado, então ``last_test``,
+    ``evidence`` e ``read_order`` voltam ao estado inicial e serão refeitos no novo transporte.
+    """
+    before = db.execute(
+        "SELECT * FROM links WHERE id=%s AND version=%s AND active=1 AND deleted_at IS NULL "
+        "FOR UPDATE",
+        (snapshot["link_id"], snapshot["link_version"]),
+    ).fetchone()
+    if not before or before["access_transport"] == transport:
+        return None
+    after = db.execute(
+        "UPDATE links SET access_transport=%s,last_test='{}',evidence='{}',read_order='unknown',"
+        "version=version+1,updated_at=now() WHERE id=%s RETURNING *",
+        (transport, snapshot["link_id"]),
+    ).fetchone()
+    reason = f"transporte {before['access_transport']} → {transport}"
+    audited = dict(HealthStore.jsonable(after), health_run_id=run_id, health_reason=reason)
+    db.execute(
+        "INSERT INTO events(entity,entity_id,action,happened_at,before_json,after_json) "
+        "VALUES('endpoint',%s,'health_transport',now(),%s,%s)",
+        (before["id"], Jsonb(HealthStore.jsonable(before)), Jsonb(audited)),
+    )
+    return int(after["version"])
