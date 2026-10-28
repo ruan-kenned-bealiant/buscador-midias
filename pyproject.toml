@@ -22,7 +22,7 @@ dev = ["pytest>=8", "ruff>=0.5", "mypy>=1.10", "lxml-stubs>=0.5", "openpyxl>=3.1
 where = ["src"]
 
 [tool.setuptools.package-data]
-"buscador_midias.dashboard" = ["manager.html", "health.js", "guide.html", "search.html", "search.js", "evidence.html", "evidence.js", "evidence_prepare.js"]
+"buscador_midias.dashboard" = ["app.css", "app.js", "manager.html", "health.js", "guide.html", "search.html", "search.js", "evidence.html", "evidence.js", "evidence_prepare.js"]
 "buscador_midias.labeling" = ["index.html"]
 "buscador_midias.corpus" = ["theme_catalog.json"]
 

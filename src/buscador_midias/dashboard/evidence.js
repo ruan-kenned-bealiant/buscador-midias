@@ -9,3 +9,4 @@ try{
   document.getElementById('evidence').hidden=true;
   const message=document.getElementById('error');message.textContent=error.message;message.hidden=false;
 }
+document.getElementById('loading').hidden=true;

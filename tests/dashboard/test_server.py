@@ -240,3 +240,43 @@ def test_evidencia_do_teste_prioritario_reutiliza_visualizador_sem_acesso_ao_cor
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_folha_e_script_compartilhados_sao_servidos_com_cabecalhos_seguros(base: str):
+    status, headers, body = get(base + "/assets/app.css")
+
+    assert status == 200
+    assert headers["Content-Type"].startswith("text/css")
+    assert headers["X-Content-Type-Options"] == "nosniff"
+    assert "style-src 'self'" in headers["Content-Security-Policy"]
+    status, headers, _ = get(base + "/assets/app.js")
+    assert status == 200
+    assert headers["Content-Type"].startswith("application/javascript")
+
+
+@pytest.mark.parametrize("path", ["/", "/saude", "/mecanismos", "/buscador", "/guia"])
+def test_todas_as_telas_usam_a_mesma_folha_e_o_mesmo_script(base: str, path: str):
+    _, _, body = get(base + path)
+
+    assert b'href="/assets/app.css"' in body
+    assert b'src="/assets/app.js"' in body
+
+
+def test_folha_cobre_tema_escuro_movimento_reduzido_e_carregamento(base: str):
+    _, _, body = get(base + "/assets/app.css")
+    css = body.decode()
+
+    assert "prefers-color-scheme:dark" in css.replace(" ", "")
+    assert "prefers-reduced-motion" in css
+    assert ".skeleton" in css
+    assert "button.is-busy" in css
+    assert ":focus-visible" in css
+
+
+def test_script_compartilhado_expoe_ajudantes_de_carregamento(base: str):
+    _, _, body = get(base + "/assets/app.js")
+    script = body.decode()
+
+    for name in ("busy", "skeleton", "track"):
+        assert f"{name}(" in script
+    assert "window.UI" in script

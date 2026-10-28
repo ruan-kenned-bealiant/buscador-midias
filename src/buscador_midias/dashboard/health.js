@@ -18,12 +18,12 @@ function healthSettings(setting){
  if(setting.kind==='recovery'){const label=el('label',undefined,'field'),scope=el('select');scope.name='manual_scope';scope.add(new Option('Somente inativos com falhas de acesso','errors'));scope.add(new Option('Todos os inativos visíveis','inactive'));scope.add(new Option('Excluídos automaticamente por falha de acesso','auto_excluded_access'));label.append(el('span','Escopo da execução manual'),scope);card.append(label)}
  const label=el('label',undefined,'check'),enabled=el('input');enabled.type='checkbox';enabled.name='enabled';enabled.checked=setting.enabled;label.append(enabled,document.createTextNode(' Execução periódica habilitada'));card.append(label);
  const next=el('p',setting.enabled?'Próxima execução: '+healthDate(setting.next_run_at):'Agendamento pausado. Você ainda pode executar manualmente.','muted');next.dataset.next=setting.kind;card.append(next);
- const buttons=el('div',undefined,'actions'),save=el('button','Salvar configuração','primary');save.type='submit';buttons.append(save,action('Executar agora',async b=>{b.disabled=true;try{const run=await api('/saude/rodadas','POST',{kind:setting.kind,...(setting.kind==='recovery'?{scope:card.elements.manual_scope.value}:{})});notify('Rodada adicionada à fila.');await loadHealth();await openHealthRun(run.id)}catch(e){alertIn('health-error',e.message)}finally{b.disabled=false}}));card.append(buttons);
- card.onsubmit=async event=>{event.preventDefault();save.disabled=true;try{const data={version:Number(card.dataset.version),enabled:enabled.checked};for(const key of ['interval_minutes','workers','max_attempts','max_bright_requests'])data[key]=Number(card.elements.namedItem(key).value);data.bright_data=card.elements.bright_data.checked;data.activate_recovered=card.elements.activate_recovered?.checked||false;const updated=await api('/saude/configuracoes/'+setting.kind,'PATCH',data);card.replaceWith(healthSettings(updated));alertIn('health-error','');notify('Rotina atualizada. A configuração das buscas de notícias permanece independente.')}catch(e){alertIn('health-error',e.message)}finally{save.disabled=false}};
+ const buttons=el('div',undefined,'actions'),save=el('button','Salvar configuração','primary');save.type='submit';buttons.append(save,action('Executar agora',async b=>{UI.mark(b,true);try{const run=await api('/saude/rodadas','POST',{kind:setting.kind,...(setting.kind==='recovery'?{scope:card.elements.manual_scope.value}:{})});notify('Rodada adicionada à fila.');await loadHealth();await openHealthRun(run.id)}catch(e){alertIn('health-error',e.message)}finally{UI.mark(b,false)}}));card.append(buttons);
+ card.onsubmit=async event=>{event.preventDefault();UI.mark(save,true);try{const data={version:Number(card.dataset.version),enabled:enabled.checked};for(const key of ['interval_minutes','workers','max_attempts','max_bright_requests'])data[key]=Number(card.elements.namedItem(key).value);data.bright_data=card.elements.bright_data.checked;data.activate_recovered=card.elements.activate_recovered?.checked||false;const updated=await api('/saude/configuracoes/'+setting.kind,'PATCH',data);card.replaceWith(healthSettings(updated));alertIn('health-error','');notify('Rotina atualizada. A configuração das buscas de notícias permanece independente.')}catch(e){alertIn('health-error',e.message)}finally{UI.mark(save,false)}};
  return card;
 }
 async function loadHealth(initial=false){
- if(healthBusy)return;healthBusy=true;
+ if(healthBusy)return;healthBusy=true;if(!$('health-runs').children.length)UI.skeleton($('health-runs'),3,'row');
  try{
   const d=await api('/saude?offset='+healthOffset);healthTotal=d.total;
   if(initial||!$('health-settings').children.length)$('health-settings').replaceChildren(...d.settings.map(healthSettings));
@@ -34,15 +34,15 @@ async function loadHealth(initial=false){
    card.append(el('p',`${fmt(finished)} de ${fmt(run.total)} links concluídos`));
    const progress=el('progress');progress.max=run.total||1;progress.value=finished;progress.setAttribute('aria-label','Progresso da rodada');card.append(progress);
    const badges=el('div',undefined,'endpoint-tags');for(const [kind,count]of Object.entries(counts)){const badge=healthBadge(kind);badge.textContent=fmt(count)+' · '+(healthLabels[kind]||kind);badges.append(badge)}card.append(badges);
-   const buttons=el('div',undefined,'actions');buttons.append(action('Ver resultados',()=>openHealthRun(run.id)));if(['queued','running'].includes(run.status))buttons.append(action('Cancelar rodada',async b=>{b.disabled=true;try{await api('/saude/rodadas/'+run.id+'/cancelar','POST',{});await loadHealth()}catch(e){alertIn('health-error',e.message)}finally{b.disabled=false}}));card.append(buttons);list.append(card);
+   const buttons=el('div',undefined,'actions');buttons.append(action('Ver resultados',()=>openHealthRun(run.id)));if(['queued','running'].includes(run.status))buttons.append(action('Cancelar rodada',async b=>{UI.mark(b,true);try{await api('/saude/rodadas/'+run.id+'/cancelar','POST',{});await loadHealth()}catch(e){alertIn('health-error',e.message)}finally{UI.mark(b,false)}}));card.append(buttons);list.append(card);
   }
   if(!d.runs.length)list.append(el('p','Nenhuma rodada executada. Use “Executar agora” ou aguarde o agendamento.','empty'));
   $('health-prev').disabled=healthOffset===0;$('health-next').disabled=healthOffset+20>=d.total;$('health-page').textContent=d.total?`${healthOffset+1}–${Math.min(healthOffset+20,d.total)} de ${fmt(d.total)} rodadas`:'Sem execuções';
   $('health-updated').textContent='Atualizado em '+new Date().toLocaleTimeString('pt-BR');alertIn('health-error','');
- }catch(e){alertIn('health-error',e.message)}finally{healthBusy=false}
+ }catch(e){if($('health-runs').querySelector('.skeleton-row'))$('health-runs').replaceChildren();alertIn('health-error',e.message)}finally{healthBusy=false}
 }
 async function openHealthRun(id,offset=0){
- healthRun=id;healthDetailOffset=offset;const serial=++healthDetailSerial;$('health-details').hidden=false;
+ healthRun=id;healthDetailOffset=offset;const serial=++healthDetailSerial;$('health-details').hidden=false;if(!$('health-results').children.length)UI.skeleton($('health-results'),3,'row');
  try{const d=await api('/saude/rodadas/'+id+'?'+new URLSearchParams({offset,category:$('health-filter').value}));if(serial!==healthDetailSerial)return;
   $('health-detail-title').textContent=healthRunName(d.run)+' · '+healthDate(d.run.created_at);$('health-detail-status').replaceChildren(healthBadge(d.run.status));
   const list=$('health-results');list.replaceChildren();
@@ -52,10 +52,11 @@ async function openHealthRun(id,offset=0){
   }
   if(!d.items.length)list.append(el('p','Nenhum link neste filtro.','empty'));
   $('health-detail-prev').disabled=offset===0;$('health-detail-next').disabled=offset+25>=d.total;$('health-detail-page').textContent=d.total?`${offset+1}–${Math.min(offset+25,d.total)} de ${fmt(d.total)} links`:'Sem resultados';
- }catch(e){if(serial===healthDetailSerial)alertIn('health-error',e.message)}
+ }catch(e){if(serial===healthDetailSerial){if($('health-results').querySelector('.skeleton-row'))$('health-results').replaceChildren();alertIn('health-error',e.message)}}
 }
 async function initHealth(){
- try{const d=await api('/resumo');token=d.csrf_token;await loadHealth(true)}catch(e){alertIn('health-error',e.message)}
+ UI.skeleton($('health-settings'),2,'card');
+ try{const d=await api('/resumo');token=d.csrf_token;await loadHealth(true)}catch(e){if($('health-settings').querySelector('.skeleton-card'))$('health-settings').replaceChildren();alertIn('health-error',e.message)}
  $('health-refresh').onclick=async()=>{await loadHealth();if(healthRun)await openHealthRun(healthRun,healthDetailOffset)};
  $('health-prev').onclick=()=>{healthOffset=Math.max(0,healthOffset-20);loadHealth()};$('health-next').onclick=()=>{healthOffset+=20;loadHealth()};
  $('health-filter').onchange=()=>{if(healthRun)openHealthRun(healthRun)};

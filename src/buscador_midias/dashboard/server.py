@@ -38,7 +38,7 @@ DEFAULT_CACHE_SECONDS = 4.0
 _MAX_HOURS = 168
 _MAX_RECENT = 200
 _CSP = (
-    "default-src 'none'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
+    "default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
     "connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'"
 )
 _LOG = logging.getLogger(__name__)
@@ -134,6 +134,16 @@ def make_server(
         for name in ("evidence.html", "evidence.js", "evidence_prepare.js")
     }
     health_script = resources.files("buscador_midias.dashboard").joinpath("health.js").read_bytes()
+    shared_assets = {
+        "/assets/app.css": (
+            "text/css; charset=utf-8",
+            resources.files("buscador_midias.dashboard").joinpath("app.css").read_bytes(),
+        ),
+        "/assets/app.js": (
+            "application/javascript; charset=utf-8",
+            resources.files("buscador_midias.dashboard").joinpath("app.js").read_bytes(),
+        ),
+    }
     manager = CatalogAPI(
         open_catalog(
             manager_db_path
@@ -172,6 +182,8 @@ def make_server(
             parts = urlsplit(self.path)
             if parts.path in ("/", "/gerenciador", "/mecanismos", "/saude"):
                 self._send(200, "text/html; charset=utf-8", manager_page)
+            elif parts.path in shared_assets:
+                self._send(200, *shared_assets[parts.path])
             elif parts.path in ("/assets/evidence.js", "/assets/evidence_prepare.js"):
                 self._send(
                     200,
