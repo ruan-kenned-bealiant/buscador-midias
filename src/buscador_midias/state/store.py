@@ -1622,9 +1622,7 @@ class StateStore:
         """
         row = self._one("SELECT to_regclass('midias_crawler_section_pages')")
         if row is None or row[0] is None:
-            raise StateSchemaError(
-                "rode sql/postgres/004_create_midias_crawler_section_pages.sql"
-            )
+            raise StateSchemaError("rode sql/postgres/004_create_midias_crawler_section_pages.sql")
         if not self._mapping_classification_ready:
             exists = self._one(
                 "SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()"
@@ -1632,21 +1630,35 @@ class StateStore:
             )
             if exists is None:
                 raise StateSchemaError(
-                    'rode sql/postgres/006_add_midias_crawler_page_classification.sql'
+                    "rode sql/postgres/006_add_midias_crawler_page_classification.sql"
                 )
             self._mapping_classification_ready = True
         rows = self._all(
             "SELECT url, found_on, kind, status, title, article_urls, feeds, feed_indexes,"
             " detail, attempts, checked_at, page_type, type_basis, discovery_basis"
             " FROM midias_crawler_section_pages"
-            " WHERE site_key = %s ORDER BY id", (site_key,),
+            " WHERE site_key = %s ORDER BY id",
+            (site_key,),
         )
-        return [MapPage(
-            url=r[0], found_on=r[1], kind=r[2], status=PageStatus(r[3]), title=r[4],
-            article_urls=tuple(r[5]), feeds=tuple(r[6]), feed_indexes=tuple(r[7]),
-            detail=r[8], attempts=r[9], checked_at=r[10], page_type=r[11], type_basis=r[12],
-            discovery_basis=r[13],
-        ) for r in rows]
+        return [
+            MapPage(
+                url=r[0],
+                found_on=r[1],
+                kind=r[2],
+                status=PageStatus(r[3]),
+                title=r[4],
+                article_urls=tuple(r[5]),
+                feeds=tuple(r[6]),
+                feed_indexes=tuple(r[7]),
+                detail=r[8],
+                attempts=r[9],
+                checked_at=r[10],
+                page_type=r[11],
+                type_basis=r[12],
+                discovery_basis=r[13],
+            )
+            for r in rows
+        ]
 
     def mapping_mechanism_rows(self, site_key: str | None = None) -> list[dict[str, Any]]:
         """Metadados dos mecanismos, sem transportar listas grandes de notícias."""
@@ -1658,10 +1670,19 @@ class StateStore:
             " FROM midias_crawler_section_sources" + where + " ORDER BY site_key,url",
             (site_key,) if site_key is not None else (),
         )
-        fields = ("site_key", "url", "kind", "verdict", "checked_at", "partial", "detail",
-                  "listed_count")
-        return [{**dict(zip(fields, row[:8], strict=True)), "samples": list(row[8:])}
-                for row in rows]
+        fields = (
+            "site_key",
+            "url",
+            "kind",
+            "verdict",
+            "checked_at",
+            "partial",
+            "detail",
+            "listed_count",
+        )
+        return [
+            {**dict(zip(fields, row[:8], strict=True)), "samples": list(row[8:])} for row in rows
+        ]
 
     def mapping_inventory_pages(self, site_key: str) -> list[MapPage]:
         """Páginas estruturais com até cinco exemplos para associação offline limitada."""
@@ -1673,11 +1694,21 @@ class StateStore:
             " AND page_type NOT IN ('article','service','taxonomy'))) ORDER BY id",
             (site_key,),
         )
-        return [MapPage(
-            url=r[0], found_on="", title=r[1], kind=r[2], status=PageStatus(r[3]),
-            page_type=r[4], checked_at=r[5], feeds=tuple(r[6]), discovery_basis=r[7],
-            article_urls=tuple(u for u in r[8:] if u),
-        ) for r in rows]
+        return [
+            MapPage(
+                url=r[0],
+                found_on="",
+                title=r[1],
+                kind=r[2],
+                status=PageStatus(r[3]),
+                page_type=r[4],
+                checked_at=r[5],
+                feeds=tuple(r[6]),
+                discovery_basis=r[7],
+                article_urls=tuple(u for u in r[8:] if u),
+            )
+            for r in rows
+        ]
 
     def mapping_overview(self) -> dict[str, dict[str, int]]:
         """Contagens estruturais por fonte sem transportar os arrays de notícias ao painel."""
@@ -1697,7 +1728,13 @@ class StateStore:
         return {row[0]: dict(zip(fields, row[1:], strict=True)) for row in rows}
 
     def mapping_section_rows(
-        self, site_key: str, *, mode: str, search: str, offset: int, limit: int,
+        self,
+        site_key: str,
+        *,
+        mode: str,
+        search: str,
+        offset: int,
+        limit: int,
     ) -> tuple[int, list[dict[str, Any]]]:
         """Página de seções com exemplos observados; lê somente as primeiras cinco amostras."""
         filters = {
@@ -1711,15 +1748,15 @@ class StateStore:
         where = (
             "site_key=%s AND (kind='root' OR (kind='section'"
             " AND page_type NOT IN ('article','service','taxonomy'))) AND status<>'excluded'"
-            " AND " + filters[mode]
-            + " AND strpos(lower(title || ' ' || url), lower(%s))>0"
+            " AND " + filters[mode] + " AND strpos(lower(title || ' ' || url), lower(%s))>0"
         )
         rows = self._all(
             "SELECT url,title,kind,status,page_type,type_basis,discovery_basis,checked_at,"
             " detail,feeds,"
             " article_urls->>0,article_urls->>1,article_urls->>2,article_urls->>3,"
             " article_urls->>4,count(*) OVER() FROM midias_crawler_section_pages WHERE "
-            + where + " ORDER BY (kind<>'root'),(page_type<>'section'),url LIMIT %s OFFSET %s",
+            + where
+            + " ORDER BY (kind<>'root'),(page_type<>'section'),url LIMIT %s OFFSET %s",
             (site_key, search, limit, offset),
         )
         if rows:
@@ -1730,8 +1767,18 @@ class StateStore:
                 (site_key, search),
             )
             total = count[0] if count else 0
-        fields = ("url", "title", "kind", "status", "page_type", "type_basis",
-                  "discovery_basis", "checked_at", "detail", "feeds")
+        fields = (
+            "url",
+            "title",
+            "kind",
+            "status",
+            "page_type",
+            "type_basis",
+            "discovery_basis",
+            "checked_at",
+            "detail",
+            "feeds",
+        )
         return total, [
             {**dict(zip(fields, row[:10], strict=True)), "samples": list(row[10:15])}
             for row in rows
@@ -1753,11 +1800,23 @@ class StateStore:
                     " detail = EXCLUDED.detail, attempts = EXCLUDED.attempts,"
                     " checked_at = EXCLUDED.checked_at, page_type = EXCLUDED.page_type,"
                     " type_basis = EXCLUDED.type_basis, discovery_basis = EXCLUDED.discovery_basis",
-                    (site_key, p.url, p.found_on, p.kind, p.status.value,
-                     _text(p.title) or "", Jsonb(_clean_json(list(p.article_urls))),
-                     Jsonb(_clean_json(list(p.feeds))), Jsonb(_clean_json(list(p.feed_indexes))),
-                     _text(p.detail) or "", p.attempts, p.checked_at, p.page_type, p.type_basis,
-                     p.discovery_basis),
+                    (
+                        site_key,
+                        p.url,
+                        p.found_on,
+                        p.kind,
+                        p.status.value,
+                        _text(p.title) or "",
+                        Jsonb(_clean_json(list(p.article_urls))),
+                        Jsonb(_clean_json(list(p.feeds))),
+                        Jsonb(_clean_json(list(p.feed_indexes))),
+                        _text(p.detail) or "",
+                        p.attempts,
+                        p.checked_at,
+                        p.page_type,
+                        p.type_basis,
+                        p.discovery_basis,
+                    ),
                 )
 
     def mapping_sources(self, site_key: str) -> list[MapSource]:
@@ -1769,7 +1828,8 @@ class StateStore:
             )
         rows = self._all(
             "SELECT url, verdict, kind, listed_urls, checked_at, requests, partial, detail"
-            " FROM midias_crawler_section_sources WHERE site_key = %s ORDER BY url", (site_key,),
+            " FROM midias_crawler_section_sources WHERE site_key = %s ORDER BY url",
+            (site_key,),
         )
         return [MapSource(r[0], r[1], r[2], tuple(r[3]), r[4], r[5], r[6], r[7]) for r in rows]
 
@@ -1785,8 +1845,17 @@ class StateStore:
                     " kind = EXCLUDED.kind, listed_urls = EXCLUDED.listed_urls,"
                     " checked_at = EXCLUDED.checked_at, requests = EXCLUDED.requests,"
                     " partial = EXCLUDED.partial, detail = EXCLUDED.detail",
-                    (site_key, s.url, s.verdict, s.kind, Jsonb(list(s.listed_urls)), s.checked_at,
-                     s.requests, s.partial, _text(s.detail) or ''),
+                    (
+                        site_key,
+                        s.url,
+                        s.verdict,
+                        s.kind,
+                        Jsonb(list(s.listed_urls)),
+                        s.checked_at,
+                        s.requests,
+                        s.partial,
+                        _text(s.detail) or "",
+                    ),
                 )
 
     # --- estratégia de descoberta por fonte ---

@@ -41,7 +41,11 @@ class FeedExploration:
 
 
 def explore_feed(
-    site: Site, fetcher: Fetcher, *, user_agent: str, feed_urls: Sequence[str] = (),
+    site: Site,
+    fetcher: Fetcher,
+    *,
+    user_agent: str,
+    feed_urls: Sequence[str] = (),
     since: datetime | None = None,
 ) -> FeedExploration:
     """Lê os feeds do site: os que a home declara (até três) ou, sem declaração, os caminhos usuais.
@@ -99,8 +103,11 @@ def explore_feed(
             continue
         summary = parse_feed(page.content)
         accessible_feed = accessible_feed or summary is not None
-        found = [e for e in parse_feed_entries(page.content, url) if site.owns(e.url)
-                 and (since is None or e.published is None or e.published >= since)]
+        found = [
+            e
+            for e in parse_feed_entries(page.content, url)
+            if site.owns(e.url) and (since is None or e.published is None or e.published >= since)
+        ]
         for entry in found:
             entries.setdefault(entry.url, entry)
         if found and guessing:
@@ -110,7 +117,10 @@ def explore_feed(
         return FeedExploration(ProbeStatus.OK, "", tuple(entries.values()), fetched)
     if accessible_feed:
         return FeedExploration(
-            ProbeStatus.OK, "feed acessível, sem notícias na janela", (), fetched,
+            ProbeStatus.OK,
+            "feed acessível, sem notícias na janela",
+            (),
+            fetched,
         )
     if blocked:
         return FeedExploration(ProbeStatus.BLOCKED, failure or "feed bloqueado", (), fetched)

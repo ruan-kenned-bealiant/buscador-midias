@@ -49,10 +49,18 @@ _SERVICES = frozenset(
     }
 )
 _SERVICE_TYPES = frozenset({"AboutPage", "ContactPage", "CheckoutPage", "ProfilePage"})
-_EURONEWS_FORECASTS = frozenset({
-    "weather", "idojaras", "meteo", "wetter", "hava-durumu", "tempo",
-    "meteorologia", "tiempo",
-})
+_EURONEWS_FORECASTS = frozenset(
+    {
+        "weather",
+        "idojaras",
+        "meteo",
+        "wetter",
+        "hava-durumu",
+        "tempo",
+        "meteorologia",
+        "tiempo",
+    }
+)
 _MAX_SCRIPT_CHARS = 2 * 1024 * 1024
 _MAX_NODES = 10000
 
@@ -80,22 +88,22 @@ def classify_url(url: str) -> PageClassification:
         host in {"tvguide.vg.no", "tempo.folha.uol.com.br"}
         or (
             (host == "euronews.com" or host.endswith(".euronews.com"))
-            and bool(segments) and segments[0] in _EURONEWS_FORECASTS
+            and bool(segments)
+            and segments[0] in _EURONEWS_FORECASTS
         )
         or (host == "elnacional.com" and segments[:2] == ["lvbp", "estadisticas"])
         or (host == "blogs.mediapart.fr" and len(segments) == 2 and segments[1] == "contacts")
         or (
-            host == "nikkei.com" and segments[:3] == ["nkd", "company", "us"]
-            and len(segments) > 4 and segments[4] in {"chart", "history"}
+            host == "nikkei.com"
+            and segments[:3] == ["nkd", "company", "us"]
+            and len(segments) > 4
+            and segments[4] in {"chart", "history"}
         )
         or (
             host == "evene.lefigaro.fr"
             and (segments[:1] == ["citations"] or segments[:2] == ["celebre", "biographie"])
         )
-        or (
-            host == "correiodoestado.com.br"
-            and "atendimento" in segments
-        )
+        or (host == "correiodoestado.com.br" and "atendimento" in segments)
     ):
         return PageClassification("service", "observed_service_route")
     if len(segments) == 1 and segments[0] in _SERVICES:

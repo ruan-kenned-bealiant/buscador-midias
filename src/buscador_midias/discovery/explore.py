@@ -275,10 +275,14 @@ def _walk(
             failures.append((ProbeStatus.ERROR, f"{url}: sitemap inválido: {error}"))
             continue
         if since is not None:
-            sitemap = replace(sitemap, entries=tuple(
-                entry for entry in sitemap.entries
-                if entry.timestamp is None or entry.timestamp >= since
-            ))
+            sitemap = replace(
+                sitemap,
+                entries=tuple(
+                    entry
+                    for entry in sitemap.entries
+                    if entry.timestamp is None or entry.timestamp >= since
+                ),
+            )
         explored.append(
             ExploredSitemap(
                 url=url,
@@ -292,8 +296,10 @@ def _walk(
             # O orçamento é uma janela dos filhos mais recentes: pular um filho inalterado
             # consome a janela em vez de avançar para arquivos mais antigos que nunca lemos.
             ranked = prioritize_children(sitemap.children, terms)
-            candidates = ranked if budget == 0 else (
-                [child for child in ranked if not is_taxonomy_sitemap(child.loc)] or ranked
+            candidates = (
+                ranked
+                if budget == 0
+                else ([child for child in ranked if not is_taxonomy_sitemap(child.loc)] or ranked)
             )
             # Os sitemaps declarados no robots.txt (ex.: o de notícias) têm vez antes dos filhos.
             reserved = sum(1 for u in queue if u in is_entry and policy.allows(u, user_agent))
@@ -333,7 +339,8 @@ def _conclude(
     failures: list[tuple[ProbeStatus, str]],
     fetched: int,
     skipped: int,
-    *, accessible_empty_ok: bool = False,
+    *,
+    accessible_empty_ok: bool = False,
 ) -> Exploration:
     """Decide o desfecho: ``OK`` só se houve sitemap lido e, havendo falhas, ao menos uma URL."""
     if not explored:

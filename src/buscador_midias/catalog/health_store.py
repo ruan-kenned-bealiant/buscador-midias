@@ -6,7 +6,7 @@ import threading
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -17,6 +17,7 @@ from psycopg.types.json import Jsonb
 from buscador_midias.catalog.bright_reader import bright_data_available
 from buscador_midias.catalog.health_policy import classify
 from buscador_midias.catalog.health_restoration import automatic_event
+from buscador_midias.catalog.health_rules import next_run
 from buscador_midias.catalog.health_schema import DDL
 from buscador_midias.catalog.postgres import WRITE_LOCK, PostgresCatalogStore, connect_postgres
 from buscador_midias.catalog.store import CatalogError
@@ -72,7 +73,14 @@ class HealthStore:
         """Valida revisão, agenda e opção de fallback sem expor credenciais."""
         self.initialize()
         required = {"enabled", "interval_minutes", "workers", "max_attempts", "version"}
-        optional = {"bright_data", "max_bright_requests", "activate_recovered"}
+        optional = {
+            "bright_data",
+            "max_bright_requests",
+            "activate_recovered",
+            "schedule_hours",
+            "mode",
+            "scope",
+        }
         if (
             kind not in ("active", "recovery")
             or not required.issubset(data)
@@ -100,6 +108,18 @@ class HealthStore:
                 raise CatalogError(
                     "Configuração inválida: confira frequência, paralelismo e tentativas."
                 )
+            hours = values["schedule_hours"]
+            if (
+                not isinstance(hours, list)
+                or len(set(hours)) != len(hours)
+                or any(type(h) is not int or not 0 <= h <= 23 for h in hours)
+                or values["mode"] not in ("full", "probe")
+                or values["scope"] not in ("errors", "inactive")
+                or (kind == "recovery" and values["mode"] == "probe")
+                or (kind == "active" and values["scope"] != "errors")
+            ):
+                raise CatalogError("Configuração inválida: confira horários, modo e escopo.")
+            hours = sorted(hours)
             if before["version"] != values["version"]:
                 raise CatalogError("A rotina mudou. Atualize a tela antes de salvar.", 409)
             if values["bright_data"] and not bright_data_available():
@@ -107,15 +127,17 @@ class HealthStore:
             changed = (
                 before["interval_minutes"] != values["interval_minutes"]
                 or before["enabled"] != values["enabled"]
+                or sorted(before["schedule_hours"]) != hours
             )
             next_at = (
-                datetime.now(UTC) + timedelta(minutes=values["interval_minutes"])
+                next_run(datetime.now(UTC), hours, values["interval_minutes"])
                 if changed
                 else before["next_run_at"]
             )
             after = db.execute(
                 "UPDATE health_settings SET enabled=%s,interval_minutes=%s,workers=%s,"
                 "max_attempts=%s,bright_data=%s,max_bright_requests=%s,activate_recovered=%s,"
+                "schedule_hours=%s,mode=%s,scope=%s,"
                 "version=version+1,next_run_at=%s,updated_at=now() WHERE kind=%s RETURNING *",
                 (
                     values["enabled"],
@@ -125,6 +147,9 @@ class HealthStore:
                     values["bright_data"],
                     values["max_bright_requests"],
                     values["activate_recovered"],
+                    hours,
+                    values["mode"],
+                    values["scope"],
                     next_at,
                     kind,
                 ),
@@ -312,10 +337,15 @@ class HealthStore:
             ).fetchone()
             if trigger == "scheduled":
                 db.execute(
-                    "UPDATE health_settings SET "
-                    "next_run_at=now()+interval_minutes*interval '1 minute' "
-                    "WHERE kind=%s",
-                    (kind,),
+                    "UPDATE health_settings SET next_run_at=%s WHERE kind=%s",
+                    (
+                        next_run(
+                            datetime.now(UTC),
+                            setting["schedule_hours"],
+                            setting["interval_minutes"],
+                        ),
+                        kind,
+                    ),
                 )
             return dict(run)
 

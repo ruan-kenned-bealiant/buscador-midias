@@ -223,3 +223,18 @@ def publication_outside(job: dict[str, Any]) -> dict[str, Any] | None:
         article=dict(published_at=published.isoformat(), date_basis="xml_publication"),
         metrics=dict(avoided_article_requests=1),
     )
+
+
+def head_outside(read_order: str, top: str | None, since: datetime) -> dict[str, Any] | None:
+    """Corta o documento inteiro quando o topo, o mais novo, já está fora da janela.
+
+    Só vale com ``read_order == newest_first`` comprovado no link. O topo é tratado como o
+    ``lastmod`` é: limite superior da publicação de todas as entradas, com a mesma margem de fuso
+    e o mesmo cuidado com data pura; qualquer dúvida mantém a leitura completa.
+    """
+    if read_order != "newest_first":
+        return None
+    found = lastmod_outside(top, since)
+    if not found:
+        return None
+    return dict(rule="head_before_window", top=top, bound=found["bound"])

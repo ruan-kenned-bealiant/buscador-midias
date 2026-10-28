@@ -73,6 +73,8 @@ def should_fallback(result: FetchResult) -> bool:
 class BrightTestReader(TestReader):
     """Tenta HTTP direto antes de cada fallback, sem consulta a robots.txt."""
 
+    supports_early_stop = False
+
     __test__ = False
 
     def __init__(
@@ -82,11 +84,18 @@ class BrightTestReader(TestReader):
         *,
         max_bright_requests: int = 8,
         client_factory: Callable[..., Any] = httpx.Client,
+        direct_attempts: int = 1,
+        direct_pause: float = 1.0,
         **kwargs: Any,
     ) -> None:
-        """Contabiliza chamadas e mantém o teto total de tempo, bytes e requisições."""
+        """Contabiliza chamadas e mantém o teto total de tempo, bytes e requisições.
+
+        ``direct_attempts`` é quantas vezes o acesso direto é tentado antes de pagar o fallback.
+        """
         super().__init__(roots, progress, **kwargs)
         self.max_bright_requests = max_bright_requests
+        self.direct_attempts = direct_attempts
+        self.direct_pause = direct_pause
         self.client_factory = client_factory
         self.bright_events: list[dict[str, Any]] = []
         self.bright_requests = 0
@@ -94,11 +103,19 @@ class BrightTestReader(TestReader):
         self.bright_limit_reached = False
         self._bright_depth = 0
 
-    def _fetch(self, url: str, *, robots: bool = False) -> FetchResult:
+    def _direct(self, url: str, robots: bool) -> FetchResult:
         try:
-            direct = super()._fetch(url, robots=robots)
+            return super()._fetch(url, robots=robots)
         except (OSError, http.client.HTTPException) as error:
-            direct = FetchResult(url, None, b"", str(error)[:200], url)
+            return FetchResult(url, None, b"", str(error)[:200], url)
+
+    def _fetch(self, url: str, *, robots: bool = False) -> FetchResult:
+        direct = self._direct(url, robots)
+        for _ in range(self.direct_attempts - 1):
+            if not should_fallback(direct) or self.bright_provider_error:
+                break
+            time.sleep(min(self.direct_pause, max(0.0, self.deadline - time.monotonic())))
+            direct = self._direct(url, robots)
         if not should_fallback(direct) or self.bright_provider_error:
             return direct
         if self.bright_requests >= self.max_bright_requests:

@@ -45,8 +45,25 @@ def old_news(roots, progress):
     )
 
 
-def execute(health, factory=old_news):
-    worker = HealthWorker(health, factory)
+class FreshProbe:
+    """Sonda leve com notícia de ontem: o portão de frescor libera a reativação."""
+
+    def __call__(self, link):
+        return self
+
+    def get(self, url):
+        from datetime import timedelta
+
+        day = (datetime.now(UTC) - timedelta(days=1)).strftime("%a, %d %b %Y %H:%M:%S +0000")
+        body = (
+            f"<rss><channel><item><link>{url}n</link><pubDate>{day}</pubDate></item>"
+            "</channel></rss>"
+        )
+        return FetchResult(url, 200, body.encode(), None, url)
+
+
+def execute(health, factory=old_news, probe=None):
+    worker = HealthWorker(health, factory, probe_reader=probe or FreshProbe())
     worker.recover()
     run = worker.next_run()
     worker.execute_run(run)

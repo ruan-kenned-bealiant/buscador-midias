@@ -18,8 +18,13 @@ class MappingBudget:
     """
 
     def __init__(
-        self, inner: Fetcher, *, max_requests: int, max_seconds: float,
-        deadline: float, clock: Callable[[], float] = monotonic,
+        self,
+        inner: Fetcher,
+        *,
+        max_requests: int,
+        max_seconds: float,
+        deadline: float,
+        clock: Callable[[], float] = monotonic,
     ) -> None:
         """Inicia o orçamento da fonte, mantendo o prazo global compartilhado."""
         self.inner = inner

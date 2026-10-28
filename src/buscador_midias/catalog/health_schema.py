@@ -14,6 +14,12 @@ ALTER TABLE health_settings ADD COLUMN IF NOT EXISTS max_bright_requests INTEGER
  CHECK(max_bright_requests BETWEEN 1 AND 48);
 ALTER TABLE health_settings ADD COLUMN IF NOT EXISTS activate_recovered
  BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE health_settings ADD COLUMN IF NOT EXISTS schedule_hours INTEGER[]
+ NOT NULL DEFAULT '{}';
+ALTER TABLE health_settings ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'full'
+ CHECK(mode IN ('full','probe'));
+ALTER TABLE health_settings ADD COLUMN IF NOT EXISTS scope TEXT NOT NULL DEFAULT 'errors'
+ CHECK(scope IN ('errors','inactive'));
 CREATE TABLE IF NOT EXISTS health_runs (
  id TEXT PRIMARY KEY,kind TEXT NOT NULL REFERENCES health_settings(kind),
  trigger TEXT NOT NULL CHECK(trigger IN ('manual','scheduled')),
@@ -48,4 +54,5 @@ CREATE TABLE IF NOT EXISTS link_health (
  link_version INTEGER NOT NULL,source_version INTEGER NOT NULL,model_version INTEGER NOT NULL,
  FOREIGN KEY(run_id,link_id) REFERENCES health_results(run_id,link_id)
 );
+ALTER TABLE link_health ADD COLUMN IF NOT EXISTS failures INTEGER NOT NULL DEFAULT 0;
 """

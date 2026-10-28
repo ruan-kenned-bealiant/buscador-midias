@@ -4,6 +4,7 @@ STAGES = ("discovery", "dedup", "fetch", "context", "evidence", "persist")
 CONTENT_FILTER_MODES = ("off", "shadow", "enforce")
 LASTMOD_FILTER_MODES = CONTENT_FILTER_MODES
 URL_FILTER_MODES = CONTENT_FILTER_MODES
+HEAD_FILTER_MODES = CONTENT_FILTER_MODES
 # Notícia e opinião nunca são bloqueadas: o restante é rotina sem interesse para o corpus.
 BLOCKABLE_CATEGORIES = ("weather", "cooking", "sports", "entertainment", "lifestyle", "horoscope")
 # Versão do DDL. Aumente ao alterar ``DDL``: o esquema só é reaplicado quando a versão gravada
@@ -29,6 +30,7 @@ DEFAULTS = dict(
     blocked_content_categories=["horoscope", "weather", "cooking", "sports"],
     lastmod_filter="shadow",
     url_filter="shadow",
+    head_filter="shadow",
     host_concurrency=1,
     workers=dict(discovery=2, dedup=1, fetch=2, context=1, evidence=1, persist=1),
 )

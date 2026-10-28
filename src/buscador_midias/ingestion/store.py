@@ -36,6 +36,7 @@ from buscador_midias.ingestion.schema import (
     CONTENT_FILTER_MODES,
     DDL,
     DEFAULTS,
+    HEAD_FILTER_MODES,
     LASTMOD_FILTER_MODES,
     SCHEMA_VERSION,
     STAGES,
@@ -161,6 +162,14 @@ class IngestStore:
             ]
         )
         return int(snapshot["source"]["id"]), url_hash(job["payload"]["url"]), revision
+
+    def demote_read_order(self, link_id: int, found: str) -> None:
+        """Corrige ``newest_first`` que o próprio documento contrariou; nunca promove."""
+        with self.connection() as db:
+            db.execute(
+                "UPDATE links SET read_order=%s WHERE id=%s AND read_order='newest_first'",
+                (found, link_id),
+            )
 
     def cached_document(self, job: dict[str, Any]) -> dict[str, Any] | None:
         """Retorna XML interpretado para revalidação condicional; não dispensa novo acesso."""
@@ -342,6 +351,9 @@ class IngestStore:
             elif key == "lastmod_filter":
                 if value not in LASTMOD_FILTER_MODES:
                     raise CatalogError("Selecione o modo do filtro por lastmod válido.")
+            elif key == "head_filter":
+                if value not in HEAD_FILTER_MODES:
+                    raise CatalogError("Selecione o modo do corte pelo topo válido.")
             elif key == "url_filter":
                 if value not in URL_FILTER_MODES:
                     raise CatalogError("Selecione o modo do filtro por forma da URL válido.")
@@ -543,6 +555,7 @@ class IngestStore:
                     url=link["url"],
                     kind=link["kind"],
                     access_transport=link.get("access_transport", "direct"),
+                    read_order=link.get("read_order", "unknown"),
                     source=dict(
                         id=link["source_id"],
                         name=link["source_name"],

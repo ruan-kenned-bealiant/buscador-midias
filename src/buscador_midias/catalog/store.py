@@ -18,6 +18,7 @@ from unidecode import unidecode
 from buscador_midias.catalog.http_transport import validate_transport
 from buscador_midias.catalog.mechanisms import get_mechanism
 from buscador_midias.catalog.models import get_model, list_models
+from buscador_midias.catalog.read_order import READ_ORDERS, UNKNOWN
 from buscador_midias.catalog.schema import (
     archive_test,
     create_search_intervals,
@@ -233,6 +234,10 @@ class CatalogStore:
                 enforce_relations(db)
                 create_test_history(db)
                 create_search_intervals(db)
+                if "read_order" not in {r[1] for r in db.execute("PRAGMA table_info(links)")}:
+                    db.execute(
+                        "ALTER TABLE links ADD COLUMN read_order TEXT NOT NULL DEFAULT 'unknown'"
+                    )
                 if "access_transport" not in {r[1] for r in db.execute("PRAGMA table_info(links)")}:
                     db.execute(
                         "ALTER TABLE links ADD COLUMN access_transport "
@@ -439,6 +444,7 @@ class CatalogStore:
                 "version",
                 "search_interval_seconds",
                 "access_transport",
+                "read_order",
             }
         if data.keys() - allowed:
             raise CatalogError("O cadastro contém campos desconhecidos.")
@@ -491,6 +497,10 @@ class CatalogStore:
                         )
                     except ValueError as error:
                         raise CatalogError(str(error)) from error
+                    read_order = merged.get("read_order", UNKNOWN)
+                    if read_order not in READ_ORDERS:
+                        raise CatalogError("Ordem de leitura inválida.")
+                    values["read_order"] = read_order
                     # A prova pertence ao endereço e tipo que foram efetivamente testados.
                     if before and (
                         values["url"] != before["url"]
@@ -500,6 +510,8 @@ class CatalogStore:
                     ):
                         values["evidence"] = "{}"
                         values["last_test"] = "{}"
+                        if "read_order" not in data:
+                            values["read_order"] = UNKNOWN
                     if test_result is not None:
                         settings = db.execute(
                             "SELECT version FROM mechanisms WHERE model=?", (model,)
@@ -522,6 +534,10 @@ class CatalogStore:
                             )
                         values["last_test"] = json.dumps(test_result, ensure_ascii=False)
                         if test_result.get("xml_valid") and test_result.get("compatible"):
+                            if "read_order" not in data and test_result.get("read_order") in (
+                                READ_ORDERS
+                            ):
+                                values["read_order"] = test_result["read_order"]
                             values["evidence"] = json.dumps(
                                 self._test_evidence(test_result), ensure_ascii=False
                             )

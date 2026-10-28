@@ -419,12 +419,16 @@ def test_validacao_final_substitui_retrato_antigo_e_preserva_limites(tmp_path):
     assert page["total"] == 1
     assert page["records"][0]["partial"] and page["records"][0]["readable"]
     assert len(page["records"][0]["samples"]) == 1  # descarta links inseguros/externos
-    assert audit.sections_page("b.test", mode="confirmed", search="pol", offset=0, limit=10)[
-        "total"
-    ] == 1
-    assert audit.sections_page("b.test", mode="unconfirmed", search="", offset=0, limit=10)[
-        "sections"
-    ][0]["example_url"] == ""
+    assert (
+        audit.sections_page("b.test", mode="confirmed", search="pol", offset=0, limit=10)["total"]
+        == 1
+    )
+    assert (
+        audit.sections_page("b.test", mode="unconfirmed", search="", offset=0, limit=10)[
+            "sections"
+        ][0]["example_url"]
+        == ""
+    )
 
 
 def test_relatorio_final_em_preparacao_nao_apaga_evidencia_anterior(tmp_path):

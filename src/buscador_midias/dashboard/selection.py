@@ -14,7 +14,8 @@ DOWNLOADS = {
     "plano-periodico.json": "application/json",
     "plano-referencia-comparacao.json": "application/json",
     "classificacao-mecanismos.xlsx": (
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    ),
     "comparacao.md": "text/markdown; charset=utf-8",
     "comparacao.json": "application/json",
     "manifesto.json": "application/json",

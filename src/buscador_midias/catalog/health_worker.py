@@ -5,12 +5,17 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
+from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from datetime import UTC, datetime
 from typing import Any
 
+from buscador_midias.catalog.health_actions import apply_decision
 from buscador_midias.catalog.health_activation import activate_recovered
 from buscador_midias.catalog.health_policy import classify
+from buscador_midias.catalog.health_rules import decide, next_run
 from buscador_midias.catalog.health_store import HealthStore
+from buscador_midias.catalog.link_review import review_with_retry
 from buscador_midias.catalog.postgres import WRITE_LOCK, connect_postgres
 from buscador_midias.catalog.store import CatalogError
 from buscador_midias.catalog.testing import ReaderFactory, run_test
@@ -22,9 +27,14 @@ LEADER_KEY = 674931206
 class HealthWorker:
     """Executa enquanto o serviço do gerenciador está ligado, inclusive sem navegador aberto."""
 
-    def __init__(self, repository: HealthStore, factory: ReaderFactory | None = None) -> None:
-        """Define porta de rede substituível para testar sem chamadas externas."""
-        self.repository, self.factory = repository, factory
+    def __init__(
+        self,
+        repository: HealthStore,
+        factory: ReaderFactory | None = None,
+        probe_reader: Callable[[dict[str, Any]], Any] | None = None,
+    ) -> None:
+        """Define portas de rede substituíveis (teste completo e sonda) para testar sem rede."""
+        self.repository, self.factory, self.probe_reader = repository, factory, probe_reader
         self.stop = threading.Event()
         self.wake = threading.Event()
         self.owner = uuid.uuid4().hex
@@ -156,10 +166,22 @@ class HealthWorker:
                             "WHERE id=%s AND owner=%s",
                             (run["id"], self.owner),
                         )
-                        db.execute(
-                            "UPDATE health_settings SET next_run_at=GREATEST(next_run_at,"
-                            "now()+interval_minutes*interval '1 minute') WHERE kind=%s",
+                        setting = db.execute(
+                            "SELECT schedule_hours,interval_minutes FROM health_settings "
+                            "WHERE kind=%s",
                             (run["kind"],),
+                        ).fetchone()
+                        db.execute(
+                            "UPDATE health_settings SET next_run_at=GREATEST(next_run_at,%s) "
+                            "WHERE kind=%s",
+                            (
+                                next_run(
+                                    datetime.now(UTC),
+                                    setting["schedule_hours"],
+                                    setting["interval_minutes"],
+                                ),
+                                run["kind"],
+                            ),
                         )
                     return
                 done, _ = wait(tasks, timeout=1, return_when=FIRST_COMPLETED)
@@ -187,7 +209,129 @@ class HealthWorker:
             and (effective if kind == "active" else not effective)
         )
 
+    def _review(self, snapshot: dict[str, Any]) -> dict[str, Any]:
+        """Sonda leve do link (só o documento) com as regras de frescor, período e tema."""
+        config = snapshot["config"]
+        link = dict(
+            id=snapshot["link_id"],
+            version=snapshot["link_version"],
+            source_id=snapshot["source"]["id"],
+            url=config["url"],
+            label="",
+            kind=config["kind"],
+            model=config["model"],
+            access_transport=config.get("access_transport", "direct"),
+        )
+        reader = self.probe_reader
+        if reader is None:
+            from buscador_midias.catalog.review_cli import _real_reader as reader
+        return review_with_retry(link, reader, datetime.now(UTC))
+
+    def _owned_and_running(self, run: dict[str, Any]) -> bool:
+        with self.repository.connection() as db:
+            state = db.execute(
+                "SELECT status,owner FROM health_runs WHERE id=%s", (run["id"],)
+            ).fetchone()
+        return bool(state and state["owner"] == self.owner and state["status"] == "running")
+
+    def _probe(self, run: dict[str, Any], row: dict[str, Any]) -> None:
+        """Braço 1 leve: uma leitura do documento decide manter, inativar ou excluir."""
+        snapshot = row["snapshot"]
+        if self.stop.is_set():
+            return
+        if not self._current(snapshot, run["kind"]):
+            self._finish(run, row, "skipped", None, "Cadastro alterado desde o início da rodada")
+            return
+        if not self._owned_and_running(run):
+            self._finish(run, row, "cancelled", None, "Execução cancelada")
+            return
+        try:
+            outcome = self._review(snapshot)
+        except Exception:
+            _LOG.exception("Erro interno na sonda do link %s", row["link_id"])
+            self._finish(run, row, "error", None, "Falha interna; não é uma reprovação da fonte")
+            return
+        self._finish_probe(run, row, outcome)
+        self.stop.wait(0.3)
+
+    def _finish_probe(
+        self, run: dict[str, Any], row: dict[str, Any], outcome: dict[str, Any]
+    ) -> None:
+        """Grava o resultado e aplica a decisão na mesma transação, na revisão sondada."""
+        from psycopg.types.json import Jsonb
+
+        snapshot = row["snapshot"]
+        with self.repository.connection() as db:
+            db.execute("SELECT pg_advisory_xact_lock(%s)", (WRITE_LOCK,))
+            owned = db.execute(
+                "SELECT owner FROM health_runs WHERE id=%s FOR UPDATE", (run["id"],)
+            ).fetchone()
+            if owned["owner"] != self.owner:
+                return
+            current = db.execute(
+                "SELECT l.version,s.version source_version,m.version model_version "
+                "FROM links l JOIN sites s ON s.id=l.source_id "
+                "JOIN mechanisms m ON m.model=l.model "
+                "WHERE l.id=%s AND l.deleted_at IS NULL AND s.deleted_at IS NULL",
+                (row["link_id"],),
+            ).fetchone()
+            versions = (
+                snapshot["link_version"],
+                snapshot["source_version"],
+                snapshot["config"]["model_version"],
+            )
+            if (
+                not current
+                or (
+                    current["version"],
+                    current["source_version"],
+                    current["model_version"],
+                )
+                != versions
+            ):
+                db.execute(
+                    "UPDATE health_results SET state='skipped',detail=%s,finished_at=now() "
+                    "WHERE run_id=%s AND link_id=%s",
+                    ("Cadastro alterado durante o teste", run["id"], row["link_id"]),
+                )
+                return
+            previous = db.execute(
+                "SELECT failures FROM link_health WHERE link_id=%s", (row["link_id"],)
+            ).fetchone()
+            decision = decide(outcome, previous["failures"] if previous else 0)
+            link_version = apply_decision(db, snapshot, run["id"], decision) or versions[0]
+            db.execute(
+                "INSERT INTO health_attempts(run_id,link_id,attempt,category,result) "
+                "VALUES(%s,%s,1,%s,%s)",
+                (run["id"], row["link_id"], decision.category, Jsonb(outcome)),
+            )
+            db.execute(
+                "UPDATE health_results SET state='completed',category=%s,result=%s,detail=%s,"
+                "attempts=1,finished_at=now() WHERE run_id=%s AND link_id=%s",
+                (decision.category, Jsonb(outcome), decision.reason, run["id"], row["link_id"]),
+            )
+            db.execute(
+                "INSERT INTO link_health(link_id,run_id,category,link_version,source_version,"
+                "model_version,failures) VALUES(%s,%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT(link_id) DO UPDATE SET run_id=excluded.run_id,"
+                "category=excluded.category,checked_at=now(),link_version=excluded.link_version,"
+                "source_version=excluded.source_version,model_version=excluded.model_version,"
+                "failures=excluded.failures",
+                (
+                    row["link_id"],
+                    run["id"],
+                    decision.category,
+                    link_version,
+                    versions[1],
+                    versions[2],
+                    decision.failures,
+                ),
+            )
+
     def _test(self, run: dict[str, Any], row: dict[str, Any]) -> None:
+        if run["configuration"].get("mode") == "probe" and run["kind"] == "active":
+            self._probe(run, row)
+            return
         snapshot = row["snapshot"]
         for attempt in range(row["attempts"] + 1, run["configuration"]["max_attempts"] + 1):
             if self.stop.is_set():
@@ -224,12 +368,37 @@ class HealthWorker:
                     "Cadastro alterado durante o teste",
                 )
                 return
+            gate = None
+            if (
+                final
+                and category == "healthy"
+                and run["kind"] == "recovery"
+                and run["configuration"].get("activate_recovered")
+            ):
+                gate = self._gate(snapshot)
             self._finish(
-                run, row, "completed" if final else "running", (attempt, category, result), ""
+                run,
+                row,
+                "completed" if final else "running",
+                (attempt, category, result),
+                "",
+                gate=gate,
             )
             if final:
                 self.stop.wait(0.3)
                 return
+
+    def _gate(self, snapshot: dict[str, Any]) -> str | None:
+        """Motivo para NÃO reativar (frescor, período, tema, esporte); ``None`` libera."""
+        try:
+            outcome = self._review(snapshot)
+        except Exception:
+            _LOG.exception("Erro ao conferir o frescor do link %s", snapshot["link_id"])
+            return "Não reativado: falha ao conferir o frescor"
+        if outcome["proposal"] == "keep":
+            return None
+        why = decide(outcome, 0).reason or outcome.get("reason", "")
+        return f"Não reativado: {why}"
 
     def _finish(
         self,
@@ -238,6 +407,8 @@ class HealthWorker:
         state: str,
         observation: tuple[int, str, dict[str, Any]] | None,
         detail: str,
+        *,
+        gate: str | None = None,
     ) -> None:
         from psycopg.types.json import Jsonb
 
@@ -308,7 +479,14 @@ class HealthWorker:
                     and run["kind"] == "recovery"
                     and run["configuration"].get("activate_recovered")
                 ):
-                    activated = activate_recovered(db, snapshot, result or {})
+                    activated = False
+                    if gate:
+                        db.execute(
+                            "UPDATE health_results SET detail=%s WHERE run_id=%s AND link_id=%s",
+                            (gate, run["id"], row["link_id"]),
+                        )
+                    else:
+                        activated = activate_recovered(db, snapshot, result or {})
                     if activated:
                         db.execute(
                             "UPDATE health_results SET activated=true "

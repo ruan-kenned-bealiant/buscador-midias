@@ -105,7 +105,8 @@ def review_entry(page: MapPage) -> EntryReview | None:
         )
     if "do mapeamento atingido; fila preservada" in detail:
         return EntryReview(
-            "orçamento de exploração atingido", False,
+            "orçamento de exploração atingido",
+            False,
             "Priorizar lacunas e retomar somente em uma execução com orçamento definido.",
         )
     return EntryReview(

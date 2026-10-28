@@ -22,9 +22,17 @@ from buscador_midias.analysis.context import AnalysisItem, OpenRouterContextAnal
 from buscador_midias.analysis.entity_context import CONTEXT_BATCH_SIZE, EntityContext
 from buscador_midias.analysis.openrouter import TRUNCATED_RESPONSE, OpenRouterChat
 from buscador_midias.analysis.prompt import PROMPT_VERSION
+from buscador_midias.catalog.head_probe import prefix_outside
 from buscador_midias.catalog.http_policy import retryable
 from buscador_midias.catalog.http_transport import make_reader
 from buscador_midias.catalog.mechanisms import get_mechanism
+from buscador_midias.catalog.read_order import (
+    NEWEST_FIRST,
+    OLDEST_FIRST,
+    UNORDERED,
+    detect_read_order,
+    newest_stamp,
+)
 from buscador_midias.corpus.article import build_corpus_article
 from buscador_midias.corpus.writer import PostgresCorpusWriter
 from buscador_midias.criteria import meets_criteria
@@ -44,6 +52,7 @@ from buscador_midias.ingestion.content_filter import (
 )
 from buscador_midias.ingestion.document_memo import DocumentMemo
 from buscador_midias.ingestion.flow import (
+    head_outside,
     is_last_attempt,
     lastmod_outside,
     publication_outside,
@@ -286,13 +295,42 @@ class Engine:
                 headers.get("If-None-Match", ""),
                 headers.get("If-Modified-Since", ""),
             )
-            response, shared = self.document_memo.get(memo_key, lambda: reader.get(url))
+            since = job["run"]["since"]
+            read_order = snapshot.get("read_order", "unknown")
+            head_mode = job["run"]["config"].get("head_filter", "shadow")
+            # Só um leitor que sabe parar a leitura (direto e curl), com a ordem comprovada no link
+            # e documento sem compressão própria: o prefixo é interpretado antes do resto chegar.
+            stoppable = (
+                head_mode == "enforce"
+                and read_order == NEWEST_FIRST
+                and getattr(reader, "supports_early_stop", False)
+                and not urlsplit(url).path.endswith((".gz", ".zip"))
+            )
+
+            def fetch() -> Any:
+                if stoppable:
+                    return reader.get(
+                        url, early_stop=lambda head: bool(prefix_outside(head, since))
+                    )
+                return reader.get(url)
+
+            response, shared = self.document_memo.get(memo_key + (stoppable,), fetch)
             metrics = self.metrics(reader)
             if shared:
                 metrics["shared_xml_http_hits"] = 1
                 metrics["avoided_duplicate_xml_requests"] = 1
             if not response.ok and not (response.status == 304 and cached):
                 self.http_failure(reader, response, "no XML")
+            if response.truncated:
+                metrics["head_stopped_download"] = 1
+                metrics["head_cut"] = 1
+                return dict(
+                    outcome="sem_novidades",
+                    candidates=[],
+                    children=[],
+                    metrics=metrics,
+                    head_cut=prefix_outside(response.content, since),
+                )
             try:
                 if cached and (
                     response.status == 304
@@ -311,6 +349,24 @@ class Engine:
                 raise RetryableError("Mecanismo incompatível com o XML", metrics)
             if use_cache and response.status != 304:
                 self.repository.cache_document(job, document, response)
+            head_cut = None
+            if read_order == NEWEST_FIRST and head_mode != "off":
+                observed = detect_read_order(document)
+                if observed in (UNORDERED, OLDEST_FIRST):
+                    # O site mudou a ordem: o rótulo deixa de valer, a leitura segue completa.
+                    metrics["read_order_contradicted"] = 1
+                    self.repository.demote_read_order(snapshot["link_id"], observed)
+                else:
+                    head_cut = head_outside(read_order, newest_stamp(document), since)
+            if head_cut and head_mode == "enforce":
+                metrics["head_cut"] = 1
+                return dict(
+                    outcome="sem_novidades",
+                    candidates=[],
+                    children=[],
+                    metrics=metrics,
+                    head_cut=head_cut,
+                )
             entries = []
             outside_urls = 0
             lastmod_excluded = 0
@@ -410,6 +466,9 @@ class Engine:
                     metrics=metrics,
                     coverage_partial=True,
                 )
+            if head_cut:
+                metrics["head_shadow_would_skip"] = 1
+                metrics["head_shadow_missed"] = int(bool(entries or children))
             plan = dict(
                 outcome="urls_encontradas" if entries or children else "sem_novidades",
                 candidates=entries,
@@ -424,6 +483,8 @@ class Engine:
                 unrecognized_children=unrecognized,
                 coverage_partial=bool(unrecognized),
             )
+            if head_cut:
+                plan["shadow_head_exclusion"] = head_cut
             if len(entries) <= 500 and len(children) <= 64:
                 return plan
             key = self.repository.save_plan(job, plan)

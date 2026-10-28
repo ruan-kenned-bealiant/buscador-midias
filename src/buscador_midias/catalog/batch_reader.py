@@ -64,6 +64,8 @@ class BatchCache:
 class BatchReader(TestReader):
     """Usa as mesmas proteções de teste, com reaproveitamento explícito de respostas na rodada."""
 
+    supports_early_stop = False
+
     def __init__(
         self,
         roots: list[str],

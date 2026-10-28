@@ -510,54 +510,127 @@ def build_parser() -> argparse.ArgumentParser:
         "map-sites", help="Mapeia seções em lotes retomáveis, sem coletar notícias."
     )
     _add_site_args(mapping)
-    mapping.add_argument("--pages-per-site", type=int, default=50,
-                         help="Páginas processadas por fonte neste lote (padrão 50).")
-    mapping.add_argument("--drain", action="store_true",
-                         help="Repete lotes até esgotar a fila ou não conseguir avançar.")
-    mapping.add_argument("--max-site-requests", type=int, default=200,
-                         help="Teto total de chamadas HTTP por fonte, entre todos os lotes.")
-    mapping.add_argument("--max-site-seconds", type=float, default=180,
-                         help="Tempo de exploração por fonte (padrão 180 segundos).")
-    mapping.add_argument("--max-run-seconds", type=float, default=1800,
-                         help="Prazo global da exploração HTTP; exportação fica à parte.")
+    mapping.add_argument(
+        "--pages-per-site",
+        type=int,
+        default=50,
+        help="Páginas processadas por fonte neste lote (padrão 50).",
+    )
+    mapping.add_argument(
+        "--drain",
+        action="store_true",
+        help="Repete lotes até esgotar a fila ou não conseguir avançar.",
+    )
+    mapping.add_argument(
+        "--max-site-requests",
+        type=int,
+        default=200,
+        help="Teto total de chamadas HTTP por fonte, entre todos os lotes.",
+    )
+    mapping.add_argument(
+        "--max-site-seconds",
+        type=float,
+        default=180,
+        help="Tempo de exploração por fonte (padrão 180 segundos).",
+    )
+    mapping.add_argument(
+        "--max-run-seconds",
+        type=float,
+        default=1800,
+        help="Prazo global da exploração HTTP; exportação fica à parte.",
+    )
     mapping.add_argument("--workers", type=int, default=4, help="Fontes em paralelo.")
-    mapping.add_argument("--interval", type=float, default=1.0,
-                         help="Intervalo mínimo por host, em segundos.")
-    mapping.add_argument("--retry-failed", action="store_true",
-                         help="Tenta novamente as páginas com falha ou proibidas.")
-    mapping.add_argument("--report-only", action="store_true",
-                         help="Só exporta o inventário existente, sem rede ou gravação no banco.")
-    mapping.add_argument("--priorities-only", action="store_true",
-                         help="Com --report-only, exporta somente prioridades de cobertura.")
-    mapping.add_argument("--refresh-pages", action="store_true",
-                         help="Relê também páginas concluídas, atualizando suas amostras.")
-    mapping.add_argument("--validate-sources", action="store_true",
-                         help="Confere feeds/sitemaps contra as amostras das seções.")
-    mapping.add_argument("--sources-only", action="store_true",
-                         help="Só confere mecanismos das páginas já mapeadas.")
-    mapping.add_argument("--source-requests", type=int, default=20,
-                         help="Leituras por fonte; inclui robots e filhos (retentativas à parte).")
-    mapping.add_argument("--hints", type=Path, nargs='+',
-                         default=[DEFAULT_HINTS, DEFAULT_MANUAL_HINTS], help="CSVs de dicas.")
-    mapping.add_argument("--manual", type=Path, default=DEFAULT_MANUAL_RULES,
-                         help="Correções manuais; exclusões valem também na auditoria.")
-    mapping.add_argument("--out", type=Path, default=_REPO_ROOT / "var" / "mapa-sites.xlsx",
-                         help="Relatório .xlsx ou .csv (um CSV por aba).")
+    mapping.add_argument(
+        "--interval", type=float, default=1.0, help="Intervalo mínimo por host, em segundos."
+    )
+    mapping.add_argument(
+        "--retry-failed",
+        action="store_true",
+        help="Tenta novamente as páginas com falha ou proibidas.",
+    )
+    mapping.add_argument(
+        "--report-only",
+        action="store_true",
+        help="Só exporta o inventário existente, sem rede ou gravação no banco.",
+    )
+    mapping.add_argument(
+        "--priorities-only",
+        action="store_true",
+        help="Com --report-only, exporta somente prioridades de cobertura.",
+    )
+    mapping.add_argument(
+        "--refresh-pages",
+        action="store_true",
+        help="Relê também páginas concluídas, atualizando suas amostras.",
+    )
+    mapping.add_argument(
+        "--validate-sources",
+        action="store_true",
+        help="Confere feeds/sitemaps contra as amostras das seções.",
+    )
+    mapping.add_argument(
+        "--sources-only", action="store_true", help="Só confere mecanismos das páginas já mapeadas."
+    )
+    mapping.add_argument(
+        "--source-requests",
+        type=int,
+        default=20,
+        help="Leituras por fonte; inclui robots e filhos (retentativas à parte).",
+    )
+    mapping.add_argument(
+        "--hints",
+        type=Path,
+        nargs="+",
+        default=[DEFAULT_HINTS, DEFAULT_MANUAL_HINTS],
+        help="CSVs de dicas.",
+    )
+    mapping.add_argument(
+        "--manual",
+        type=Path,
+        default=DEFAULT_MANUAL_RULES,
+        help="Correções manuais; exclusões valem também na auditoria.",
+    )
+    mapping.add_argument(
+        "--out",
+        type=Path,
+        default=_REPO_ROOT / "var" / "mapa-sites.xlsx",
+        help="Relatório .xlsx ou .csv (um CSV por aba).",
+    )
     return parser
 
 
 def _add_discovery_plan_args(parser: argparse.ArgumentParser) -> None:
     """Opções do conjunto de mecanismos, comuns a discover e run."""
-    parser.add_argument("--discovery-plan", type=Path, default=None,
-                        help="Plano JSON de principal/complementos; não grava escolhas no banco.")
-    parser.add_argument("--max-complements", type=int, default=3,
-                        help="Complementos por fonte; zero mantém a cascata sem união.")
-    parser.add_argument("--max-source-requests", type=int, default=40,
-                        help="Teto de chamadas gratuitas por fonte; zero desliga o teto.")
-    parser.add_argument("--source-timeout", type=float, default=120,
-                        help="Prazo em segundos por fonte; zero desliga o prazo total.")
-    parser.add_argument("--manual", type=Path, default=DEFAULT_MANUAL_RULES,
-                        help="Regras manuais; exclusões são aplicadas durante a leitura.")
+    parser.add_argument(
+        "--discovery-plan",
+        type=Path,
+        default=None,
+        help="Plano JSON de principal/complementos; não grava escolhas no banco.",
+    )
+    parser.add_argument(
+        "--max-complements",
+        type=int,
+        default=3,
+        help="Complementos por fonte; zero mantém a cascata sem união.",
+    )
+    parser.add_argument(
+        "--max-source-requests",
+        type=int,
+        default=40,
+        help="Teto de chamadas gratuitas por fonte; zero desliga o teto.",
+    )
+    parser.add_argument(
+        "--source-timeout",
+        type=float,
+        default=120,
+        help="Prazo em segundos por fonte; zero desliga o prazo total.",
+    )
+    parser.add_argument(
+        "--manual",
+        type=Path,
+        default=DEFAULT_MANUAL_RULES,
+        help="Regras manuais; exclusões são aplicadas durante a leitura.",
+    )
 
 
 def _add_site_args(parser: argparse.ArgumentParser) -> None:
@@ -659,12 +732,17 @@ def main(
             return 2
         try:
             summary = export_mechanisms(
-                store, load_sites(args.sites).sites, load_manual_rules(args.manual), args.out,
+                store,
+                load_sites(args.sites).sites,
+                load_manual_rules(args.manual),
+                args.out,
             )
         finally:
             store.close()
-        print(f"Inventário exportado em {args.out}: "
-              f"{summary['functional_plan_sources']} fontes no plano funcional")
+        print(
+            f"Inventário exportado em {args.out}: "
+            f"{summary['functional_plan_sources']} fontes no plano funcional"
+        )
         return 0
     if args.command == "migrate-catalog":
         import json
@@ -1171,7 +1249,10 @@ def _dashboard(
     # As telas de resultados salvos não dependem do PostgreSQL. As rotas que
     # precisam dele abrem a conexão sob demanda e respondem 503 se indisponível.
     server = make_server(
-        lambda: StateStore(read_only=True), args.host, args.port, schedule_path=args.schedule,
+        lambda: StateStore(read_only=True),
+        args.host,
+        args.port,
+        schedule_path=args.schedule,
         sites_path=args.sites,
     )
     port = server.server_address[1]
@@ -1186,22 +1267,35 @@ def _dashboard(
 
 
 def _discovery_configuration(
-    args: argparse.Namespace, sites: Sequence[Site],
+    args: argparse.Namespace,
+    sites: Sequence[Site],
 ) -> tuple[ManualRulesBook, dict[str, list[CandidateReport]]]:
     """Valida limites, plano e regras antes de iniciar HTTP ou demais etapas do run."""
-    if (args.max_complements < 0 or args.max_source_requests < 0
-            or args.max_sitemap_fetches < 0
-            or not 0 <= args.source_timeout < float("inf")
-            or (args.discovery_plan is not None and args.no_strategy)):
+    if (
+        args.max_complements < 0
+        or args.max_source_requests < 0
+        or args.max_sitemap_fetches < 0
+        or not 0 <= args.source_timeout < float("inf")
+        or (args.discovery_plan is not None and args.no_strategy)
+    ):
         raise ValueError("limites inválidos ou --discovery-plan incompatível com --no-strategy")
     manual = load_manual_rules(args.manual)
     plan_path = args.discovery_plan
-    if (plan_path is None and not args.no_strategy and DEFAULT_DISCOVERY_PLAN.is_file()
-            and args.sites.resolve() == DEFAULT_SITES.resolve()):
+    if (
+        plan_path is None
+        and not args.no_strategy
+        and DEFAULT_DISCOVERY_PLAN.is_file()
+        and args.sites.resolve() == DEFAULT_SITES.resolve()
+    ):
         plan_path = DEFAULT_DISCOVERY_PLAN
-    plan = load_discovery_plan(
-        plan_path, {s.key: s for s in load_sites(args.sites).sites},
-    ) if plan_path is not None else {}
+    plan = (
+        load_discovery_plan(
+            plan_path,
+            {s.key: s for s in load_sites(args.sites).sites},
+        )
+        if plan_path is not None
+        else {}
+    )
     for site in sites:
         forced = manual.for_site(site).force
         if site.key in plan and forced and plan[site.key][0].url not in forced:
@@ -1259,8 +1353,11 @@ def _discover(
         strategies = _strategies_by_site(store) if not args.no_strategy else {}
         for key, reports in plan.items():
             addresses = {r.url for r in reports}
-            backups = [r for r in strategies.get(key, ()) if r.role is Role.BACKUP
-                       and r.url not in addresses]
+            backups = [
+                r
+                for r in strategies.get(key, ())
+                if r.role is Role.BACKUP and r.url not in addresses
+            ]
             strategies[key] = [*reports, *backups]
         if args.max_complements and any(
             r.role is Role.COMPLEMENT for site in sites for r in strategies.get(site.key, ())
@@ -1387,10 +1484,15 @@ def _map_sites(
     live_clock: bool = False,
 ) -> int:
     """Mapeia a estrutura com checkpoints e exporta o inventário inteiro."""
-    if (args.pages_per_site < 1 or args.workers < 1 or args.interval < 0
-            or args.source_requests < 1 or args.max_site_requests < 1
-            or not 0 < args.max_site_seconds < float("inf")
-            or not 0 < args.max_run_seconds < float("inf")):
+    if (
+        args.pages_per_site < 1
+        or args.workers < 1
+        or args.interval < 0
+        or args.source_requests < 1
+        or args.max_site_requests < 1
+        or not 0 < args.max_site_seconds < float("inf")
+        or not 0 < args.max_run_seconds < float("inf")
+    ):
         print("orçamentos/workers precisam ser positivos e intervalo não negativo", file=sys.stderr)
         return 2
     if args.out.suffix.lower() not in (".xlsx", ".csv"):
@@ -1427,66 +1529,103 @@ def _map_sites(
                 checks[key] = normalized
             previous = {key: r for key, r in store.chosen_strategies() if r.role is Role.PRIMARY}
             if args.priorities_only:
-                write_mapping(priority_table([
-                    priority_row(site, pages[site.key], checks[site.key], now=now)
-                    for site in sites
-                ]), args.out)
+                write_mapping(
+                    priority_table(
+                        [
+                            priority_row(site, pages[site.key], checks[site.key], now=now)
+                            for site in sites
+                        ]
+                    ),
+                    args.out,
+                )
                 return 0
             if not args.report_only:
-                free = fetcher or build_fetcher(
-                    client=_open_http(client, stack), interval=args.interval,
-                    bright_data=False, env=os.environ, max_fallback_requests=0,
-                ).fetcher
+                free = (
+                    fetcher
+                    or build_fetcher(
+                        client=_open_http(client, stack),
+                        interval=args.interval,
+                        bright_data=False,
+                        env=os.environ,
+                        max_fallback_requests=0,
+                    ).fetcher
+                )
                 if not args.drain:
                     free = MemoizingFetcher(free, hosts=_shared_hosts(sites))
                 deadline = monotonic() + args.max_run_seconds
 
                 def visit_pass(
-                    site: Site, *, first: bool, suspended_pages: dict[str, str],
-                    suspended_sources: dict[str, str], bounded: MappingBudget,
+                    site: Site,
+                    *,
+                    first: bool,
+                    suspended_pages: dict[str, str],
+                    suspended_sources: dict[str, str],
+                    bounded: MappingBudget,
                 ) -> None:
                     if not args.sources_only:
                         if args.drain:
                             result = drain_site(
-                                site, bounded, store, user_agent=USER_AGENT,
-                                clock=clock, batch_pages=args.pages_per_site,
+                                site,
+                                bounded,
+                                store,
+                                user_agent=USER_AGENT,
+                                clock=clock,
+                                batch_pages=args.pages_per_site,
                                 retry_failed=args.retry_failed and first,
                                 refresh_pages=args.refresh_pages and first,
                                 suspended_origins=suspended_pages,
                                 on_batch=lambda batch: print(
                                     f"{site.key}: lote lidas={batch.visited} "
-                                    f"pendentes={batch.pending}", flush=True,
+                                    f"pendentes={batch.pending}",
+                                    flush=True,
                                 ),
                             )
                         else:
                             result = map_site(
-                                site, bounded, store, user_agent=USER_AGENT, now=now,
-                                max_pages=args.pages_per_site, retry_failed=args.retry_failed,
+                                site,
+                                bounded,
+                                store,
+                                user_agent=USER_AGENT,
+                                now=now,
+                                max_pages=args.pages_per_site,
+                                retry_failed=args.retry_failed,
                                 refresh_pages=args.refresh_pages,
                                 suspended_origins=suspended_pages,
                             )
-                        print(f"{site.key}: seções={result.sections} lidas={result.visited} "
-                              f"pendentes={result.pending} falhas={result.issues} {result.detail}",
-                              flush=True)
+                        print(
+                            f"{site.key}: seções={result.sections} lidas={result.visited} "
+                            f"pendentes={result.pending} falhas={result.issues} {result.detail}",
+                            flush=True,
+                        )
                     if validating:
                         known = store.mapping_pages(site.key)
                         attempted: set[str] = set()
                         while True:
                             audit_time = clock() if args.drain else now
                             queue = plan_source_audit(
-                                site, known, store.mapping_sources(site.key),
-                                [r for key, r, _ in candidates if key == site.key], now=audit_time,
-                                hints=hints.for_site(site), forced=manual.for_site(site).force,
+                                site,
+                                known,
+                                store.mapping_sources(site.key),
+                                [r for key, r, _ in candidates if key == site.key],
+                                now=audit_time,
+                                hints=hints.for_site(site),
+                                forced=manual.for_site(site).force,
                                 retry_failed=args.retry_failed and first,
                             )
                             queue = [
-                                url for url in queue if url not in attempted
+                                url
+                                for url in queue
+                                if url not in attempted
                                 and urlsplit(url).netloc not in suspended_sources
                             ]
                             if not queue:
                                 break
                             audited = audit_sources(
-                                site, bounded, queue, user_agent=USER_AGENT, now=audit_time,
+                                site,
+                                bounded,
+                                queue,
+                                user_agent=USER_AGENT,
+                                now=audit_time,
                                 max_requests=args.source_requests,
                                 exclude=manual.for_site(site).exclude,
                                 suspended_origins=suspended_sources,
@@ -1494,7 +1633,7 @@ def _map_sites(
                                     site.key, [source]
                                 ),
                             )
-                            print(f'{site.key}: mecanismos conferidos={len(audited)}', flush=True)
+                            print(f"{site.key}: mecanismos conferidos={len(audited)}", flush=True)
                             attempted.update(source.url for source in audited)
                             if not args.drain or not audited:
                                 break
@@ -1505,8 +1644,11 @@ def _map_sites(
                     suspended_sources: dict[str, str] = {}
                     while True:
                         visit_pass(
-                            site, first=first, suspended_pages=suspended_pages,
-                            suspended_sources=suspended_sources, bounded=bounded,
+                            site,
+                            first=first,
+                            suspended_pages=suspended_pages,
+                            suspended_sources=suspended_sources,
+                            bounded=bounded,
                         )
                         first = False
                         if not args.drain or args.sources_only:
@@ -1521,8 +1663,11 @@ def _map_sites(
 
                 def visit(site: Site) -> None:
                     bounded = MappingBudget(
-                        free, max_requests=args.max_site_requests,
-                        max_seconds=args.max_site_seconds, deadline=deadline, clock=monotonic,
+                        free,
+                        max_requests=args.max_site_requests,
+                        max_seconds=args.max_site_seconds,
+                        deadline=deadline,
+                        clock=monotonic,
                     )
                     try:
                         visit_site(site, bounded)
@@ -1541,14 +1686,18 @@ def _map_sites(
                             future.result()
                         except Exception as error:  # noqa: BLE001 - preserva os demais mapas
                             failed = True
-                            print(f"{jobs[future]}: {type(error).__name__}; checkpoint preservado",
-                                  file=sys.stderr)
+                            print(
+                                f"{jobs[future]}: {type(error).__name__}; checkpoint preservado",
+                                file=sys.stderr,
+                            )
                 pages = {site.key: store.mapping_pages(site.key) for site in sites}
                 checks = {site.key: store.mapping_sources(site.key) for site in sites}
             write_mapping(mapping_tables(sites, pages, previous, candidates, checks), args.out)
         except (StateSchemaError, RuntimeError, OSError, psycopg.Error) as error:
-            message = str(error) if isinstance(error, (StateSchemaError, RuntimeError)) else (
-                type(error).__name__
+            message = (
+                str(error)
+                if isinstance(error, (StateSchemaError, RuntimeError))
+                else (type(error).__name__)
             )
             print(message, file=sys.stderr)
             return 2

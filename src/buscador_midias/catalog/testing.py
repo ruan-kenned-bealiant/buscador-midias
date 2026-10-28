@@ -18,6 +18,7 @@ from buscador_midias.catalog.bright_reader import BrightTestReader, bright_data_
 from buscador_midias.catalog.cadence import estimate_cadence
 from buscador_midias.catalog.http_transport import make_reader, validate_transport
 from buscador_midias.catalog.mechanisms import get_mechanism
+from buscador_midias.catalog.read_order import UNKNOWN, detect_read_order
 from buscador_midias.catalog.reader import TestLimitError, TestReader
 from buscador_midias.catalog.store import CatalogError, CatalogStore, clean_url
 from buscador_midias.domain.site import Site
@@ -112,6 +113,7 @@ def run_test(
         root_entries=0,
         root_children=0,
         root_index=False,
+        read_order=UNKNOWN,
         xml_documents=0,
         news_urls=0,
         samples=[],
@@ -180,6 +182,7 @@ def run_test(
                     root_entries=len(set(document["entries"])),
                     root_children=len(set(document["children"])),
                     root_index=document["index"],
+                    read_order=detect_read_order(document),
                 )
                 compatible = mechanism.accepts(document)
                 result["requested_kind"] = mechanism.requested_kind(config["kind"], document)

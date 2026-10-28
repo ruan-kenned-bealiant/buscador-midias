@@ -34,7 +34,7 @@ class DocumentQueue:
         """Abre o checkpoint; somente o coordenador deve usar esta conexão."""
         self.db = sqlite3.connect(path)
         self.db.row_factory = sqlite3.Row
-        self.db.executescript('''
+        self.db.executescript("""
             PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS roots (
                 id INTEGER PRIMARY KEY, site TEXT, url TEXT, kind TEXT,
@@ -52,13 +52,13 @@ class DocumentQueue:
                 root_id INTEGER, hash TEXT, url TEXT, title TEXT, date TEXT, basis TEXT,
                 PRIMARY KEY(root_id,hash)
             );
-        ''')
+        """)
         self.db.execute("UPDATE tasks SET state='queued' WHERE state='active'")
         self.db.commit()
         self.rotation: deque[str] = deque()
         self.rotating: set[str] = set()
         for row in self.db.execute("SELECT DISTINCT site FROM tasks WHERE state='queued'"):
-            self._activate(row['site'])
+            self._activate(row["site"])
 
     def _activate(self, site: str) -> None:
         """Insere uma fonte uma única vez na rotação."""
@@ -69,11 +69,13 @@ class DocumentQueue:
     def add_root(self, site: str, url: str, kind: str) -> int:
         """Registra um mecanismo e sua primeira leitura, idempotentemente."""
         url = canonicalize_url(url)
-        self.db.execute('INSERT OR IGNORE INTO roots(site,url,kind) VALUES (?,?,?)',
-                        (site, url, kind))
-        row = self.db.execute('SELECT id FROM roots WHERE site=? AND url=? AND kind=?',
-                              (site, url, kind)).fetchone()
-        root_id = int(row['id'])
+        self.db.execute(
+            "INSERT OR IGNORE INTO roots(site,url,kind) VALUES (?,?,?)", (site, url, kind)
+        )
+        row = self.db.execute(
+            "SELECT id FROM roots WHERE site=? AND url=? AND kind=?", (site, url, kind)
+        ).fetchone()
+        root_id = int(row["id"])
         self._insert(root_id, site, url, kind, 0)
         self._activate(site)
         return root_id
@@ -81,13 +83,15 @@ class DocumentQueue:
     def _insert(self, root_id: int, site: str, url: str, kind: str, depth: int) -> None:
         """A identidade canônica por mecanismo evita ciclos e variantes de fragmento."""
         url = canonicalize_url(url)
-        host = (urlsplit(url).hostname or '').removeprefix('www.')
-        self.db.execute('''INSERT INTO tasks(root_id,site,url,host,kind,depth)
+        host = (urlsplit(url).hostname or "").removeprefix("www.")
+        self.db.execute(
+            """INSERT INTO tasks(root_id,site,url,host,kind,depth)
                            VALUES (?,?,?,?,?,?) ON CONFLICT(root_id,url) DO UPDATE SET
                            state=CASE WHEN excluded.depth < tasks.depth THEN 'queued'
                                       ELSE tasks.state END,
-                           depth=min(tasks.depth,excluded.depth)''',
-                        (root_id, site, url, host, kind, depth))
+                           depth=min(tasks.depth,excluded.depth)""",
+            (root_id, site, url, host, kind, depth),
+        )
 
     def commit(self) -> None:
         """Fecha o lote inicial de mecanismos."""
@@ -99,28 +103,34 @@ class DocumentQueue:
             site = self.rotation.popleft()
             self.rotating.remove(site)
             params: list[Any] = [site]
-            restriction = ''
+            restriction = ""
             if busy_hosts:
-                restriction = ' AND host NOT IN (' + ','.join('?' for _ in busy_hosts) + ')'
+                restriction = " AND host NOT IN (" + ",".join("?" for _ in busy_hosts) + ")"
                 params.extend(sorted(busy_hosts))
             row = self.db.execute(
-                "SELECT * FROM tasks WHERE site=? AND state='queued'" + restriction
-                + ' ORDER BY id LIMIT 1', params,
+                "SELECT * FROM tasks WHERE site=? AND state='queued'"
+                + restriction
+                + " ORDER BY id LIMIT 1",
+                params,
             ).fetchone()
             if row is None:
-                if self.db.execute("SELECT 1 FROM tasks WHERE site=? AND state='queued' LIMIT 1",
-                                   (site,)).fetchone():
+                if self.db.execute(
+                    "SELECT 1 FROM tasks WHERE site=? AND state='queued' LIMIT 1", (site,)
+                ).fetchone():
                     self._activate(site)
                 continue
             self._activate(site)
-            self.db.execute("UPDATE tasks SET state='active' WHERE id=?", (row['id'],))
+            self.db.execute("UPDATE tasks SET state='active' WHERE id=?", (row["id"],))
             self.db.commit()
-            return DocumentTask(*(row[key] for key in
-                                  ('id', 'root_id', 'site', 'url', 'host', 'kind', 'depth')))
+            return DocumentTask(
+                *(row[key] for key in ("id", "root_id", "site", "url", "host", "kind", "depth"))
+            )
         return None
 
     def finish(
-        self, task: DocumentTask, outcome: dict[str, Any],
+        self,
+        task: DocumentTask,
+        outcome: dict[str, Any],
         children: Sequence[tuple[str, str]] = (),
         evidence: Sequence[tuple[str, str, str, str, str]] = (),
     ) -> None:
@@ -128,16 +138,20 @@ class DocumentQueue:
         with self.db:
             for url, kind in children:
                 self._insert(task.root_id, task.site, url, kind, task.depth + 1)
-            self.db.executemany('INSERT OR IGNORE INTO evidence VALUES (?,?,?,?,?,?)',
-                                [(task.root_id, *item) for item in evidence])
-            self.db.execute("UPDATE tasks SET state='done',outcome=? WHERE id=?",
-                            (json.dumps(outcome, ensure_ascii=False), task.id))
+            self.db.executemany(
+                "INSERT OR IGNORE INTO evidence VALUES (?,?,?,?,?,?)",
+                [(task.root_id, *item) for item in evidence],
+            )
+            self.db.execute(
+                "UPDATE tasks SET state='done',outcome=? WHERE id=?",
+                (json.dumps(outcome, ensure_ascii=False), task.id),
+            )
             pending = self.db.execute(
                 "SELECT 1 FROM tasks WHERE root_id=? AND state!='done' LIMIT 1",
                 (task.root_id,),
             ).fetchone()
             if not pending:
-                self.db.execute('UPDATE roots SET complete=1 WHERE id=?', (task.root_id,))
+                self.db.execute("UPDATE roots SET complete=1 WHERE id=?", (task.root_id,))
         self._activate(task.site)
 
     def close(self) -> None:

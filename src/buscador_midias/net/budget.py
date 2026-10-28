@@ -33,8 +33,13 @@ class BudgetFetcher:
     """
 
     def __init__(
-        self, inner: Fetcher, *, max_requests: int, seconds: float,
-        allowed: Callable[[str], bool], clock: Callable[[], float] = monotonic,
+        self,
+        inner: Fetcher,
+        *,
+        max_requests: int,
+        seconds: float,
+        allowed: Callable[[str], bool],
+        clock: Callable[[], float] = monotonic,
     ) -> None:
         """Define saldo, prazo e escopo; zero desliga o teto correspondente."""
         if max_requests < 0 or not 0 <= seconds < float("inf"):
@@ -55,8 +60,11 @@ class BudgetFetcher:
             permitted = False
         if not permitted:
             return FetchResult(url, None, b"", "endereço fora do escopo ou excluído manualmente")
-        if (self.max_requests and self.requests >= self.max_requests
-                or self.clock() >= self.deadline):
+        if (
+            self.max_requests
+            and self.requests >= self.max_requests
+            or self.clock() >= self.deadline
+        ):
             self.exhausted = True
             return FetchResult(
                 url, None, b"", "limite total de descoberta atingido; leitura parcial"

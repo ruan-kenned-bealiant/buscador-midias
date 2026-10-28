@@ -32,20 +32,49 @@ from buscador_midias.strategy.mapping_net import (
 from buscador_midias.strategy.page_classification import classify_page, classify_url
 from buscador_midias.strategy.section_sources import find_feed_sources
 
-_TAXONOMIES = frozenset({
-    "tag", "tags", "author", "authors", "autor", "autores", "keyword",
-    "topic", "topics", "topics-list", "themen", "tagg", "amnen", "persons",
-    "mot-cle", "mots-cles", "tema", "topico",
-})
+_TAXONOMIES = frozenset(
+    {
+        "tag",
+        "tags",
+        "author",
+        "authors",
+        "autor",
+        "autores",
+        "keyword",
+        "topic",
+        "topics",
+        "topics-list",
+        "themen",
+        "tagg",
+        "amnen",
+        "persons",
+        "mot-cle",
+        "mots-cles",
+        "tema",
+        "topico",
+    }
+)
 _REPEATED_SEGMENT = re.compile(r"(?:^|/)([^/]+)/\1/\1(?:/|$)", re.IGNORECASE)
 _LOOP_DETAIL = "segmento repetido três vezes; revisar possível ciclo de navegação"
 _FAILURES = frozenset(
     {PageStatus.BLOCKED, PageStatus.ERROR, PageStatus.DISALLOWED, PageStatus.INVALID}
 )
-_MENU_MARKERS = frozenset({
-    "menu", "main-menu", "primary-menu", "site-menu", "navbar", "navigation",
-    "main-nav", "primary-nav", "site-nav", "header-nav", "nav-menu", "menu-item",
-})
+_MENU_MARKERS = frozenset(
+    {
+        "menu",
+        "main-menu",
+        "primary-menu",
+        "site-menu",
+        "navbar",
+        "navigation",
+        "main-nav",
+        "primary-nav",
+        "site-nav",
+        "header-nav",
+        "nav-menu",
+        "menu-item",
+    }
+)
 
 
 def _navigation_element(element: etree._Element) -> bool:
@@ -132,15 +161,20 @@ def map_site(
     # Classificações novas também se aplicam às filas preservadas de execuções anteriores.
     reopened = [
         replace(
-            p, page_type="unknown", type_basis="",
-            status=PageStatus.PENDING if (
+            p,
+            page_type="unknown",
+            type_basis="",
+            status=PageStatus.PENDING
+            if (
                 _is_section_candidate(p.url)
                 or (p.discovery_basis == "navigation" and _navigation_section(p.url))
-            ) else PageStatus.EXCLUDED,
+            )
+            else PageStatus.EXCLUDED,
             detail="regra de serviço revisada; reavaliar pela heurística de seção",
         )
         for p in pages.values()
-        if p.kind != "root" and p.page_type == "service"
+        if p.kind != "root"
+        and p.page_type == "service"
         and p.type_basis == "observed_service_route"
         and classify_url(p.url).page_type == "unknown"
     ]
@@ -149,12 +183,15 @@ def map_site(
         pages.update((p.url, p) for p in reopened)
     taxonomies = [
         replace(
-            p, kind="taxonomy", status=PageStatus.EXCLUDED, page_type="taxonomy",
-            type_basis="taxonomy_path", detail="taxonomia; revisar se necessário",
+            p,
+            kind="taxonomy",
+            status=PageStatus.EXCLUDED,
+            page_type="taxonomy",
+            type_basis="taxonomy_path",
+            detail="taxonomia; revisar se necessário",
         )
         for p in pages.values()
-        if p.kind != "root" and p.page_type != "taxonomy"
-        and is_taxonomy_url(p.url)
+        if p.kind != "root" and p.page_type != "taxonomy" and is_taxonomy_url(p.url)
     ]
     if taxonomies:
         store.save_mapping_pages(site.key, taxonomies)
@@ -162,7 +199,8 @@ def map_site(
     loops = [
         replace(p, status=PageStatus.EXCLUDED, detail=_LOOP_DETAIL)
         for p in pages.values()
-        if p.kind != "root" and p.status is not PageStatus.EXCLUDED
+        if p.kind != "root"
+        and p.status is not PageStatus.EXCLUDED
         and _REPEATED_SEGMENT.search(urlsplit(p.url).path)
     ]
     if loops:
@@ -170,11 +208,15 @@ def map_site(
         pages.update((p.url, p) for p in loops)
     services = [
         replace(
-            p, status=PageStatus.EXCLUDED, page_type="service",
-            type_basis=classify_url(p.url).basis, detail="rota de serviço",
+            p,
+            status=PageStatus.EXCLUDED,
+            page_type="service",
+            type_basis=classify_url(p.url).basis,
+            detail="rota de serviço",
         )
         for p in pages.values()
-        if p.kind != "root" and p.page_type != "service"
+        if p.kind != "root"
+        and p.page_type != "service"
         and classify_url(p.url).page_type == "service"
     ]
     if services:
@@ -208,8 +250,10 @@ def map_site(
         return summarize_map(site.key, list(pages.values()))
     suspended = suspended_origins if suspended_origins is not None else {}
     root_origin = urlsplit(site.url).netloc
-    robots = None if root_origin in suspended else read_robots(
-        site, fetcher, user_agent, require_root=False
+    robots = (
+        None
+        if root_origin in suspended
+        else read_robots(site, fetcher, user_agent, require_root=False)
     )
     if isinstance(robots, Exploration):
         suspended[root_origin] = (
@@ -233,9 +277,7 @@ def map_site(
         guarded.seed_policy(site.url, robots)
     failures: dict[str, int] = {}
     for _ in range(max_pages):
-        while queue and (
-            queue[0][3] in processed or urlsplit(queue[0][3]).netloc in suspended
-        ):
+        while queue and (queue[0][3] in processed or urlsplit(queue[0][3]).netloc in suspended):
             heappop(queue)
         if not queue:
             break
@@ -257,7 +299,8 @@ def map_site(
             )
             children: list[MapPage] = []
         elif (
-            robots is not None and urlsplit(url).netloc == root_origin
+            robots is not None
+            and urlsplit(url).netloc == root_origin
             and not robots.allows(url, user_agent)
         ):
             current = replace(
@@ -286,10 +329,12 @@ def map_site(
                 "mechanism_path",
             ):
                 pages[child.url] = replace(pages[child.url], discovery_basis="navigation")
-                if (pages[child.url].status is PageStatus.EXCLUDED
-                        and pages[child.url].detail.startswith("candidata refutada:")):
+                if pages[child.url].status is PageStatus.EXCLUDED and pages[
+                    child.url
+                ].detail.startswith("candidata refutada:"):
                     pages[child.url] = replace(
-                        pages[child.url], status=PageStatus.PENDING,
+                        pages[child.url],
+                        status=PageStatus.PENDING,
                         detail="navegação atual voltou a apontar candidata antes refutada",
                     )
                 updates.append(pages[child.url])
@@ -299,8 +344,10 @@ def map_site(
         pages[url] = current
         save_suspensions()
     active = any(
-        p.status is PageStatus.PENDING and (p.kind == "root" or p.is_section_candidate)
-        and urlsplit(p.url).netloc not in suspended for p in pages.values()
+        p.status is PageStatus.PENDING
+        and (p.kind == "root" or p.is_section_candidate)
+        and urlsplit(p.url).netloc not in suspended
+        for p in pages.values()
     )
     detail = "; ".join(suspended.values()) if suspended and not active else ""
     return summarize_map(site.key, list(pages.values()), detail)
@@ -479,9 +526,14 @@ def _inspect(
         segments = urlsplit(url).path.lower().split("/")
         if _REPEATED_SEGMENT.search(urlsplit(url).path):
             children.setdefault(
-                url, MapPage(
-                    url, page.url, "section", PageStatus.EXCLUDED,
-                    detail=_LOOP_DETAIL, discovery_basis=discovery,
+                url,
+                MapPage(
+                    url,
+                    page.url,
+                    "section",
+                    PageStatus.EXCLUDED,
+                    detail=_LOOP_DETAIL,
+                    discovery_basis=discovery,
                 ),
             )
         elif any(s in _TAXONOMIES for s in segments):
@@ -514,8 +566,7 @@ def _inspect(
             )
         elif is_article_url(url):
             if not any(
-                a.tag in ("footer", "aside") or _navigation_element(a)
-                for a in ancestors
+                a.tag in ("footer", "aside") or _navigation_element(a) for a in ancestors
             ) and (not has_main or any(a.tag == "main" for a in ancestors)):
                 articles[url] = None
         elif _is_section_candidate(url) or (navigation and _navigation_section(url)):

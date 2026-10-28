@@ -11,7 +11,13 @@ from urllib.parse import urljoin, urlsplit
 
 from buscador_midias.catalog.http_policy import retry_after
 from buscador_midias.catalog.http_transport import validate_transport
-from buscador_midias.catalog.reader import TestLimitError, TestReader, public_ip
+from buscador_midias.catalog.reader import (
+    EarlyStop,
+    TestLimitError,
+    TestReader,
+    early_stop_due,
+    public_ip,
+)
 from buscador_midias.net.fetcher import USER_AGENT, FetchResult
 
 _IPS: dict[str, tuple[float, str]] = {}
@@ -70,7 +76,9 @@ class CurlReader(TestReader):
         """Fecha a sessão, inclusive quando o chamador interrompe a amostra."""
         self._finalizer()
 
-    def _fetch(self, url: str, *, robots: bool = False) -> FetchResult:
+    def _fetch(
+        self, url: str, *, robots: bool = False, early_stop: EarlyStop | None = None
+    ) -> FetchResult:
         from curl_cffi import CurlHttpVersion, CurlOpt
 
         original = url
@@ -101,13 +109,22 @@ class CurlReader(TestReader):
                 self.session.curl_options[CurlOpt.RESOLVE] = [f"{host}:{port}:{address}"]
                 chunks: list[bytes] = []
                 size = 0
+                step, stopped = 0, False
 
                 def receive(chunk: bytes, target: list[bytes] = chunks) -> int:
-                    nonlocal size
+                    nonlocal size, step, stopped
+                    if stopped:
+                        # O curl pode seguir entregando depois do primeiro 0: nada mais entra.
+                        return 0
                     size += len(chunk)
                     if size > self.max_bytes or time.monotonic() >= self.deadline:
                         return 0
                     target.append(chunk)
+                    if early_stop:
+                        due, step = early_stop_due(size, step)
+                        if due and early_stop(b"".join(target)):
+                            stopped = True
+                            return 0
                     return len(chunk)
 
                 headers = {
@@ -120,19 +137,29 @@ class CurlReader(TestReader):
                 }
                 request_timeout = min(8, max(0.05, self._check()))
                 self.requests += 1
-                response = self.session.get(
-                    url,
-                    headers=headers or None,
-                    allow_redirects=False,
-                    timeout=request_timeout,
-                    content_callback=receive,
-                    # HTTP sem TLS não anuncia h2c a servidores RSS legados.
-                    http_version=(
-                        CurlHttpVersion.V1_1
-                        if parts.scheme == "http" or self.transport.endswith("_h1")
-                        else CurlHttpVersion.V2_PRIOR_KNOWLEDGE
-                    ),
-                )
+                try:
+                    response = self.session.get(
+                        url,
+                        headers=headers or None,
+                        allow_redirects=False,
+                        timeout=request_timeout,
+                        content_callback=receive,
+                        # HTTP sem TLS não anuncia h2c a servidores RSS legados.
+                        http_version=(
+                            CurlHttpVersion.V1_1
+                            if parts.scheme == "http" or self.transport.endswith("_h1")
+                            else CurlHttpVersion.V2_PRIOR_KNOWLEDGE
+                        ),
+                    )
+                except Exception:
+                    if not stopped:
+                        raise
+                    # Transferência encerrada de propósito: o erro de escrita do curl é esperado.
+                    self.last_http_status = 200
+                    return FetchResult(original, 200, b"".join(chunks), None, url, truncated=True)
+                if stopped:
+                    self.last_http_status = 200
+                    return FetchResult(original, 200, b"".join(chunks), None, url, truncated=True)
                 if size > self.max_bytes:
                     raise TestLimitError("Resposta curl acima do limite da amostra.")
                 if time.monotonic() >= self.deadline:

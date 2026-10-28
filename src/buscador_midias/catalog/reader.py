@@ -64,10 +64,28 @@ class _PinnedConnection(http.client.HTTPConnection):
             raise
 
 
+# Prefixos (em bytes) em que o chamador é consultado sobre dispensar o resto do corpo. Feeds de
+# itens enormes só mostram as primeiras datas em prefixos maiores, por isso a pergunta se repete.
+EARLY_STOP_STEPS = (32 * 1024, 128 * 1024, 512 * 1024, 2 * 1024 * 1024)
+EARLY_STOP_BYTES = EARLY_STOP_STEPS[0]
+EarlyStop = Callable[[bytes], bool]
+
+
+def early_stop_due(size: int, step: int) -> tuple[bool, int]:
+    """Indica se ``size`` alcançou o próximo degrau de pergunta e qual é o degrau seguinte."""
+    if step >= len(EARLY_STOP_STEPS) or size < EARLY_STOP_STEPS[step]:
+        return False, step
+    while step < len(EARLY_STOP_STEPS) and size >= EARLY_STOP_STEPS[step]:
+        step += 1
+    return True, step
+
+
 class TestReader:
     """Rede direta com orçamento configurável, contando cada redirecionamento."""
 
     __test__ = False
+    # Aceita ``early_stop`` em ``get``; subclasses que sobrescrevem ``get`` desligam.
+    supports_early_stop = True
 
     def __init__(
         self,
@@ -125,21 +143,27 @@ class TestReader:
         """
         return True, ""
 
-    def get(self, url: str) -> FetchResult:
-        """Lê o destino diretamente, validando o escopo de cada redirecionamento."""
+    def get(self, url: str, *, early_stop: EarlyStop | None = None) -> FetchResult:
+        """Lê o destino diretamente, validando o escopo de cada redirecionamento.
+
+        ``early_stop`` recebe o prefixo já lido a cada degrau de ``EARLY_STOP_STEPS`` alcançado;
+        se devolver ``True`` a leitura termina ali e o resultado vem com ``truncated=True``.
+        """
         self.session_updated = False
         self.retry_after_seconds = None
         self.retry_after_host = None
         self.last_http_status = None
         self.cooldown_deferred = False
         try:
-            return self._fetch(url)
+            return self._fetch(url, early_stop=early_stop) if early_stop else self._fetch(url)
         except (CatalogError, OSError, ValueError, http.client.HTTPException) as error:
             if time.monotonic() >= self.deadline:
                 raise TestLimitError("Tempo máximo da amostra esgotado.") from error
             return FetchResult(url, None, b"", str(error)[:350])
 
-    def _fetch(self, url: str, *, robots: bool = False) -> FetchResult:
+    def _fetch(
+        self, url: str, *, robots: bool = False, early_stop: EarlyStop | None = None
+    ) -> FetchResult:
         original = url
         visited: set[str] = set()
         for _ in range(6):
@@ -260,6 +284,7 @@ class TestReader:
                     continue
                 chunks: list[bytes] = []
                 size = 0
+                step, stopped = 0, False
                 while True:
                     if time.monotonic() >= self.deadline:
                         raise TestLimitError("Tempo de leitura da amostra esgotado.")
@@ -273,11 +298,18 @@ class TestReader:
                             "teste parcial."
                         )
                     chunks.append(chunk)
+                    if early_stop and status == 200:
+                        due, step = early_stop_due(size, step)
+                        if due and early_stop(b"".join(chunks)):
+                            stopped = True
+                            break
                 body = b"".join(chunks)
-                if response.getheader("Content-Encoding", "").lower() == "gzip":
+                if not stopped and response.getheader("Content-Encoding", "").lower() == "gzip":
                     body = unpack_gzip(body, self.max_bytes)
+                # Resposta interrompida deixa o resto no soquete: a conexão não pode ser reusada.
                 reusable = (
-                    not getattr(response, "will_close", True)
+                    not stopped
+                    and not getattr(response, "will_close", True)
                     and 200 <= status < 400
                     and time.monotonic() < self.deadline
                 )
@@ -291,6 +323,7 @@ class TestReader:
                     etag=response.getheader("ETag"),
                     last_modified=response.getheader("Last-Modified"),
                     retry_after_seconds=after,
+                    truncated=stopped,
                 )
             finally:
                 timer.cancel()

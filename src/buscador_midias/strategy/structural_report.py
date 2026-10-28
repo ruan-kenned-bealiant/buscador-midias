@@ -53,10 +53,16 @@ def summarize_structure(site: Site, pages: Sequence[MapPage]) -> StructuralSumma
     reviews = [r for p in roots if (r := review_entry(p)) is not None]
     restriction = any(
         p.status in (PageStatus.BLOCKED, PageStatus.DISALLOWED) for p in roots
-    ) or any(r.category in (
-        "robots: proibição explícita", "robots: leitura bloqueada", "acesso bloqueado",
-        "limite de requisições",
-    ) for r in reviews)
+    ) or any(
+        r.category
+        in (
+            "robots: proibição explícita",
+            "robots: leitura bloqueada",
+            "acesso bloqueado",
+            "limite de requisições",
+        )
+        for r in reviews
+    )
     observed_structure = confirmed > 0 or any(
         p.status is PageStatus.OK and p.discovery_basis == "navigation" for p in sections
     )
@@ -79,8 +85,17 @@ def summarize_structure(site: Site, pages: Sequence[MapPage]) -> StructuralSumma
         reason = "sem pendências ou falhas nas candidatas reconhecidas; não prova exaustividade"
     dates = [p.checked_at for p in pages if p.checked_at is not None]
     return StructuralSummary(
-        site.key, outcome, reason, len(pages), confirmed, unknown, navigation, len(read),
-        pending, failures, sum(p.page_type == "article" for p in pages),
+        site.key,
+        outcome,
+        reason,
+        len(pages),
+        confirmed,
+        unknown,
+        navigation,
+        len(read),
+        pending,
+        failures,
+        sum(p.page_type == "article" for p in pages),
         sum(p.page_type == "service" for p in pages),
         sum(p.page_type == "taxonomy" or p.kind == "taxonomy" for p in pages),
         max(dates).isoformat() if dates else "",

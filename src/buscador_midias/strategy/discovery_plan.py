@@ -38,16 +38,27 @@ def load_discovery_plan(path: Path, sites: dict[str, Site]) -> dict[str, list[Ca
             for item in members:
                 url = item["url"]
                 kind = StrategyKind(item["kind"])
-                if (not isinstance(url, str) or kind is StrategyKind.LISTING
-                        or not sites[key].owns_host(url) or _is_signed(url)
-                        or canonicalize_url(url) in seen):
+                if (
+                    not isinstance(url, str)
+                    or kind is StrategyKind.LISTING
+                    or not sites[key].owns_host(url)
+                    or _is_signed(url)
+                    or canonicalize_url(url) in seen
+                ):
                     raise ValueError(f"mecanismo inválido, externo ou repetido: {key}")
                 seen.add(canonicalize_url(url))
-                reports.append(CandidateReport(
-                    url, CandidateOrigin.HINT, Verdict.FRESH, kind, None, 0,
-                    "plano explícito; sujeito à conferência HTTP e ao escopo da fonte",
-                    role=Role.PRIMARY if not reports else Role.COMPLEMENT,
-                ))
+                reports.append(
+                    CandidateReport(
+                        url,
+                        CandidateOrigin.HINT,
+                        Verdict.FRESH,
+                        kind,
+                        None,
+                        0,
+                        "plano explícito; sujeito à conferência HTTP e ao escopo da fonte",
+                        role=Role.PRIMARY if not reports else Role.COMPLEMENT,
+                    )
+                )
             result[key] = reports
         return result
     except (OSError, KeyError, TypeError, ValueError) as error:

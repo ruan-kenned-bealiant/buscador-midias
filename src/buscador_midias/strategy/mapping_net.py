@@ -8,8 +8,15 @@ from buscador_midias.net.fetcher import Fetcher, FetchResult
 
 ORIGIN_FAILURE_LIMIT = 3
 _TRANSPORT_ERRORS = (
-    "ConnectError:", "ConnectTimeout:", "ReadTimeout:", "ReadError:",
-    "WriteError:", "WriteTimeout:", "RemoteProtocolError:", "PoolTimeout:", "ProxyError:",
+    "ConnectError:",
+    "ConnectTimeout:",
+    "ReadTimeout:",
+    "ReadError:",
+    "WriteError:",
+    "WriteTimeout:",
+    "RemoteProtocolError:",
+    "PoolTimeout:",
+    "ProxyError:",
 )
 
 

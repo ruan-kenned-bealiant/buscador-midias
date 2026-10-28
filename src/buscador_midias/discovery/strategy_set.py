@@ -23,8 +23,12 @@ class StrategySetSource:
     kind = SourceKind.COMBINED
 
     def __init__(
-        self, main: Sequence[DiscoverySource], complements: Sequence[DiscoverySource],
-        budget: BudgetFetcher, *, omitted: int = 0,
+        self,
+        main: Sequence[DiscoverySource],
+        complements: Sequence[DiscoverySource],
+        budget: BudgetFetcher,
+        *,
+        omitted: int = 0,
     ) -> None:
         """Recebe mecanismos limitados e o orçamento compartilhado com o fallback."""
         self.main = tuple(main)
@@ -59,12 +63,18 @@ class StrategySetSource:
         if not successful:
             status = CascadeResult(None, tuple(attempts)).status
             kind = next((r.kind for r in attempts if r.status is status), SourceKind.FEED)
-            if any(r.kind is SourceKind.SITEMAP and r.status is ProbeStatus.BLOCKED
-                   for r in attempts):
+            if any(
+                r.kind is SourceKind.SITEMAP and r.status is ProbeStatus.BLOCKED for r in attempts
+            ):
                 kind = SourceKind.SITEMAP
             return SourceFind(
-                kind, status, detail or "nenhum mecanismo elegível",
-                (), fetched=fetched, skipped=skipped, failed=failed,
+                kind,
+                status,
+                detail or "nenhum mecanismo elegível",
+                (),
+                fetched=fetched,
+                skipped=skipped,
+                failed=failed,
             )
         urls: dict[str, DiscoveredUrl] = {}
         sitemaps: dict[str, ExploredSitemap] = {}
@@ -75,11 +85,13 @@ class StrategySetSource:
                     urls[item.url_hash] = item
                 else:
                     preferred, other = (
-                        (item, previous) if item.publication_date and not previous.publication_date
+                        (item, previous)
+                        if item.publication_date and not previous.publication_date
                         else (previous, item)
                     )
                     urls[item.url_hash] = replace(
-                        preferred, title=preferred.title or other.title,
+                        preferred,
+                        title=preferred.title or other.title,
                         lastmod=preferred.lastmod or other.lastmod,
                     )
             for document in result.sitemaps:
@@ -90,6 +102,12 @@ class StrategySetSource:
                     sitemaps[document.url] = document
         return SourceFind(
             SourceKind.COMBINED if len(successful) > 1 else successful[0].kind,
-            ProbeStatus.OK, "", tuple(urls.values()), tuple(sitemaps.values()),
-            fetched=fetched, skipped=skipped, failed=failed, failure_detail=detail,
+            ProbeStatus.OK,
+            "",
+            tuple(urls.values()),
+            tuple(sitemaps.values()),
+            fetched=fetched,
+            skipped=skipped,
+            failed=failed,
+            failure_detail=detail,
         )

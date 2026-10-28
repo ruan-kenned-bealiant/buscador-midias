@@ -150,9 +150,11 @@ def discover_site(
         seen_urls=len(found),
         sitemaps_fetched=found_in.fetched,
         sitemaps_skipped=found_in.skipped,
-        detail=found_in.failure_detail or (
+        detail=found_in.failure_detail
+        or (
             f"fonte acessível, sem notícias recentes na janela de {fresh_days} dias"
-            if not found else ""
+            if not found
+            else ""
         ),
         known_urls=len(known),
         sitemaps_failed=found_in.failed,

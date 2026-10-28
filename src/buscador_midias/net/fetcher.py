@@ -27,6 +27,7 @@ class FetchResult:
         final_url: URL final depois dos redirecionamentos (``None`` se não se aplica).
         content_type: Cabeçalho ``Content-Type`` da resposta, se houve.
         redirect_url: Cabeçalho Location quando o transporte retorna um redirecionamento.
+        truncated: ``True`` quando o chamador dispensou o resto do corpo (leitura parcial).
     """
 
     url: str
@@ -39,6 +40,7 @@ class FetchResult:
     etag: str | None = None
     last_modified: str | None = None
     retry_after_seconds: int | None = None
+    truncated: bool = False
 
     @property
     def ok(self) -> bool:

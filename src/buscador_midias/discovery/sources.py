@@ -183,7 +183,11 @@ class FeedSource:
     kind = SourceKind.FEED
 
     def __init__(
-        self, fetcher: Fetcher, *, user_agent: str, feed_urls: Sequence[str] = (),
+        self,
+        fetcher: Fetcher,
+        *,
+        user_agent: str,
+        feed_urls: Sequence[str] = (),
         since: datetime | None = None,
     ) -> None:
         """Cria a fonte.
@@ -207,7 +211,10 @@ class FeedSource:
     def find(self, site: Site, *, skip_child: SkipChild | None = None) -> SourceFind:
         """Lê os feeds do site e transforma os itens em URLs descobertas."""
         exploration = explore_feed(
-            site, self._fetcher, user_agent=self._user_agent, feed_urls=self._feed_urls,
+            site,
+            self._fetcher,
+            user_agent=self._user_agent,
+            feed_urls=self._feed_urls,
             since=self._since,
         )
         if exploration.status is not ProbeStatus.OK:
@@ -335,9 +342,10 @@ def cascade_for(
     sources: list[DiscoverySource] = []
     moment = now or datetime.now(UTC)
     unique: dict[str, CandidateReport] = {}
-    for chosen in sorted(strategies, key=lambda r: (
-        0 if r.role is Role.PRIMARY else 1 if r.role is Role.BACKUP else 2,
-    )):
+    for chosen in sorted(
+        strategies,
+        key=lambda r: (0 if r.role is Role.PRIMARY else 1 if r.role is Role.BACKUP else 2,),
+    ):
         if not site.owns_host(chosen.url) or is_excluded(chosen.url, exclude):
             continue
         if chosen.kind in (None, StrategyKind.LISTING):
@@ -353,15 +361,21 @@ def cascade_for(
     budget: BudgetFetcher | None = None
     if bundled or exclude:
         budget = BudgetFetcher(
-            free, max_requests=max_source_requests, seconds=source_timeout,
+            free,
+            max_requests=max_source_requests,
+            seconds=source_timeout,
             allowed=lambda url: site.owns_host(url) and not is_excluded(url, exclude),
         )
         free = MappingFetcher(
-            budget, site, user_agent, max_source_requests * 2 + 1 if max_source_requests else 0,
+            budget,
+            site,
+            user_agent,
+            max_source_requests * 2 + 1 if max_source_requests else 0,
         )
         if paid is not None:
             paid = FilteredFetcher(
-                paid, lambda url: site.owns_host(url) and not is_excluded(url, exclude),
+                paid,
+                lambda url: site.owns_host(url) and not is_excluded(url, exclude),
             )
     selected_complements = complements[:max_complements] if bundled else []
     main: list[DiscoverySource] = []
@@ -396,9 +410,14 @@ def cascade_for(
     if bundled and budget is not None:
         from buscador_midias.discovery.strategy_set import StrategySetSource
 
-        sources.append(StrategySetSource(
-            main, additional, budget, omitted=len(complements) - len(selected_complements),
-        ))
+        sources.append(
+            StrategySetSource(
+                main,
+                additional,
+                budget,
+                omitted=len(complements) - len(selected_complements),
+            )
+        )
     else:
         sources.extend(main)
     if not skip_free_sitemap:

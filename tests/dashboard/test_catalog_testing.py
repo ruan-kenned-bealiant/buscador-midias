@@ -802,3 +802,31 @@ def test_individual_functional_test_ignores_age_without_changing_search_settings
         assert catalog.model_settings("rss")["parameters"]["lookback_days"] == 365
     finally:
         jobs.close()
+
+
+def _dated_sitemap(hours):
+    """Sitemap com ``lastmod`` (em horas depois de 01/01/2026) por posição."""
+    from datetime import UTC, datetime, timedelta
+
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    return (
+        "<urlset>"
+        + "".join(
+            f"<url><loc>{ROOT}n{n}</loc>"
+            f"<lastmod>{(base + timedelta(hours=h)).isoformat()}</lastmod></url>"
+            for n, h in enumerate(hours)
+        )
+        + "</urlset>"
+    ).encode()
+
+
+def test_the_test_result_records_the_order_of_the_root_document():
+    root = ROOT + "map.xml"
+    newest_first = run({root: _dated_sitemap(range(40, 0, -1))}, "sitemap")
+    oldest_first = run({root: _dated_sitemap(range(1, 41))}, "sitemap")
+    assert newest_first["read_order"] == "newest_first"
+    assert oldest_first["read_order"] == "oldest_first"
+
+
+def test_a_failed_test_leaves_the_order_unknown():
+    assert run({}, "sitemap")["read_order"] == "unknown"

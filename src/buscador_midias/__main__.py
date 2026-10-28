@@ -9,4 +9,9 @@ if sys.argv[1:2] == ["ingest"]:
 
     raise SystemExit(ingest_main(sys.argv[2:]))
 
+if sys.argv[1:2] == ["review-links"]:
+    from buscador_midias.catalog.review_cli import main as review_main
+
+    raise SystemExit(review_main(sys.argv[2:]))
+
 raise SystemExit(main())

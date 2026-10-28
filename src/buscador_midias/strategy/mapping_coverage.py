@@ -55,17 +55,29 @@ def normalize_source_audits(checks: Sequence[MapSource]) -> list[MapSource]:
     """Corrige índices HTML antigos sem perder URLs observadas, datas ou custos."""
     return [
         replace(
-            check, verdict="invalid", kind="html_pagination",
+            check,
+            verdict="invalid",
+            kind="html_pagination",
             detail="paginação HTML de listagem; não é índice de mecanismos",
-        ) if check.kind == "feed_index" and is_html_pagination(check) else replace(
-            check, verdict="invalid", kind="html_article",
+        )
+        if check.kind == "feed_index" and is_html_pagination(check)
+        else replace(
+            check,
+            verdict="invalid",
+            kind="html_article",
             detail="HTML em URL com aparência de matéria; não é índice de mecanismos",
-        ) if check.kind == "feed_index" and looks_like_article_hint(check.url) else replace(
-            check, verdict="invalid", kind="comments_feed",
+        )
+        if check.kind == "feed_index" and looks_like_article_hint(check.url)
+        else replace(
+            check,
+            verdict="invalid",
+            kind="comments_feed",
             detail="feed de comentários; não comprova matérias da seção",
-        ) if check.kind == "feed" and check.listed_urls and all(
-            _comment_reference(url) for url in check.listed_urls
-        ) else check
+        )
+        if check.kind == "feed"
+        and check.listed_urls
+        and all(_comment_reference(url) for url in check.listed_urls)
+        else check
         for check in checks
     ]
 
@@ -103,8 +115,11 @@ def plan_source_audit(
     )
     explicit = set(urls) | {r.url for r in saved} | set(hints)
     urls += [
-        u for check in checks if check.kind == "feed_index"
-        for u in check.listed_urls if not is_taxonomy_url(u) or u in explicit
+        u
+        for check in checks
+        if check.kind == "feed_index"
+        for u in check.listed_urls
+        if not is_taxonomy_url(u) or u in explicit
     ]
     urls += [r.url for r in saved] + list(hints)
     expanded = dict.fromkeys(
@@ -126,8 +141,10 @@ def plan_source_audit(
     queue = [
         u
         for u in expanded
-        if u not in previous or (
-            previous[u].kind not in _NON_FEED_HTML and (
+        if u not in previous
+        or (
+            previous[u].kind not in _NON_FEED_HTML
+            and (
                 previous[u].checked_at < threshold
                 or "orçamento" in previous[u].detail
                 or (retry_failed and previous[u].verdict not in _READABLE | {"feed_index"})
@@ -191,7 +208,8 @@ def audit_sources(
         seen.add(url)
         if (
             urlsplit(url).netloc in suspended
-            or not site.owns_host(url) or is_excluded(url, exclude)
+            or not site.owns_host(url)
+            or is_excluded(url, exclude)
         ):
             continue
         if guarded.requests >= max_requests:
@@ -219,27 +237,37 @@ def audit_sources(
         listed = tuple(sorted(report.listed_urls))
         response = observed.response
         pagination = (
-            verdict == "invalid" and response is not None and response.ok
+            verdict == "invalid"
+            and response is not None
+            and response.ok
             and bool(_LISTING_PAGINATION.search(urlsplit(url).path))
             and (
                 "html" in (response.content_type or "").lower()
-                or bool(re.search(
-                    rb"<(?:!doctype\s+html|html|body|div|section|article)\b",
-                    response.content[:1024], re.IGNORECASE,
-                ))
+                or bool(
+                    re.search(
+                        rb"<(?:!doctype\s+html|html|body|div|section|article)\b",
+                        response.content[:1024],
+                        re.IGNORECASE,
+                    )
+                )
             )
         )
         if pagination:
             kind = "html_pagination"
             detail = "paginação HTML de listagem; não é índice de mecanismos"
         elif (
-            verdict == "invalid" and response is not None and response.ok
+            verdict == "invalid"
+            and response is not None
+            and response.ok
             and (
                 "html" in (response.content_type or "").lower()
-                or bool(re.search(
-                    rb"<(?:!doctype\s+html|html|head|body|div|section|article)\b",
-                    response.content[:1024], re.IGNORECASE,
-                ))
+                or bool(
+                    re.search(
+                        rb"<(?:!doctype\s+html|html|head|body|div|section|article)\b",
+                        response.content[:1024],
+                        re.IGNORECASE,
+                    )
+                )
             )
             and (
                 looks_like_article_hint(url)
@@ -265,7 +293,8 @@ def audit_sources(
         origin = urlsplit(url).netloc
         failures[origin] = (
             failures.get(origin, 0) + 1
-            if response is not None and is_transport_failure(response) else 0
+            if response is not None and is_transport_failure(response)
+            else 0
         )
         paused = failures[origin] >= ORIGIN_FAILURE_LIMIT
         if paused:

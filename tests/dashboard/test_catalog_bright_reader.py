@@ -161,3 +161,63 @@ def test_structured_provider_response_has_size_limit(setup, monkeypatch):
         max_bytes=8,
     )
     assert not instance.get(URL).ok and instance.bright_limit_reached
+
+
+def counting(monkeypatch, *statuses):
+    """Acesso direto que devolve os status combinados, na ordem, e conta as tentativas."""
+    asked = []
+
+    def direct(self, url, **kwargs):
+        asked.append(url)
+        status = statuses[min(len(asked) - 1, len(statuses) - 1)]
+        body = b"<rss/>" if status == 200 else b""
+        return FetchResult(url, status, body, None, url)
+
+    monkeypatch.setattr(TestReader, "_fetch", direct)
+    monkeypatch.setattr(TestReader, "_allowed", lambda self, url: (True, ""))
+    return asked
+
+
+def paid(monkeypatch, handler, **extra):
+    return BrightTestReader(
+        [URL],
+        lambda _: None,
+        client_factory=lambda **kwargs: httpx.Client(
+            transport=httpx.MockTransport(handler), **kwargs
+        ),
+        direct_pause=0,
+        **extra,
+    )
+
+
+OK_PAID = lambda req: httpx.Response(  # noqa: E731
+    200, json=dict(status_code=200, headers={"Content-Type": "application/xml"}, body="<rss/>")
+)
+
+
+def test_with_two_direct_attempts_the_provider_is_called_only_after_both_fail(setup, monkeypatch):
+    asked = counting(monkeypatch, 403)
+    instance = paid(monkeypatch, OK_PAID, direct_attempts=2)
+    assert instance.get(URL).ok
+    assert len(asked) == 2 and instance.bright_requests == 1
+
+
+def test_a_second_direct_attempt_that_works_costs_nothing(setup, monkeypatch):
+    asked = counting(monkeypatch, 503, 200)
+    instance = paid(monkeypatch, OK_PAID, direct_attempts=2)
+    assert instance.get(URL).ok
+    assert len(asked) == 2 and instance.bright_requests == 0
+
+
+def test_a_refusal_that_never_justifies_the_provider_is_not_retried(setup, monkeypatch):
+    asked = counting(monkeypatch, 404)
+    instance = paid(monkeypatch, OK_PAID, direct_attempts=2)
+    assert instance.get(URL).status == 404
+    assert len(asked) == 1 and instance.bright_requests == 0
+
+
+def test_one_direct_attempt_is_still_the_default(setup, monkeypatch):
+    asked = counting(monkeypatch, 403)
+    instance = paid(monkeypatch, OK_PAID)
+    assert instance.get(URL).ok
+    assert len(asked) == 1 and instance.bright_requests == 1
