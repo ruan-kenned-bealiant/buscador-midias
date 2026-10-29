@@ -1,5 +1,11 @@
 # Fluxo diário — ativação em 24/10/2026
 
+> **Atualização de 29/10/2026.** Este texto descreve a ativação. Duas regras mudaram: com
+> `close_previous_day` a **primeira** rodada do dia também lê o dia anterior (o que sai depois da
+> última rodada deixou de se perder), e com `failed_retry_limit` uma notícia que falhou volta a
+> ser tentada quando uma rodada posterior a reencontra. O comportamento atual está em
+> [Fluxo de notícias](atual/FLUXO_NOTICIAS.md).
+
 A busca padrão considera publicações desde **00h no fuso America/Sao_Paulo até o
 início da rodada**. Cada rodada conserva sua janela. O padrão não significa as
 últimas 24/48 horas. O fuso pode ser editado no painel; notícias sem data ficam

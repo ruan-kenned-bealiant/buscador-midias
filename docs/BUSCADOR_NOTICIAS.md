@@ -1,5 +1,11 @@
 # Operação do buscador de notícias
 
+> **Atualização de 29/10/2026.** Este documento conserva o histórico da implementação. Opções
+> adicionadas depois (corte pelo topo, leitura adaptativa, fechamento do dia, nova tentativa de
+> falhas, vagas extras por host), os comandos `ensure-indexes` e `backfill-stats` e o Painel estão em
+> [Operação](atual/OPERACAO.md) e [Fluxo de notícias](atual/FLUXO_NOTICIAS.md); as medições, em
+> [Otimização de rodadas e telas](OTIMIZACAO_ROTINAS_20261029.md).
+
 O serviço Python lê o catálogo PostgreSQL e entrega trabalho em seis filas duráveis:
 `discovery`, `dedup`, `fetch`, `context`, `evidence` e `persist`, sob o prefixo
 `midias.ingest`. Cada etapa também tem uma fila `.failed`. Mensagens contêm somente

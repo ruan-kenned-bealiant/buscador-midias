@@ -56,6 +56,33 @@ RESULTS = (
         "necessariamente um bloqueio de rede. Veja os exemplos em Problemas de acesso.",
     ),
     (
+        "stale",
+        "Parado há mais de 1 mês (inativado)",
+        "O link estava ativo, mas o próprio feed ou sitemap não traz notícia nova há mais "
+        "de um mês. A rotina de saúde o inativou.",
+        "Um RSS que parou de publicar há 45 dias.",
+        "O link sai das buscas, sem ser apagado. A rotina de inativos o reativa se ele "
+        "voltar a publicar.",
+    ),
+    (
+        "removed",
+        "Excluído (1 ano, período encerrado ou tema inútil)",
+        "A rotina de saúde excluiu o link: sem notícia há 1 ano ou mais, endereço de um "
+        "período que já fechou (por exemplo o sitemap de um dia ou mês passado) ou "
+        "tema que não interessa (clima, horóscopo, receita).",
+        "/2026/10/19_1.xml, o sitemap de um único dia que já passou.",
+        "A exclusão é lógica e fica na auditoria; pode ser revista. Falha de acesso nunca "
+        "exclui sozinha.",
+    ),
+    (
+        "review",
+        "Aguarda sua revisão (esporte ou sem data)",
+        "A rotina não consegue decidir sozinha: o link é de esporte, ou o documento não "
+        "traz datas que provem a atualidade.",
+        "Um feed de resultados de campeonato.",
+        "Nada muda no link. Decida se ele fica ou sai.",
+    ),
+    (
         "inconclusive",
         "Inconclusivo",
         "Não há evidência suficiente para confirmar funcionamento nem atribuir uma "
@@ -310,18 +337,25 @@ HEALTH = (
     (
         "active_round",
         "Rotina de links ativos",
-        "Verifica links ativos cujos sites também estão ativos. Avalia acesso, notícia"
-        " e texto, sem filtro de data.",
-        "Executar diariamente uma conferência de saúde dos caminhos cadastrados.",
-        "É uma verificação de funcionamento, independente da busca de notícias e "
-        "do intervalo de cada link.",
+        "Roda às 10h e às 20h. Lê o documento de cada link ativo (sem baixar notícias) e "
+        "decide: manter, inativar (parado há mais de 1 mês ou quebrado), excluir (1 ano "
+        "ou mais sem notícia, período encerrado ou tema inútil) ou deixar para sua revisão.",
+        "Um feed que não publica há 45 dias é inativado; o sitemap de um dia passado é "
+        "excluído; um feed de esportes aparece para você revisar.",
+        "Falha passageira (tempo esgotado, erro do site) só inativa na segunda verificação "
+        "seguida; 404, 410 e ciclo de redirecionamento inativam na hora. Antes de inativar "
+        "por bloqueio, a rotina tenta outros jeitos de conectar e troca o transporte do link "
+        "se um funcionar. É independente da busca de notícias e do intervalo de cada link.",
     ),
     (
         "recovery_round",
         "Rotina de recuperação",
-        "O agendamento retesta inativos cuja evidência aplicável indica falha de "
-        "acesso. Escopos ampliados são manuais.",
+        "Testa os links inativos às 10h e às 20h e só reativa quando há notícia textual "
+        "comprovada e publicação nos últimos 30 dias. Na rodada agendada, retesta a cada "
+        "vez quem a própria saúde inativou na última semana; os demais, a cada 7 dias. "
+        "Escopos ampliados e a opção Executar agora testam tudo o que foi escolhido.",
         "Escolher todos os inativos visíveis ou excluídos automaticamente por falha de acesso.",
+        "Um site que responde bem mas só tem notícias antigas continua inativo. "
         "Exclusões e inativações manuais não são desfeitas pela recuperação de "
         "exclusões automáticas. Um pai inativado pela validação por ficar vazio pode "
         "voltar após comprovação textual.",
@@ -332,7 +366,8 @@ HEALTH = (
         "Intervalo entre verificações de saúde desta rotina. Não é a periodicidade de "
         "busca configurada nos links.",
         "1440 minutos = 24 horas. 240 minutos = 4 horas.",
-        "O serviço do gerenciador precisa estar ligado. Fechar o navegador não "
+        "Só vale quando a rotina não tem horários fixos; com horários (hoje 10h e 20h) "
+        "eles mandam. O serviço do gerenciador precisa estar ligado. Fechar o navegador não "
         "interrompe o serviço; desligar o computador interrompe a execução até a "
         "retomada.",
     ),

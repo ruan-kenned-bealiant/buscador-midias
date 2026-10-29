@@ -58,6 +58,19 @@
 | [store.py](../../src/buscador_midias/catalog/store.py) | Catálogo persistente do MVP, com importação única e exclusão lógica auditada. |
 | [store_errors.py](../../src/buscador_midias/catalog/store_errors.py) | Erros seguros de domínio compartilhados entre cadastro e testes de leitura. |
 | [testing.py](../../src/buscador_midias/catalog/testing.py) | Testes interativos em amostra, com progresso e resultado independente de recência. |
+| [freshness.py](../../src/buscador_midias/catalog/freshness.py) | Frescor de um link: há quanto tempo o próprio feed ou sitemap deixou de trazer notícia nova. |
+| [head_probe.py](../../src/buscador_midias/catalog/head_probe.py) | Decide, só pelo começo de um documento, se ele inteiro está fora da janela. |
+| [health_actions.py](../../src/buscador_midias/catalog/health_actions.py) | Inativação e exclusão automáticas da rotina de saúde, com trilha de auditoria. |
+| [health_rules.py](../../src/buscador_midias/catalog/health_rules.py) | Regras da rotina de saúde: decisão sobre cada link e agenda por horários fixos. |
+| [link_period.py](../../src/buscador_midias/catalog/link_period.py) | Período que o endereço de um link cobre: fatia de dia ou de mês que já fechou é histórica. |
+| [link_review.py](../../src/buscador_midias/catalog/link_review.py) | Sonda de um link do cadastro: lê o documento ao vivo e propõe o que fazer, sem alterar nada. |
+| [link_theme.py](../../src/buscador_midias/catalog/link_theme.py) | Tema inútil de um link (clima, horóscopo, receita, cinema…), pelo caminho e pelo rótulo. |
+| [mapping_apply.py](../../src/buscador_midias/catalog/mapping_apply.py) | Aplicação das propostas de mapeamento ao cadastro, depois de revalidar cada candidato. |
+| [read_order.py](../../src/buscador_midias/catalog/read_order.py) | Ordem em que o documento de um link lista suas entradas, medida uma vez e gravada no link. |
+| [read_order_backfill.py](../../src/buscador_midias/catalog/read_order_backfill.py) | Preenche `links.read_order` a partir dos documentos já interpretados, sem tocar na rede. |
+| [redundancy.py](../../src/buscador_midias/catalog/redundancy.py) | Links de um mesmo site que não trazem nada além do que os outros já trazem. |
+| [review_cli.py](../../src/buscador_midias/catalog/review_cli.py) | Revisão dos links do cadastro em lotes de sites: `probe` sonda e relata, `apply` executa. |
+| [site_budget.py](../../src/buscador_midias/catalog/site_budget.py) | Teto de chamadas pagas por site, somado entre todas as leituras daquele site. |
 
 ### `corpus`
 
@@ -161,6 +174,9 @@
 | [schema.py](../../src/buscador_midias/ingestion/schema.py) | DDL aditivo da ingestão, separado do corpus e das rodadas históricas. |
 | [sources_pilot.py](../../src/buscador_midias/ingestion/sources_pilot.py) | Teste finito de links conhecidos, separado das filas e do catálogo em produção. |
 | [store.py](../../src/buscador_midias/ingestion/store.py) | Agenda e checkpoints transacionais: mensagens transportam somente identificadores. |
+| [cold_links.py](../../src/buscador_midias/ingestion/cold_links.py) | Leitura adaptativa: links que não rendem há várias leituras só são lidos nas rodadas das pontas. |
+| [panel.py](../../src/buscador_midias/ingestion/panel.py) | Dados da tela Painel: última rodada, histórico, estado atual, falhas, saúde e auditoria. |
+| [run_stats.py](../../src/buscador_midias/ingestion/run_stats.py) | Estatísticas pré-agregadas por rodada, para o painel ler números prontos. |
 
 ### `labeling`
 
@@ -238,7 +254,7 @@
 
 | Arquivo | Uso |
 |---|---|
-| [manager.html](../../src/buscador_midias/dashboard/manager.html) | CRUD e navegação de fontes/mecanismos/saúde |
+| [manager.html](../../src/buscador_midias/dashboard/manager.html) | CRUD e navegação de fontes/mecanismos/saúde (`/gerenciador`, `/mecanismos`, `/saude`) |
 | [health.js](../../src/buscador_midias/dashboard/health.js) | Rotinas e histórico de saúde |
 | [guide.html](../../src/buscador_midias/dashboard/guide.html) | Guia didático e esquemas |
 | [search.html](../../src/buscador_midias/dashboard/search.html) | Estrutura da tela de busca |
@@ -247,6 +263,10 @@
 | [evidence.js](../../src/buscador_midias/dashboard/evidence.js) | Carregamento e apresentação da captura |
 | [evidence_prepare.js](../../src/buscador_midias/dashboard/evidence_prepare.js) | Preparação segura do HTML para legibilidade |
 | [labeling/index.html](../../src/buscador_midias/labeling/index.html) | Avaliação manual/rotulagem da etapa anterior |
+| [app.css](../../src/buscador_midias/dashboard/app.css) | Tokens, casca, componentes e estados de carregamento compartilhados por todas as telas (sempre claro) |
+| [app.js](../../src/buscador_midias/dashboard/app.js) | `window.UI`: barra de progresso, botão ocupado e esqueletos de carregamento; envolve o `fetch` |
+| [panel.html](../../src/buscador_midias/dashboard/panel.html) | Estrutura da tela Painel (`/`) |
+| [panel.js](../../src/buscador_midias/dashboard/panel.js) | Painel: lê `/busca/painel` e desenha os gráficos em SVG, com dica, teclado e visão em tabela |
 
 ## Scripts
 
@@ -256,43 +276,37 @@ As auditorias são finitas e frequentemente vinculadas a caminhos, datas e manif
 |---|---|
 | [apply_editorial_priority.py](../../scripts/apply_editorial_priority.py) | Aplica provas editoriais recentes da rodada, com revisão e auditoria por fonte. |
 | [apply_transport_recovery.py](../../scripts/apply_transport_recovery.py) | Restaura apenas provas textuais independentes, com transporte e revisão auditados. |
-| [audit_problem_sources.py](../../scripts/audit_problem_sources.py) | Diagnóstico finito por fonte, com limites, checkpoints e histórico separado. |
-| [classify_round12_mechanisms.py](../../scripts/classify_round12_mechanisms.py) | Etapa 4: classificação local e reversível, separada do inventário e da execução. |
-| [close_problem_audit.py](../../scripts/close_problem_audit.py) | Consolida a revisão finita e verifica o histórico, sem novas requisições. |
 | [compact_old_evidence.py](../../scripts/compact_old_evidence.py) | Compacta cópias HTML antigas sem alterar chaves, bytes ou registros do corpus. |
-| [consolidate_round12.py](../../scripts/consolidate_round12.py) | Consolida a rodada 12 offline, sem buscar páginas nem alterar o estado da coleta. |
 | [eval_evidence_reuse.py](../../scripts/eval_evidence_reuse.py) | Mede se o HTML do download direto serve de evidência: confronta com a cópia do Bright Data. |
-| [export_functional_sources.py](../../scripts/export_functional_sources.py) | Cria consulta funcional sem filtros de publicação, preservando todos os arquivos de origem. |
-| [export_round12_selection.py](../../scripts/export_round12_selection.py) | Etapa 5: planos reutilizáveis e pacote local do painel; não executa buscas. |
 | [export_sites.py](../../scripts/export_sites.py) | Exporta o catálogo de fontes confiáveis do seed do powerdd-backend para `data/sites.csv`. |
 | [map_editorial_priority.py](../../scripts/map_editorial_priority.py) | Auditoria finita, HTTP e sem IA, de veículos editoriais prioritários. |
 | [map_feeder_candidates.py](../../scripts/map_feeder_candidates.py) | Descobre RSS no diretório público do Feeder e comprova notícia/evidência antes de ativar. |
 | [map_priority_sources.py](../../scripts/map_priority_sources.py) | Rodada finita de descoberta e prova textual dos 60 veículos selecionados. |
-| [measure_round12_contribution.py](../../scripts/measure_round12_contribution.py) | Etapa 3 offline: contribuição, sobreposição e trabalho observado por mecanismo. |
 | [pilot_http_transports.py](../../scripts/pilot_http_transports.py) | Piloto finito de transporte em 20 URLs públicas, sem alterar catálogo ou ingestão. |
 | [priority_catalog_apply.py](../../scripts/priority_catalog_apply.py) | Aplica apenas provas textuais da rodada dirigida, preservando exclusões manuais. |
 | [probe_feeds.py](../../scripts/probe_feeds.py) | Mede quantas fontes oferecem feed RSS/Atom ou API do WordPress, como alternativa ao sitemap. |
 | [probe_http_sessions.py](../../scripts/probe_http_sessions.py) | Amostra finita de acesso público: não altera o catálogo nem inicia ingestão/IA. |
 | [probe_priority_news_evidence.py](../../scripts/probe_priority_news_evidence.py) | Prova finita de descoberta, texto e evidência; não altera catálogo ou corpus. |
-| [qualify_problem_audit.py](../../scripts/qualify_problem_audit.py) | Confere escopo e páginas de áudio nas amostras salvas; nenhuma chamada de rede. |
 | [recheck_canonical_transports.py](../../scripts/recheck_canonical_transports.py) | Uma conferência finita dos sete cadastros canônicos ainda no transporte padrão. |
 | [recover_all_transports.py](../../scripts/recover_all_transports.py) | Rodada única dos excluídos automáticos e falhas de descoberta, com até três perfis curl. |
 | [recover_excluded_sessions.py](../../scripts/recover_excluded_sessions.py) | Rodada finita dos excluídos originais com sessão HTTP e restauração apenas textual. |
-| [repair_audit_cache_offline.py](../../scripts/repair_audit_cache_offline.py) | Corrige arquivos de cache trocados por concorrência; não permite nenhuma chamada de rede. |
-| [repair_internal_audit.py](../../scripts/repair_internal_audit.py) | Uma única correção dos checkpoints com erro interno, sem repetir fontes concluídas. |
 | [report_feeder_mapping.py](../../scripts/report_feeder_mapping.py) | Consolida a rodada Feeder sem novas chamadas HTTP ou alterações no catálogo. |
 | [report_transport_recovery.py](../../scripts/report_transport_recovery.py) | Consolida a auditoria finita e confere as restaurações no PostgreSQL, sem nova busca. |
-| [resolve_round12_inconclusive.py](../../scripts/resolve_round12_inconclusive.py) | Rodada finita de resolução: somente inconclusivos congelados, sem descoberta recursiva. |
 | [resume_feeder_candidates.py](../../scripts/resume_feeder_candidates.py) | Conclui exclusivamente os candidatos Feeder pendentes, sem repetir os testes anteriores. |
 | [retest_excluded_direct.py](../../scripts/retest_excluded_direct.py) | Reteste finito de exclusões por robots_unavailable, sem alterar o catálogo. |
 | [review_catalog.py](../../scripts/review_catalog.py) | Revisa o catálogo inteiro; --apply executa apenas consolidações explícitas e auditadas. |
 | [validate_catalog.py](../../scripts/validate_catalog.py) | Valida todos os links atuais, com retomada e no máximo três tentativas por associação. |
 | [validate_recovered_direct.py](../../scripts/validate_recovered_direct.py) | Validação textual finita e restauração auditada dos XMLs recuperados via HTTP. |
-| [validate_round12_samples.py](../../scripts/validate_round12_samples.py) | Etapa 2 da rodada 12: amostra finita, checkpoint por página e HTTP direto sem IA. |
 | [bm.sh](../../scripts/bm.sh) | Wrapper de ambiente e CLI; uso operacional atual |
 | [run.sh](../../scripts/run.sh) | Wrapper do fluxo CLI antigo |
 | [install_cron.sh](../../scripts/install_cron.sh) | Instala/remove cron do fluxo antigo; não é o scheduler Rabbit |
 | [generate_canonical_golden.php](../../scripts/generate_canonical_golden.php) | Gera fixture de paridade da canonicalização PHP/Python |
+| [apply_mapping.py](../../scripts/apply_mapping.py) | Aplica ao catálogo as propostas da rodada de mapeamento, em duas etapas retomáveis. |
+| [backfill_read_order.py](../../scripts/backfill_read_order.py) | Cria a coluna `links.read_order` (se faltar) e a preenche dos documentos já em cache. |
+| [consolidate_site_links.py](../../scripts/consolidate_site_links.py) | Exclui (exclusão lógica) os links de um site cujo conteúdo já está nos outros links dele. |
+| [coverage_gap_routes.py](../../scripts/coverage_gap_routes.py) | Uma correção limitada de rotas oficiais, separada da cobertura da rodada original. |
+| [head_filter_report.py](../../scripts/head_filter_report.py) | Resume o corte pelo topo (`head_filter`) de uma rodada: o que mediu e se já dá para ativar. |
+| [map_principal_sites.py](../../scripts/map_principal_sites.py) | Rodada finita de mapeamento dos principais sites, com Bright Data limitado por site. |
 
 ## Testes por arquivo
 
@@ -371,6 +385,30 @@ A seleção abaixo é um mapa, não um relatório de execução. Suítes de Post
 - [test_snapshot.py](../../tests/dashboard/test_snapshot.py): Exemplos de contratos: `test_snapshot_e_serializavel_em_json`, `test_funil_acumulado_soma_os_tipos_e_as_que_aguardam_analise`, `test_status_ocioso_quando_a_ultima_rodada_terminou`.
 - [test_transport_confirmation_cache.py](../../tests/dashboard/test_transport_confirmation_cache.py): Provas compartilhadas têm fonte/perfil/URL e validade restritos, sem sessões importadas.
 - [test_transport_postgres.py](../../tests/dashboard/test_transport_postgres.py): Exemplos de contratos: `test_automatic_restore_persists_profile_and_original_history`, `test_manual_deletion_and_source_edits_are_preserved`, `test_snapshot_and_reader_keep_the_configured_profile`.
+- [test_early_stop_reader.py](../../tests/dashboard/test_early_stop_reader.py): Leitura parcial: o leitor entrega o prefixo ao chamador, que pode dispensar o resto.
+- [test_head_cut.py](../../tests/dashboard/test_head_cut.py): Corte pelo topo: com ordem `newest_first` comprovada, topo fora da janela dispensa o resto.
+- [test_health_probe.py](../../tests/dashboard/test_health_probe.py): Rotina de saúde com as regras novas: sonda leve nos ativos e portão de frescor nos inativos.
+- [test_health_rules.py](../../tests/dashboard/test_health_rules.py): Regras da rotina de saúde: ação por resultado da sonda e próximo horário fixo.
+- [test_health_schedule.py](../../tests/dashboard/test_health_schedule.py): Rotina de saúde por horários fixos, com modo e escopo configuráveis.
+- [test_ingestion_cold_links.py](../../tests/dashboard/test_ingestion_cold_links.py): Leitura adaptativa: link que não rende há várias rodadas é lido menos, nunca abandonado.
+- [test_ingestion_day_close.py](../../tests/dashboard/test_ingestion_day_close.py): Fechamento do dia e nova tentativa de falhas: nada publicado depois da última rodada se perde.
+- [test_ingestion_entity_contexts.py](../../tests/dashboard/test_ingestion_entity_contexts.py): Contextos em lotes retomáveis: trinta entidades, resposta parcial e reserva substituída.
+- [test_ingestion_head_filter.py](../../tests/dashboard/test_ingestion_head_filter.py): Corte pelo topo na descoberta: sombra só mede, ativo dispensa o documento inteiro.
+- [test_ingestion_panel.py](../../tests/dashboard/test_ingestion_panel.py): Dados do painel: última rodada, histórico, agora, falhas, saúde e auditoria.
+- [test_ingestion_report_indexes.py](../../tests/dashboard/test_ingestion_report_indexes.py): Índices por rodada e painel de rodadas: as telas contam por run_id sem varrer o histórico.
+- [test_ingestion_run_stats.py](../../tests/dashboard/test_ingestion_run_stats.py): Estatísticas pré-agregadas por rodada: o painel lê números prontos, não varre as tarefas.
+- [test_ingestion_source_progress_cache.py](../../tests/dashboard/test_ingestion_source_progress_cache.py): Aba "Por site": virar página ou buscar não recalcula todas as fontes da rodada.
+- [test_link_freshness.py](../../tests/dashboard/test_link_freshness.py): Frescor de um link: a data mais nova que o próprio feed ou sitemap declara.
+- [test_link_period.py](../../tests/dashboard/test_link_period.py): Período coberto pelo endereço de um link: fatia de dia ou mês que já fechou é histórica.
+- [test_link_read_order_store.py](../../tests/dashboard/test_link_read_order_store.py): A ordem de leitura vive no link: vem do teste, pode ser corrigida e some se o link muda.
+- [test_link_redundancy.py](../../tests/dashboard/test_link_redundancy.py): Links de um mesmo site cujo conteúdo já está inteiro em outros são redundantes.
+- [test_link_review.py](../../tests/dashboard/test_link_review.py): Sonda de um link: o que o cadastro deveria fazer com ele, sem alterar nada.
+- [test_link_review_cli.py](../../tests/dashboard/test_link_review_cli.py): Subcomando review-links: probe grava o relatório e apply só mexe no que foi escolhido.
+- [test_link_theme.py](../../tests/dashboard/test_link_theme.py): Tema inútil de um link, pelo caminho da URL e pelo rótulo cadastrado.
+- [test_mapping_apply.py](../../tests/dashboard/test_mapping_apply.py): Aplicação das propostas de mapeamento: só entra link provado, vivo e com tema útil.
+- [test_read_order.py](../../tests/dashboard/test_read_order.py): Ordem em que um documento lista suas entradas: de onde vem o corte seguro.
+- [test_read_order_backfill.py](../../tests/dashboard/test_read_order_backfill.py): Preenche a ordem de leitura dos links a partir dos documentos já em cache, sem rede.
+- [test_site_budget.py](../../tests/dashboard/test_site_budget.py): Teto de chamadas pagas por site, somado entre todas as leituras daquele site.
 
 ### `tests/discovery`
 
@@ -439,7 +477,6 @@ A seleção abaixo é um mapa, não um relatório de execução. Suítes de Post
 
 ### `tests/scripts`
 
-- [test_problem_audit.py](../../tests/scripts/test_problem_audit.py): A auditoria dirigida termina mesmo com índices cíclicos e feeds sem texto útil.
 
 ### `tests/sites`
 

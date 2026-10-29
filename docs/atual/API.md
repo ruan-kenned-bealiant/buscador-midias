@@ -6,7 +6,8 @@ Implementação: [dashboard/server.py](../../src/buscador_midias/dashboard/serve
 
 | Rota | Uso |
 |---|---|
-| `/` e `/gerenciador` | Cadastro, filtros, paginação e links de cada site |
+| `/` | **Painel**: última rodada, estado atual, histórico em gráficos, falhas, saúde e auditoria do corte |
+| `/gerenciador` | Cadastro, filtros, paginação e links de cada site |
 | `/mecanismos` | Parâmetros globais dos mecanismos |
 | `/saude` | Configurações e histórico das verificações de saúde |
 | `/guia` | Dicionário didático, exemplos e explicação do fluxo |
@@ -14,7 +15,15 @@ Implementação: [dashboard/server.py](../../src/buscador_midias/dashboard/serve
 | `/evidencias/corpus/{hash}` | Evidência de artigo relacionado à ingestão e ao corpus |
 | `/testes/prioritarios`, `/testes/feeder`, `/testes/feeder-pendentes` | Relatórios estáticos de auditorias, quando seus artefatos existem |
 
-Os HTMLs/JSs ficam em [dashboard](../../src/buscador_midias/dashboard). O gerenciador reutiliza `manager.html` para suas abas; `search.html/search.js` implementam o buscador. Recursos são carregados na criação do servidor: alterações nesses arquivos precisam ser carregadas por uma nova instância do painel. Não é necessário acessar o frontend PowerDD para usar estas telas.
+Os HTMLs/JSs ficam em [dashboard](../../src/buscador_midias/dashboard). O gerenciador reutiliza `manager.html` para suas abas (`/gerenciador`, `/mecanismos`, `/saude`); `panel.html/panel.js` implementam o Painel; `search.html/search.js`, o buscador. Recursos são carregados na criação do servidor: alterações nesses arquivos (inclusive `app.css` e `app.js`) precisam ser carregadas por uma nova instância do painel. Não é necessário acessar o frontend PowerDD para usar estas telas.
+
+### Estilo e carregamento compartilhados
+
+`/assets/app.css` e `/assets/app.js` são comuns a todas as telas (exceto `/evidencias/…`, isolada por política de segurança própria). A folha define os tokens de cor e tipografia, a casca (menu lateral no desktop, barra rolável no celular), os componentes, os esqueletos de carregamento e o foco visível; cada tela guarda no próprio `<style>` só o que é dela, **sempre com os tokens** (nenhuma cor literal). O painel é **sempre claro**, qualquer que seja o tema do sistema: o tema escuro existe só sob `:root[data-theme="dark"]` e nada o liga. `app.js` expõe `window.UI`: `track` (barra de progresso no topo, só aparece depois de 300 ms de espera), `busy`/`mark` (botão ocupado, sem duplo clique) e `skeleton` (blocos no lugar do conteúdo); toda chamada a `fetch()` já passa por `track`. A política de segurança do servidor admite estilos e scripts do próprio servidor (`style-src 'self'`, `script-src 'self'`).
+
+### Painel (`/`)
+
+Mostra, para uma janela de 3, 7 (padrão), 14 ou 30 dias: a **última rodada** (estado, duração, notícias gravadas com variação sobre a anterior, funil de candidatas a gravadas, custo e custo por notícia, links lidos, falhas), o **agora** (próxima rodada, fila, workers online, disco livre com severidade, links ativos/inativos/frios, próxima saúde), quatro gráficos por rodada (gravadas, duração, custo por notícia, falhas por etapa), o **crescimento do corpus** (total acumulado por dia), a tabela dos motivos de falha, o que a **saúde** mudou por dia e a **auditoria do corte pelo topo**. Os gráficos são SVG desenhados à mão (a política de segurança só aceita scripts do próprio servidor), com dica ao passar o mouse ou por teclado (setas) e botão "Ver como tabela"; nenhum valor depende só de cor. A tela atualiza sozinha a cada 30 s com a aba visível e mantém o último desenho enquanto recarrega.
 
 ## Convenções e proteção das escritas
 
@@ -72,18 +81,20 @@ Os campos aceitos no CRUD e testes são validados em [catalog/store.py](../../sr
 |---|---|---|
 | GET | `/saude` | Visão geral, configurações e histórico; `offset` |
 | GET | `/saude/rodadas/{id}` | Detalhe e resultados; `offset`, `category` |
-| PATCH | `/saude/configuracoes/{active|recovery}` | Campos obrigatórios: `enabled`, `interval_minutes`, `workers`, `max_attempts`, `version`; opcionais: `bright_data`, `max_bright_requests`, `activate_recovered` |
+| PATCH | `/saude/configuracoes/{active|recovery}` | Campos obrigatórios: `enabled`, `interval_minutes`, `workers`, `max_attempts`, `version`; opcionais: `bright_data`, `max_bright_requests`, `activate_recovered`. também `schedule_hours` (lista de horas 0–23 em Brasília), `mode` (`full` ou `probe`) e `scope` (`errors` ou `inactive`). Regras: `recovery` não pode ser `probe` e `active` exige `scope=errors`; o que não é enviado permanece como está |
 | POST | `/saude/rodadas` | `kind`; opcionais `bright_data`, `activate_recovered`, `scope` |
 | POST | `/saude/rodadas/{id}/cancelar` | Objeto vazio `{}`; cancelamento cooperativo |
 
-`scope=errors` é o padrão. `inactive` e `auto_excluded_access` são ampliações manuais de recuperação, não opções de rotina agendada de ativos.
+`scope=errors` é o padrão. `inactive` e `auto_excluded_access` são ampliações manuais de recuperação, não opções de rotina agendada de ativos. A rodada **manual** testa todo o escopo escolhido; a **agendada** de inativos aplica a seleção semanal descrita em [Saúde das fontes](../SAUDE_DAS_FONTES.md).
 
 ## Buscador
 
 | Método | Caminho | Entrada/uso |
 |---|---|---|
-| GET | `/busca` | Visão geral/tarefas; `offset`, `stage`, `state`, `run_id`, `source_id` |
-| GET | `/busca/fontes` | Progresso por site; `run_id`, `offset`, `search` |
+| GET | `/busca` | Visão geral/tarefas; `offset`, `stage`, `state`, `run_id` (aceita `latest`), `source_id`. Não traz custos |
+| GET | `/busca/custos` | Chamadas pagas, tokens e custo por etapa; `run_id`, `source_id`. A tela os busca depois do primeiro desenho porque somam todas as tentativas |
+| GET | `/busca/painel` | Tudo o que o Painel mostra; `days` de 1 a 30 (padrão 7) |
+| GET | `/busca/fontes` | Progresso por site; `run_id`, `offset`, `search`. As linhas calculadas ficam 15 s em memória: paginar e buscar não recalcula |
 | GET | `/busca/fontes/{id}/corpus` | Artigos reais da fonte na rodada; exige `run_id`; `offset` |
 | GET | `/busca/noticias/{hash}` | Registro da ingestão e origens; pode recuperar o corpo no corpus |
 | GET | `/busca/historico` | Rodadas arquivadas preservadas, somente leitura |
@@ -91,7 +102,9 @@ Os campos aceitos no CRUD e testes são validados em [catalog/store.py](../../sr
 | POST | `/busca/rodadas` | `{}` para janela padrão; opcionais `link_ids`, `since`, `until` ou `day` |
 | POST | `/busca/tarefas/{id}/reprocessar` | Objeto vazio `{}`; valida elegibilidade da tarefa |
 
-`since`/`until` precisam ter fuso; `day` não pode ser combinado com o período explícito. A resposta 202 não indica que a rodada terminou. Configuração da busca tem chaves fechadas; workers devem informar as seis etapas, de 1 a 32 cada.
+`run_id=latest` resolve para a rodada mais recente e devolve o id resolvido em `run_id`; sem `run_id` a consulta cobre **todo o histórico** e é bem mais lenta (a tela abre já em `latest`). `/busca/painel` lê números pré-calculados de `ingest_run_stats` e completa até 3 rodadas ainda sem número por requisição (`pending_stats` informa quantas faltam); a contagem de links frios e o total do corpus ficam em cache por 15 e 10 minutos.
+
+`since`/`until` precisam ter fuso; `day` não pode ser combinado com o período explícito. A resposta 202 não indica que a rodada terminou. Configuração da busca tem chaves fechadas; workers devem informar as seis etapas, de 1 a 64 cada. O envio da tela só inclui as chaves que têm campo no formulário; as demais permanecem como estão (a API faz a fusão com a configuração salva). Chaves de otimização: `head_filter`, `head_audit_rate`, `adaptive_polling`, `host_concurrency`, `host_concurrency_max`, `close_previous_day` e `failed_retry_limit` (ver [Operação](OPERACAO.md)).
 
 Exemplos de **corpo de requisição**, sem executar nada:
 

@@ -82,31 +82,53 @@ A ingestão mantém trava por host e respeita `Retry-After`. HTTP 403 pode ser d
 
 Bright Data está **desativado na ingestão de notícias**: sua configuração rejeita habilitação e a captura recebe `bright_data=None`. Testes/saúde conservam suporte ao fallback no transporte `direct`, com credenciais, orçamento e métricas; outros perfis não ativam essa cadeia. **No teste interativo, omitir `bright_data` usa a disponibilidade das credenciais como padrão**, podendo habilitar o fallback; envie `false` para garantir teste sem esse provedor. Nas rotinas de saúde, a configuração persistida controla a opção. Não confundir suporte existente com uso habilitado na rodada. OpenRouter é usado na etapa de contexto, não para abrir o RSS.
 
+### Troca automática de transporte pela saúde
+
+A ingestão usa o perfil salvo no link e não alterna perfis sozinha. A rotina de saúde, sim: quando a falha de um link ativo é do tipo que **outro jeito de conectar costuma resolver** (HTTP 401, 402, 403 ou 406, ciclo de redirecionamento, falha TLS, "Remote end closed", "Connection reset"; `transport_fixable` em `link_review.py`), ela repete a sonda nos perfis `curl_chrome_h1`, `curl_chrome_h2`, `curl_firefox_h2` e `direct`, nessa ordem. Se um passa, o `access_transport` do link é trocado e o evento `health_transport` é gravado; o link não é inativado. Os perfis `curl_bot_*` nunca são usados nessa troca. Exemplo: um site que recusa o leitor direto com 403 mas aceita o perfil Chrome via HTTP/1 volta a ser lido sem intervenção; sem essa etapa, a falha seria tratada como link quebrado e ele sairia da rodada.
+
 ## Saúde das fontes
 
-As duas rotinas usam o mesmo `run_test`, sem exigir notícia recente:
+Duas rotinas independentes, em horários fixos (**10h e 20h**, Brasília) e sem relação com a agenda das buscas. O detalhamento, as regras e os resultados estão em [Saúde das fontes](../SAUDE_DAS_FONTES.md); aqui fica o resumo:
 
-| Rotina | Universo |
-|---|---|
-| `active` | Links efetivamente ativos, para conferir saúde |
-| `recovery` | Inativos elegíveis por erro de acesso; opções manuais ampliam o escopo para inativos ou exclusões automáticas por acesso |
+| Rotina | Universo | Leitura | O que pode fazer |
+|---|---|---|---|
+| `active` | links efetivamente ativos | sonda leve (`mode=probe`): lê só o documento do link | manter; **inativar** (parado há mais de 1 mês ou quebrado); **excluir** (parado há 1 ano ou mais, período do endereço encerrado, tema inútil); deixar para sua revisão (esporte, sem data) |
+| `recovery` | inativos | teste completo (`mode=full`, mesmo `run_test` do botão Testar) | **reativar** só com notícia textual comprovada e publicação nos últimos 30 dias |
 
-Configuração por rotina: habilitação, intervalo em minutos (1–525600), workers (1–32), tentativas (1–3), fallback opcional e orçamento Bright Data, além de `activate_recovered`. Padrões do DDL: 1440 minutos, 8 workers, 2 tentativas, fallback e reativação automática desligados. Valores salvos prevalecem.
+Configuração por rotina: habilitação, horários (`schedule_hours`; o intervalo em minutos só vale sem horários), workers (1–32), tentativas (1–3), `mode`, `scope`, fallback e orçamento Bright Data, e `activate_recovered`. Os padrões do DDL (1440 minutos, 8 workers, 2 tentativas, modo `full`, escopo `errors`) são o ponto de partida; o que vale é o salvo no banco, hoje 10h e 20h, 16 workers e modo `probe` em `active`, 8 workers, modo `full` e escopo `inactive` em `recovery`.
 
-Uma rodada congela os elegíveis e revisões. Há no máximo uma rodada aberta por tipo. O worker do painel tem liderança/heartbeat, retoma checkpoints e não expande infinitamente novos caminhos. As retentativas do worker concentram-se em `access_error`; erros internos são diagnosticados como internos, sem reprovar a fonte.
+Uma rodada congela os elegíveis e revisões. Há no máximo uma rodada aberta por tipo. O worker do painel tem liderança/heartbeat, retoma checkpoints e não expande infinitamente novos caminhos. Hosts com mais de 100 links na rodada admitem 3 testes simultâneos; os demais, um.
 
 | Categoria | Nome no painel / significado |
 |---|---|
 | `healthy` | Funcional comprovado: amostra textual confirmada |
+| `stale` | Parado há mais de 1 mês: o link foi **inativado** |
+| `removed` | Excluído: 1 ano ou mais sem notícia, período do endereço encerrado ou tema inútil |
+| `review` | Aguarda revisão humana (esporte ou sem data); nada muda |
 | `invalid` | Formato ou mecanismo inválido: XML ilegível ou incompatível com o modelo |
 | `no_news` | Acessível, sem notícias na amostra: documento lido, sem entradas úteis encontradas |
 | `no_text` | Sem notícia textual confirmada: houve acesso a amostra, mas não texto útil comprovado |
 | `access_error` | Falha de acesso: raiz ou amostra apresentou bloqueio/rede/TLS/HTTP |
 | `inconclusive` | Evidência insuficiente para concluir; pode incluir orçamento/provedor indisponível |
 
-Esses rótulos são diagnósticos por link, não uma sentença sobre todas as notícias do site. A precedência exata está em [health_policy.py](../../src/buscador_midias/catalog/health_policy.py).
+Esses rótulos são diagnósticos por link, não uma sentença sobre todas as notícias do site. A precedência exata está em [health_policy.py](../../src/buscador_midias/catalog/health_policy.py) e as regras de ação em [health_rules.py](../../src/buscador_midias/catalog/health_rules.py).
 
-A saúde registra resultados sem excluir automaticamente todos os links reprovados. Recuperação aprovada só ativa quando a opção está habilitada e as revisões/proveniência permitem. Exclusões/inativações manuais são preservadas; restauração de exclusão automática exige o caminho específico de recuperação. Ela não redefine intervalos nem parâmetros globais.
+**Inativação com histerese.** Falha **definitiva** (404, 410, ciclo de redirecionamento) inativa na hora. Falha que costuma passar (tempo esgotado, recusa, 5xx, documento ilegível) só inativa na **segunda verificação seguida** (`FAILURES_TO_INACTIVATE = 2`): um site com um dia ruim não sai da rodada. Inativação e exclusão são lógicas (`deleted_at` na exclusão), auditadas em `events` (`health_inactivate`, `health_delete`, `health_transport`, `health_reactivate`) e revisáveis. Falha de acesso nunca exclui por conta própria. Exclusões e inativações manuais são preservadas; restauração de exclusão automática exige o caminho específico de recuperação.
+
+**Reativação.** Um inativo só volta quando o teste completo comprova texto **e** há notícia publicada nos últimos 30 dias (o "portão de frescor"). Um site que responde bem mas só tem notícias de 2019 continua inativo. Além disso a rotina agendada de inativos não testa todo o conjunto em toda rodada: retesta a cada rodada quem a própria saúde inativou nos últimos 7 dias e os demais a cada 7 dias (`recovery_due`), porque quase toda reativação é de um link que caiu na véspera. A execução manual testa todo o escopo escolhido.
+
+## Ordem de leitura do documento
+
+`links.read_order` registra em que ordem o documento do link lista as entradas: `newest_first`, `oldest_first`, `unordered` ou `unknown` (padrão). É um dado **derivado**, medido por `detect_read_order` ([read_order.py](../../src/buscador_midias/catalog/read_order.py)) a partir de um documento já interpretado, e gravado pelo teste, pela ativação de recuperados e pelo preenchimento retroativo (`scripts/backfill_read_order.py`, que só preenche link ainda `unknown` e nunca sobrescreve o que o teste gravou ou uma pessoa corrigiu). Serve ao corte pelo topo da ingestão ([Fluxo de notícias](FLUXO_NOTICIAS.md)). Como a coluna não é cadastro, alterá-la não muda a versão do link; a auditoria registra um único evento com o resumo. Link só vira `newest_first` quando o documento inteiro confirma; na dúvida, `unordered`/`unknown`, que apenas mantêm a leitura completa.
+
+## Higiene do cadastro
+
+Vários utilitários mantêm o catálogo livre de caminhos que só gastam leitura:
+
+- **Links históricos** ([link_period.py](../../src/buscador_midias/catalog/link_period.py)): muitos sites publicam um sitemap por dia (`/2026/10/19_1.xml`) ou por mês (`sitemap-2026-09.xml`). Depois que o período passa, nada novo entra nele. Só se lê a data do endereço (caminho e consulta, nunca o domínio), em formatos sem ambiguidade, com sobreposição de 2 dias; sem data reconhecível o link nunca é tratado como histórico. O mecanismo `g1_daily` é datado por desenho e não entra.
+- **Revisão do catálogo** ([link_review.py](../../src/buscador_midias/catalog/link_review.py), `scripts/review_catalog.py`): a sonda lê o documento ao vivo e propõe `keep`, `inactivate`, `delete`, `remove_theme`, `remove_historical` ou `review`, com a causa (`access`, `unreadable`, `undated`, `sports`). Só propõe; aplicar é uma etapa separada, e falha de acesso nunca remove.
+- **Aplicação de mapeamentos** ([mapping_apply.py](../../src/buscador_midias/catalog/mapping_apply.py), `scripts/apply_mapping.py`): cada candidato do mapeamento passa pela mesma sonda antes de virar link, porque o teste do mapeamento prova que há notícia com texto mas não olha a data (uma rota de arquivo parada há anos passaria).
+- **Links redundantes** ([redundancy.py](../../src/buscador_midias/catalog/redundancy.py), `scripts/consolidate_site_links.py --site-id N [--apply]`): feeds por tag, autor ou organização costumam ser recortes do feed principal. A cobertura é gulosa (sempre o link que acrescenta mais artigos ainda não cobertos); o que sobra é redundante e é excluído logicamente. Sem `--apply` só mostra o plano.
 
 ## Cadência observada
 

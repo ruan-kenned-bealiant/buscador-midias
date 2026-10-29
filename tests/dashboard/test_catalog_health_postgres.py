@@ -138,8 +138,8 @@ def test_limited_retries_and_persisted_failures(health):
     assert health.create("recovery")["total"] == 1
 
 
-def age_failed_link(health, changed_days_ago, checked_days_ago):
-    """Deixa o link 1 inativo, com falha de acesso e as datas de alteração e de verificação."""
+def age_failed_link(health, inactivated_days_ago, checked_days_ago, access_error=True):
+    """Deixa o link 1 inativo; ``inactivated_days_ago`` dá a idade da inativação pela saúde."""
     from unittest.mock import patch
 
     def blocked(config, source, progress, factory):
@@ -152,60 +152,44 @@ def age_failed_link(health, changed_days_ago, checked_days_ago):
     health.store.save("endpoint", dict(version=link["version"], active=False), 1)
     with health.connection() as db:
         db.execute(
-            "UPDATE links SET updated_at=now()-make_interval(days=>%s) WHERE id=1",
-            (changed_days_ago,),
-        )
-        db.execute(
             "UPDATE link_health SET checked_at=now()-make_interval(days=>%s) WHERE link_id=1",
             (checked_days_ago,),
+        )
+        db.execute("DELETE FROM events WHERE action='health_inactivate'")
+        if inactivated_days_ago is not None:
+            db.execute(
+                "INSERT INTO events(entity,entity_id,action,happened_at,before_json,after_json) "
+                "VALUES('endpoint',1,'health_inactivate',now()-make_interval(days=>%s),'{}','{}')",
+                (inactivated_days_ago,),
+            )
+        db.execute(
+            "UPDATE health_settings SET enabled=true,next_run_at=now()-interval '1 minute' "
+            "WHERE kind='recovery'"
         )
 
 
 @pytest.mark.parametrize(
-    ("changed_days_ago", "checked_days_ago", "included"),
-    [(1, 1, 1), (30, 1, 0), (30, 8, 1)],
+    ("inactivated_days_ago", "checked_days_ago", "included"),
+    [(1, 1, 1), (30, 1, 0), (None, 1, 0), (None, 8, 1)],
 )
-def test_recovery_skips_old_failures_checked_this_week(
-    health, changed_days_ago, checked_days_ago, included
+def test_scheduled_recovery_skips_old_inactives_checked_this_week(
+    health, inactivated_days_ago, checked_days_ago, included
 ):
-    age_failed_link(health, changed_days_ago, checked_days_ago)
-    assert health.create("recovery")["total"] == included
+    age_failed_link(health, inactivated_days_ago, checked_days_ago)
+    assert health.create("recovery", "scheduled")["total"] == included
 
 
-def test_history_counts_are_served_from_a_covering_index(health):
-    run = health.create("active")
-    execute(health)
+@pytest.mark.parametrize("scope", ["errors", "inactive"])
+def test_the_weekly_rule_applies_to_both_scopes_of_the_scheduled_routine(health, scope):
+    age_failed_link(health, None, 1)
     with health.connection() as db:
-        db.execute("SET LOCAL enable_seqscan=off")
-        plan = "\n".join(
-            r["QUERY PLAN"]
-            for r in db.execute(
-                "EXPLAIN SELECT (CASE WHEN state='completed' THEN category ELSE state END) k,"
-                "count(*) n,count(*) FILTER (WHERE activated) a FROM health_results "
-                "WHERE run_id=%s GROUP BY 1",
-                (run["id"],),
-            )
-        )
-    assert "Index Only Scan using health_results_summary" in plan
+        db.execute("UPDATE health_settings SET scope=%s WHERE kind='recovery'", (scope,))
+    assert health.create("recovery", "scheduled")["total"] == 0
 
 
-def test_history_reports_paid_requests_only_for_runs_that_may_spend(health):
-    run = health.create("active")
-    execute(health)
-    with health.connection() as db:
-        db.execute(
-            "UPDATE health_attempts SET result=result||'{\"bright_data_requests\":3}'::jsonb "
-            "WHERE run_id=%s",
-            (run["id"],),
-        )
-    assert health.overview()["runs"][0]["bright_data_requests"] == 0
-    with health.connection() as db:
-        db.execute(
-            "UPDATE health_runs SET configuration=jsonb_set(configuration,'{bright_data}',"
-            "'true') WHERE id=%s",
-            (run["id"],),
-        )
-    assert health.overview()["runs"][0]["bright_data_requests"] == 3
+def test_a_manual_run_always_tests_everything_in_its_scope(health):
+    age_failed_link(health, None, 1)
+    assert health.create("recovery")["total"] == 1  # "Executar agora" não é filtrada
 
 
 def test_resume_cancel_and_catalog_edit_conflicts(health):

@@ -1,6 +1,6 @@
 # Documentação do buscador de mídias
 
-Referência da implementação revisada em **26/10/2026**. Descreve o código do repositório, não uma garantia de disponibilidade dos sites externos nem um retrato permanente da rodada em execução.
+Referência da implementação revisada em **26/10/2026**, com as mudanças de **28 e 29/10/2026** (corte pelo topo, leitura adaptativa, fechamento do dia, nova tentativa de falhas, saúde por horários fixos, Painel e índices de relatório) incorporadas nos documentos abaixo. Descreve o código do repositório, não uma garantia de disponibilidade dos sites externos nem um retrato permanente da rodada em execução.
 
 O produto mantém um catálogo de sites e de seus RSS/sitemaps, testa esses caminhos e alimenta um corpus de notícias com análise de contexto e evidência HTML. O gerenciador e o buscador usam PostgreSQL; a ingestão distribui trabalho em seis etapas pelo RabbitMQ.
 
@@ -12,8 +12,10 @@ O produto mantém um catálogo de sites e de seus RSS/sitemaps, testa esses cami
 | Da leitura do RSS até a gravação de uma notícia | [Fluxo de notícias](FLUXO_NOTICIAS.md) |
 | Cadastro, mecanismos, transportes HTTP e saúde | [Catálogo e mecanismos](CATALOGO_MECANISMOS.md) |
 | Tabelas, relacionamentos e arquivos persistidos | [Dicionário de dados](DADOS.md) |
-| Telas, endpoints, formatos e controles de edição | [Interface e API](API.md) |
+| Telas (inclusive o Painel), endpoints, formatos e controles de edição | [Interface e API](API.md) |
 | Ambiente, inicialização, diagnóstico e manutenção | [Operação e desenvolvimento](OPERACAO.md) |
+| Medições, decisões e pendências de 28–29/10/2026 | [Otimização de rodadas e telas](../OTIMIZACAO_ROTINAS_20261029.md) |
+| Rotinas de saúde, regras de inativação e reativação | [Saúde das fontes](../SAUDE_DAS_FONTES.md) |
 | Localização dos módulos, scripts e testes | [Inventário do repositório](INVENTARIO.md) |
 | Contexto individual, lotes de IA e gravação por entidade | [Contexto por entidade](../CONTEXTO_POR_ENTIDADE.md) |
 

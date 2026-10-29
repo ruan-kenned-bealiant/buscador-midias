@@ -27,11 +27,12 @@ from buscador_midias.ingestion.cold_links import cold_link_ids
 from buscador_midias.ingestion.connections import CHECKPOINT_POOL_SIZE, IngestConnections
 from buscador_midias.ingestion.flow import (
     BACKLOG_LIMITS,
+    PERMANENT_FAILURE,
     RESERVE_BYTES,
     clock_slot,
     day_window,
+    is_boundary_slot,
     is_last_attempt,
-    is_last_slot,
     today_start,
 )
 from buscador_midias.ingestion.schema import (
@@ -401,6 +402,9 @@ class IngestStore:
             elif key == "head_filter":
                 if value not in HEAD_FILTER_MODES:
                     raise CatalogError("Selecione o modo do corte pelo topo válido.")
+            elif key == "close_previous_day":
+                if type(value) is not bool:
+                    raise CatalogError("Informe verdadeiro ou falso para fechar o dia anterior.")
             elif key == "adaptive_polling":
                 if value not in ("off", "enforce"):
                     raise CatalogError("Selecione o modo da leitura adaptativa válido.")
@@ -434,6 +438,7 @@ class IngestStore:
                     "analysis_text_chars": (1000, 30000),
                     "host_concurrency": (1, 4),
                     "host_concurrency_max": (1, 8),
+                    "failed_retry_limit": (1, 5),
                 }
                 low, high = bounds[key]
                 if type(value) is not int or not low <= value <= high:
@@ -555,6 +560,17 @@ class IngestStore:
                     if "day" in data and str(error)
                     else "Informe datas válidas, com fuso e início anterior ao fim."
                 ) from None
+            if (
+                fixed
+                and "day" not in data
+                and config.get("close_previous_day")
+                and config.get("window_mode", "today") == "today"
+                and slot
+                == today_start(now, config.get("timezone", "America/Sao_Paulo"))
+                + timedelta(hours=min(config.get("schedule_hours", [1, 6, 12, 16])))
+            ):
+                # Primeira rodada do dia: fecha o dia anterior (o que saiu depois da última).
+                since = since - timedelta(days=1)
             db.execute(
                 "INSERT INTO ingest_schedule(link_id) SELECT l.id FROM links l JOIN sites s "
                 "ON s.id=l.source_id WHERE l.active=1 AND s.active=1 AND l.deleted_at IS NULL "
@@ -590,7 +606,7 @@ class IngestStore:
                 fixed
                 and not ids
                 and config.get("adaptive_polling", "off") == "enforce"
-                and not is_last_slot(
+                and not is_boundary_slot(
                     slot,
                     now,
                     config.get("timezone", "America/Sao_Paulo"),
@@ -897,7 +913,12 @@ class IngestStore:
                     "((a.payload->>'published_at')::timestamptz BETWEEN %s AND %s "
                     "OR ((a.payload->>'route_period_since')::timestamptz<=%s "
                     "AND (a.payload->>'route_period_until')::timestamptz>=%s))) "
-                    "OR (a.status='date_unknown' AND %s) OR a.status='cancelled') "
+                    "OR (a.status='date_unknown' AND %s) OR a.status='cancelled' "
+                    # Falha de uma rodada anterior, ainda sem passar do limite de tentativas e sem
+                    # motivo definitivo: uma rodada nova que a reencontra tenta de novo.
+                    "OR (a.status='failed' AND a.generation<%s AND a.run_id<>%s "
+                    "AND NOT EXISTS(SELECT 1 FROM ingest_jobs f WHERE f.hash=a.hash "
+                    "AND f.state='failed' AND f.outcome ~ %s))) "
                     "AND NOT EXISTS(SELECT 1 FROM ingest_jobs j WHERE j.hash=a.hash "
                     "AND j.state NOT IN ('succeeded','failed','skipped','cancelled')) "
                     "RETURNING hash,generation), "
@@ -917,6 +938,9 @@ class IngestStore:
                         job["run"]["until"],
                         job["run"]["since"],
                         job["run"]["config"]["allow_undated"],
+                        int(job["run"]["config"].get("failed_retry_limit", 1)),
+                        job["run_id"],
+                        PERMANENT_FAILURE,
                         job["run_id"],
                         job["poll_id"],
                     ),

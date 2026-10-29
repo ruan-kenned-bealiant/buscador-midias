@@ -38,6 +38,11 @@ DEFAULTS = dict(
     head_audit_rate=0.0,
     # "enforce": rodadas agendadas pulam links frios (ver cold_links); "off" lê todos.
     adaptive_polling="off",
+    # A primeira rodada do dia lê também o dia anterior inteiro (o que saiu depois da última).
+    close_previous_day=False,
+    # Passadas totais por notícia que falha: 1 = nunca tenta de novo; 3 = até duas novas tentativas
+    # em rodadas seguintes (só para falhas que podem passar; ver flow.PERMANENT_FAILURE).
+    failed_retry_limit=1,
     workers=dict(discovery=2, dedup=1, fetch=2, context=1, evidence=1, persist=1),
 )
 # Índices que as telas usam para contar por rodada. Em bases já existentes são criados por

@@ -39,7 +39,7 @@ DDL: [postgres_schema.py](../../src/buscador_midias/catalog/postgres_schema.py).
 | Tabela | Chave / conteúdo |
 |---|---|
 | `sites` | `id` BIGINT identity; `identity` único identifica host/caminho do cadastro; `name`, `url`, `country`, `language`, `notes`, `active`, `deleted_at`, `version`, datas, `origin` |
-| `links` | `id` BIGINT identity; `source_id` FK para site; `url`, `kind=feed|sitemap`, `label`, `notes`, `active`, `deleted_at`, `version`, datas, `origin`, `model` FK, `access_transport`, `search_interval_seconds`, `evidence`, `last_test`; único `(source_id,url)` |
+| `links` | `id` BIGINT identity; `source_id` FK para site; `url`, `kind=feed|sitemap`, `label`, `notes`, `active`, `deleted_at`, `version`, datas, `origin`, `model` FK, `access_transport`, `read_order` (`newest_first|oldest_first|unordered|unknown`, dado derivado que não muda a versão), `search_interval_seconds`, `evidence`, `last_test`; único `(source_id,url)` |
 | `mechanisms` | `model` PK textual; `parameters` JSONB, `version` e `updated_at`; execução continua em código Python |
 | `link_test_results` | Histórico salvo: link/mecanismo, `test_id`, revisão do modelo, parâmetros, observação e resultado; único `(link_id,test_id)` |
 | `events` | Entidade, ID, ação, instante e JSONB anterior/posterior; inclui CRUD, configuração e restauração |
@@ -77,11 +77,13 @@ DDL: [health_schema.py](../../src/buscador_midias/catalog/health_schema.py).
 
 | Tabela | Conteúdo |
 |---|---|
-| `health_settings` | PK `kind=active|recovery`; habilitação, frequência em minutos, workers, tentativas, versão, próxima execução, Bright Data e opção de ativação |
+| `health_settings` | PK `kind=active|recovery`; habilitação, frequência em minutos, horários fixos (`schedule_hours`, horas em Brasília), `mode` (`full|probe`), `scope` (`errors|inactive`), workers, tentativas, versão, próxima execução, Bright Data e opção de ativação |
 | `health_runs` | ID textual; tipo, gatilho manual/agendado, estado, datas, heartbeat/dono, configuração congelada e total; índice impede duas abertas do mesmo tipo |
 | `health_results` | PK rodada/link; site, host, snapshot, estado, categoria, tentativas, resultado/detalhe, datas e flag `activated` |
 | `health_attempts` | PK rodada/link/tentativa; categoria, resultado JSONB e instante |
-| `link_health` | Última observação por link, rodada, categoria, revisões de site/link/modelo e data |
+| `link_health` | Última observação por link, rodada, categoria, revisões de site/link/modelo, data e `failures` (verificações seguidas com falha passageira, base da histerese de inativação) |
+
+O índice `health_results_summary (run_id, state, category) INCLUDE (activated)` serve às contagens do histórico sem ler as linhas largas. Eventos da rotina (`health_inactivate`, `health_delete`, `health_transport`, `health_reactivate`) ficam em `events`.
 
 Estados de rodada de saúde: `queued`, `running`, `cancelling`, `completed`, `cancelled`. Estados de item: `pending`, `running`, `completed`, `error`, `skipped`, `cancelled`. Categoria diagnóstica é outro campo; item `completed` pode conter `access_error`.
 
@@ -109,6 +111,19 @@ DDL integral e estados: [ingestion/schema.py](../../src/buscador_midias/ingestio
 | `ingest_document_cache` | PK fonte/hash URL/revisão; hash do conteúdo, validadores HTTP, documento interpretado gzip/BYTEA e observação |
 | `ingest_document_plans` | Plano de documento grande em JSON gzip/BYTEA, associado ao poll; eliminado após fechar a descoberta |
 | `ingest_archives` | Esquema arquivado, prefixo de filas e manifesto; não reativa as tarefas antigas |
+| `ingest_run_stats` | PK rodada; `final` e `payload` JSONB com os números que o Painel mostra (etapas, gravadas, custo, links, ocorrências, falhas, auditoria do corte, `head_filter`, `adaptive_skipped`, `computed_at`). Uma linha por rodada, recalculada enquanto aberta e fechada ao terminar |
+
+### Índices de relatório
+
+As telas contam e listam por rodada, mas `ingest_jobs` e `ingest_occurrences` têm milhões de linhas. Três índices atendem a esses filtros:
+
+| Índice | Uso |
+|---|---|
+| `ingest_job_run (run_id, stage, state)` | contagens por etapa/estado de uma rodada (`overview`, `source_progress`, pendências do histórico) |
+| `ingest_job_run_created (run_id, created_at)` | a página mais recente de tarefas de uma rodada, já ordenada, sem ordenar a rodada inteira |
+| `ingest_occurrence_run (run_id, hash)` | ocorrências e notícias únicas de uma rodada |
+
+Sem eles, cada contagem por `run_id` lia a tabela inteira (~1,2 GB) e a tela de Busca levava de 25 a 45 s. Em bases novas o DDL cria os índices e a tabela `ingest_run_stats`. Em bases **existentes** eles são criados por `scripts/bm.sh ingest ensure-indexes`, com `CREATE INDEX CONCURRENTLY` (não bloqueia a escrita), e `SCHEMA_VERSION` não foi alterado de propósito: reaplicar o DDL inteiro com o serviço no ar já causou deadlock de locks de tabela.
 
 `attempts` conta reservas; `failures` conta falhas que consomem o limite. `dispatch` diferencia reenvios. `generation` separa reprocessamentos da mesma notícia. `lease_until` protege trabalho reservado por processo que pode morrer. Confundir esses campos pode fazer uma espera legítima parecer repetição sem limite.
 

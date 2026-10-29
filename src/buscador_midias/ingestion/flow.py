@@ -142,9 +142,24 @@ def next_slot(now: datetime, timezone: str, hours: list[int]) -> datetime | None
     return next(slot for slot in candidates if slot > now)
 
 
-def is_last_slot(slot: datetime, now: datetime, timezone: str, hours: list[int]) -> bool:
-    """Se ``slot`` é o último horário fixo do dia, aquele cuja janela contém todas as outras."""
-    return bool(hours) and slot == today_start(now, timezone) + timedelta(hours=max(hours))
+def is_boundary_slot(slot: datetime, now: datetime, timezone: str, hours: list[int]) -> bool:
+    """Se ``slot`` é o primeiro ou o último horário fixo do dia.
+
+    A última rodada tem a janela mais larga do dia; a primeira, com ``close_previous_day``, cobre
+    o dia anterior inteiro. Um link lido só nessas duas não perde notícia.
+    """
+    if not hours:
+        return False
+    midnight = today_start(now, timezone)
+    return slot in (midnight + timedelta(hours=min(hours)), midnight + timedelta(hours=max(hours)))
+
+
+# Falhas que repetir não resolve: bloqueio do site, página inexistente, destino proibido ou
+# credencial do provedor pago. Uma nova rodada só tenta de novo o que pode passar (timeout,
+# conexão, 5xx, análise sem resposta). Expressão regular do PostgreSQL (operador ``~``).
+PERMANENT_FAILURE = (
+    "HTTP 40[1-4]|HTTP 410|redirect_cycle|fora dos dom|robots_unavailable|bright_data_api_error"
+)
 
 
 # Folga contra fuso mal rotulado em ``lastmod``: o instante real pode ser até 12 h posterior.

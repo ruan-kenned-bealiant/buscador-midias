@@ -92,19 +92,23 @@ NOW = datetime(2026, 10, 29, 12, 0, tzinfo=UTC)
 
 
 @pytest.mark.parametrize(
-    ("changed_days_ago", "checked_days_ago", "expected"),
+    ("inactivated_days_ago", "checked_days_ago", "expected"),
     [
-        (1, 1, True),  # caiu ontem: volta a ser testado a cada rodada, é onde há recuperação
+        (1, 1, True),  # a saúde o inativou ontem: volta a ser testado a cada rodada
         (6.9, 1, True),
-        (30, 1, False),  # parado há semanas e testado ontem: não repete todo dia
-        (30, 6.9, False),
-        (30, 7.1, True),  # varredura semanal dos antigos
+        (30, 1, False),  # inativado há semanas e testado ontem: não repete todo dia
+        (None, 1, False),  # nunca inativado pela saúde (inativação manual) e testado ontem
+        (None, 6.9, False),
+        (None, 7.1, True),  # varredura semanal de todos os inativos
         (30, None, True),  # nunca verificado pela saúde
+        (None, None, True),
     ],
 )
-def test_recovery_retests_recent_failures_every_round_and_old_ones_weekly(
-    changed_days_ago, checked_days_ago, expected
+def test_recovery_retests_recent_health_inactivations_every_round_and_the_rest_weekly(
+    inactivated_days_ago, checked_days_ago, expected
 ):
-    changed = NOW - timedelta(days=changed_days_ago)
+    inactivated = (
+        None if inactivated_days_ago is None else NOW - timedelta(days=inactivated_days_ago)
+    )
     checked = None if checked_days_ago is None else NOW - timedelta(days=checked_days_ago)
-    assert recovery_due(changed, checked, NOW) is expected
+    assert recovery_due(inactivated, checked, NOW) is expected

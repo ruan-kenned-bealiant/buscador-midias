@@ -60,15 +60,18 @@ def decide(outcome: dict[str, Any], previous_failures: int) -> Decision:
     return Decision("review", category, reason, failures)
 
 
-def recovery_due(changed_at: datetime, checked_at: datetime | None, now: datetime) -> bool:
-    """Se a rotina de inativos deve retestar o link agora.
+def recovery_due(
+    inactivated_at: datetime | None, checked_at: datetime | None, now: datetime
+) -> bool:
+    """Se a rotina de inativos agendada deve retestar o link agora.
 
-    ``changed_at`` é a última alteração do cadastro (a inativação atualiza); ``checked_at`` é a
-    última verificação da saúde. Na prática, quase todas as reativações são de links que caíram
-    na véspera; retestar toda rodada os que estão parados há semanas só gasta tempo.
+    ``inactivated_at`` é quando a própria saúde o inativou (``None`` se nunca); ``checked_at`` é a
+    última verificação da saúde. Quase todas as reativações são de links que caíram na véspera;
+    retestar todo dia os parados há semanas só gasta tempo. A varredura completa continua
+    acontecendo a cada ``SWEEP_DAYS`` e na execução manual.
     """
     return (
-        changed_at > now - timedelta(days=RECENT_DAYS)
+        (inactivated_at is not None and inactivated_at > now - timedelta(days=RECENT_DAYS))
         or checked_at is None
         or checked_at <= now - timedelta(days=SWEEP_DAYS)
     )

@@ -26,13 +26,14 @@ flowchart LR
 | Painel | HTTP local, páginas estáticas e JSON | [server.py](../../src/buscador_midias/dashboard/server.py), [catalog_api.py](../../src/buscador_midias/dashboard/catalog_api.py) |
 | Catálogo | Sites, links, mecanismos, testes, revisões e auditoria | [store.py](../../src/buscador_midias/catalog/store.py), [postgres.py](../../src/buscador_midias/catalog/postgres.py) |
 | Saúde | Verificação periódica de ativos e recuperação de falhas de acesso | [health_store.py](../../src/buscador_midias/catalog/health_store.py), [health_worker.py](../../src/buscador_midias/catalog/health_worker.py) |
+| Painel de acompanhamento | Tela inicial: última rodada, histórico, falhas, saúde e auditoria, a partir de números pré-calculados por rodada | [panel.py](../../src/buscador_midias/ingestion/panel.py), [run_stats.py](../../src/buscador_midias/ingestion/run_stats.py), [panel.js](../../src/buscador_midias/dashboard/panel.js) |
 | Ingestão | Agenda, rodadas, tarefas, filas, tentativas e recuperação | [store.py](../../src/buscador_midias/ingestion/store.py), [runtime.py](../../src/buscador_midias/ingestion/runtime.py) |
 | Executores | Descoberta, deduplicação, texto, contexto, evidência e persistência | [engine.py](../../src/buscador_midias/ingestion/engine.py) |
 | Contexto | Prompt, contrato da resposta, entidades, temas e categorias | [analysis](../../src/buscador_midias/analysis) |
 | Corpus | Canonicalização, adaptação do artigo e escrita idempotente | [domain/url.py](../../src/buscador_midias/domain/url.py), [corpus](../../src/buscador_midias/corpus) |
 | Evidência | Avaliação, captura, armazenamento e visualização | [evidence](../../src/buscador_midias/evidence), [evidence_view.py](../../src/buscador_midias/ingestion/evidence_view.py) |
 
-O painel e o serviço de ingestão têm ciclos de vida independentes. Fechar a aba não para o serviço. A saúde é iniciada pelo servidor do painel; fechar apenas a aba também não a para, mas encerrar o processo do painel encerra seu worker de saúde. O RabbitMQ não executa Python: entrega identificadores para os workers.
+O painel e o serviço de ingestão têm ciclos de vida independentes. As estatísticas por rodada que o Painel mostra são fechadas pelo agendador da ingestão; reiniciar o painel durante uma rodada de saúde a interrompe (ela é retomada). Fechar a aba não para o serviço. A saúde é iniciada pelo servidor do painel; fechar apenas a aba também não a para, mas encerrar o processo do painel encerra seu worker de saúde. O RabbitMQ não executa Python: entrega identificadores para os workers.
 
 ## Fluxo atual e fluxo legado
 
@@ -43,7 +44,7 @@ O painel e o serviço de ingestão têm ciclos de vida independentes. Fechar a a
 | Estado | `midias_manager` e tabelas `ingest_*` | `midias_crawler_*` no esquema escolhido por `StateStore` |
 | Orquestração | PostgreSQL + outbox + seis etapas RabbitMQ | Execução CLI e filas/checkpoints próprios do levantamento |
 | Acesso | Transporte atribuído ao link; leitor direto sem consulta a robots | Pilha `net`/mapeamento com regras próprias, inclusive robots e fallback optativo |
-| Agenda | Horários configurados do serviço de ingestão | `install_cron.sh` chama o antigo `run` |
+| Agenda | Horários configurados do serviço de ingestão; a primeira rodada do dia pode cobrir o dia anterior | `install_cron.sh` chama o antigo `run` |
 
 Os dois caminhos compartilham contratos de URL, extração, análise e corpus, mas não compartilham automaticamente a agenda ou as filas. Instalar o cron antigo não configura os quatro horários do buscador atual. Relatórios históricos e APIs antigas foram preservados; não são a fonte de verdade para o cadastro atual.
 

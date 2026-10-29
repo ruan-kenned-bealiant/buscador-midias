@@ -88,9 +88,19 @@ O runtime pode separar papéis: `ingest serve --role scheduler|publisher|worker`
 | `content_filter`, `blocked_content_categories` | `shadow`, horóscopo/clima/culinária/esportes; ver ressalva sobre filtro final em [Fluxo](FLUXO_NOTICIAS.md) |
 | `lastmod_filter` | `shadow`; `off`, `shadow` ou `enforce`; exclui URLs com `lastmod` anterior à janela, ver [Fluxo](FLUXO_NOTICIAS.md) |
 | `url_filter` | `shadow`; `off`, `shadow` ou `enforce`; exclui páginas de índice (`/topics/`, `/author/`, `/tag/`, `/taxonomy/`) e URLs cujo dia no caminho terminou antes da janela, ver [Fluxo](FLUXO_NOTICIAS.md) |
+| `head_filter` | `shadow`; `off`, `shadow` ou `enforce`; descarta o documento cujo topo (o mais novo) já é anterior à janela e interrompe o download. Ver [Fluxo](FLUXO_NOTICIAS.md) |
+| `head_audit_rate` | 0; fração de 0 a 1 dos links que, com `enforce`, lê o documento inteiro em modo sombra para provar que o corte não perde notícia |
+| `adaptive_polling` | `off`; `off` ou `enforce`; rodadas de horário fixo do meio do dia pulam links frios (lidos na primeira e na última). Exige `close_previous_day` para não perder notícia |
+| `close_previous_day` | false; a primeira rodada do dia lê também o dia anterior inteiro (o que saiu depois da última rodada) |
+| `failed_retry_limit` | 1; 1 a 5 passadas totais por notícia que falha (1 = nunca tenta de novo). Só repete falhas que podem passar; ver [Fluxo](FLUXO_NOTICIAS.md) |
 | `host_concurrency` | 1; 1 a 4 tarefas simultâneas por host; mais que 1 aumenta a carga sobre o site |
+| `host_concurrency_max` | 1; 1 a 8; teto de vagas **extras** para hosts com fila longa (`host_concurrency + fila ÷ 100`); 1 desliga |
 | `bright_data` | false; habilitação é rejeitada pela API da ingestão |
 | `evidence_paid_adverse_only` | true; compatibilidade da política do capturador, sem ativar provedor pago ausente |
+
+**Os novos recursos nascem desligados no código** (`head_audit_rate=0`, `adaptive_polling=off`, `close_previous_day=false`, `failed_retry_limit=1`, `host_concurrency_max=1`) para não mudar o comportamento de quem não os pediu; são ligados na configuração salva. Para desfazer um deles, volte ao padrão e a próxima rodada já o respeita (a configuração é congelada por rodada: a rodada em andamento não muda).
+
+Configuração em uso em 29/10/2026 (o banco manda; confira na tela de Busca): `content_filter`, `lastmod_filter`, `url_filter` e `head_filter` em `enforce`; categorias bloqueadas `horoscope, weather, cooking, sports, entertainment, lifestyle`; `head_audit_rate=0.02`; `adaptive_polling=enforce`; `close_previous_day=true`; `failed_retry_limit=3`; `host_concurrency=1` com `host_concurrency_max=3`; workers discovery 24, dedup 1, fetch 18, context 64, evidence 8, persist 3 (o máximo por etapa é 64).
 
 Alterar concorrência acima dos slots abertos requer reinício controlado do serviço. Ao separar processos, o total real depende de quantas instâncias foram iniciadas; o painel mostra seus heartbeats. Não extrapole uma previsão de duração apenas multiplicando workers.
 
@@ -157,6 +167,8 @@ Ao alterar etapas/estados/defaults, revisar [Fluxo](FLUXO_NOTICIAS.md) e esta p�
 |---|---|
 | `dashboard` | Painel atual, com escrita de cadastro, saúde e comandos da busca; o texto antigo “somente leitura” no help não descreve todas as rotas atuais |
 | `ingest init/status/serve` | Inicialização, diagnóstico e runtime das seis filas; entrada encaminhada pelo CLI ao módulo de ingestão |
+| `ingest ensure-indexes` | Cria, em bases existentes, a tabela `ingest_run_stats` e os índices de relatório que faltarem, com `CREATE INDEX CONCURRENTLY` (não bloqueia a escrita; ~30 s). Idempotente; refaz um índice que tenha ficado inválido |
+| `ingest backfill-stats [--days N] [--force]` | Calcula as estatísticas por rodada (Painel) das rodadas terminadas da janela (padrão 30 dias) que ainda não as têm; `--force` recalcula também as existentes, por exemplo depois de um campo novo. Leva ~1 min para 14 rodadas |
 | `ingest g1-pilot/sources-pilot` | Pilotos de coleta finita, com acesso externo; não são consultas de status |
 | `migrate-catalog` | Importação transacional SQLite → PostgreSQL e conferência |
 | `probe`, `probe-sources` | Sondagem de acesso e escolha de estratégias do levantamento anterior; fazem rede |
@@ -261,6 +273,15 @@ os workers (`workers_enabled`) não cancela nada: o serviço fica ativo, mas oci
   início (serviço, painel, CLI) reexecutava `CREATE INDEX IF NOT EXISTS`/`ALTER TABLE`, que pedem
   lock de tabela e entravam em deadlock ou estouravam `lock_timeout` com o serviço no ar, o que
   fazia o systemd falhar o restart. **Ao alterar o `DDL`, aumente `SCHEMA_VERSION`.**
+  *Exceção deliberada:* os objetos de relatório (a tabela `ingest_run_stats` e os índices
+  `ingest_job_run`, `ingest_job_run_created`, `ingest_occurrence_run`) estão no `DDL`, para
+  instalações novas, mas **não** aumentaram a versão: bases existentes os recebem por
+  `ingest ensure-indexes`, que cria sem bloquear a escrita. Reaplicar o `DDL` inteiro só para
+  criar um índice em uma tabela de milhões de linhas, com o serviço no ar, repetiria o problema
+  acima. Se um dia a versão subir por outro motivo, esses comandos `IF NOT EXISTS` não fazem mal.
+- **Reiniciar o painel interrompe a rodada de saúde em andamento** (o agendador a retoma, mas
+  perde progresso do teste corrente). Reinicie entre rodadas (10h e 20h dão ~1 h 15 min de
+  ativos e até ~2 h 30 min de inativos) e fora do horário das buscas.
 - **Ordem de travamento.** Publicador (`confirm_published`) e workers (`claim_many`) travam as
   linhas de `ingest_jobs` sempre em ordem de `id`. Em ordens diferentes, 175 de 175 execuções de um
   teste de concorrência acabaram em deadlock; cada deadlock derrubava um ciclo do publicador ou um
@@ -270,6 +291,18 @@ os workers (`workers_enabled`) não cancela nada: o serviço fica ativo, mas oci
   `/dev/shm` de 64 MB e o paralelismo o esgotava (`could not resize shared memory segment`,
   reportado pelo psycopg como `DiskFull`) em consultas que já são curtas.
 - **Concorrência de workers** só muda após reinício, porque os slots são abertos na inicialização.
+
+## Painel: números por rodada e leitura de tempos
+
+O Painel não soma as tarefas a cada abertura: lê `ingest_run_stats`, uma linha por rodada. O agendador da ingestão (`Service.scheduler`) fecha uma rodada terminada por minuto (`finalize_pending`), fora da transação de manutenção. A rodada aberta é recalculada quando seus números têm mais de 30 s, e o que ainda não foi calculado é completado sob demanda, até 3 por requisição. Depois de ligar o recurso em uma base existente, rode uma vez `ingest ensure-indexes` e `ingest backfill-stats --days 10`.
+
+A tela de Busca abre já filtrada pela rodada mais recente (`run_id=latest`) e busca os custos depois do primeiro desenho. Sem filtro de rodada as consultas cobrem **todo o histórico** (`ingest_jobs` cresce ~50 mil linhas por rodada) e ficam entre 25 e 45 s. O histórico de rodadas guarda em memória os totais das rodadas já terminadas (`IngestStore._run_totals`) e a aba "Por site" guarda 15 s das linhas calculadas; ambos são zerados ao reiniciar o painel.
+
+**Ao medir tempo de tela ou de consulta, lembre que o PostgreSQL é compartilhado com o PowerDD** (mesmo banco `power_dd_midias`). Consultas pesadas do PowerDD (contagens em `midias_ia_article_contexts`) já levaram o banco a 250–480% de CPU e multiplicaram qualquer tempo do buscador por 3 a 5. Compare versões antiga e nova **na mesma sessão, intercaladas**, e consulte `pg_stat_activity` antes de concluir que algo regrediu. O banco também grava arquivos temporários grandes em consultas de agregação (centenas de GB acumulados em um dia); como o `Docker.raw` do Docker Desktop cresce e não encolhe, picos de consultas pesadas consomem disco do hospedeiro de forma permanente.
+
+## Disco: o que já aconteceu e o que falta
+
+Em 28–29/10 o disco chegou a 1 GB livres durante uma rodada, e a ingestão foi parada por um vigia de disco (apaga evidência local com mais de 1 h abaixo de 6 GB livres e para o serviço abaixo de 2 GB). **Esse vigia era um script fora do repositório e não sobrevive a um reinício da máquina**, assim como o monitor de status da rodada. A política permanente continua pendente: evidência em S3, ou uma limpeza agendada versionada. Até lá, acompanhe o espaço livre (o Painel mostra, com severidade) antes de cada rodada: uma rodada grava de 3 a 5 GB de evidência local, mais o crescimento do PostgreSQL.
 
 ## Retroativo do tema nos contextos
 

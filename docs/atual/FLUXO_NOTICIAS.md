@@ -12,6 +12,8 @@ Entram sites e links ativos, não excluídos e sem outra leitura de descoberta a
 
 A rodada congela URL, site, mecanismo, parâmetros, transporte e revisões. A janela padrão vai da meia-noite civil até o instante da criação, não das últimas 24 horas nem até o fim futuro do dia. Uma execução às 01h busca o início do próprio dia. O campo manual `day` permite selecionar um dia dos últimos 30 dias; isso não implementa uma coleta histórica completa. Também existe janela `lookback` configurável.
 
+**Fechamento do dia (`close_previous_day`, padrão desligado).** Com a janela "do dia", o que é publicado depois da última rodada nunca seria lido: uma notícia das 19h só poderia ser vista por uma rodada posterior a ela, e a seguinte (01h) já tem a janela do dia seguinte. Com a opção ligada, a **primeira** rodada de horário fixo do dia (a de menor horário; 01h no padrão) usa como início a meia-noite do dia **anterior**. Assim uma única rodada por dia cobre a noite que ficou descoberta e também dá uma retentativa às falhas da última rodada (ver "Nova tentativa de notícias que falharam"). A extensão vale só para rodada agendada em `window_mode=today`: rodada manual e o campo `day` não mudam. O custo é uma rodada diária com janela de dois dias (e menos corte pelo topo nela); as demais ficam iguais.
+
 ## As seis etapas
 
 A etapa de contexto agora identifica entidades e avalia sua participação em lotes
@@ -82,6 +84,20 @@ Falhas comuns têm limite configurável de 1 a 3, espera exponencial baseada em 
 Leases expirados são recuperados por `maintain`; cada reserva tem dono, geração e despacho. Uma tarefa finalizada ou substituída não deve ser executada novamente por uma mensagem atrasada. Reprocessamento manual é explícito; estar em `.failed` não cria um ciclo ilimitado de novas tentativas.
 
 O serviço limita tarefas em trânsito e o backlog da etapa seguinte, além de serializar acesso por host real entre descoberta e extração. A reserva de disco de `flow.py` é **256 MiB**. Esses limites contêm produção, não representam um limite total de links da rodada. Mais workers não eliminam espera por um mesmo host, `Retry-After`, rede, PostgreSQL, disco ou OpenRouter.
+
+## Nova tentativa de notícias que falharam
+
+Dentro da rodada, a tarefa é repetida até `max_attempts` com espera exponencial; depois disso a notícia fica `failed`. Antes, uma rodada **posterior** que reencontrasse a mesma URL no feed não a admitia de novo: a descoberta só readmitia `outside_window` que entrou na janela, `date_unknown` e `cancelled`. Uma falha por tempo esgotado às 13h só seria vista outra vez se alguém reprocessasse à mão.
+
+`failed_retry_limit` (1 a 5, padrão **1**, que desliga) é o número **total** de passadas por notícia: com 3, uma notícia é tentada na rodada original e até duas vezes em rodadas seguintes. Uma rodada que reencontra uma notícia `failed` a readmite (nova geração, nova tarefa de dedup) quando:
+
+1. o artigo pertence a **outra** rodada (a mesma rodada nunca repete a própria falha, mesmo que dois feeds listem a URL);
+2. `generation` ainda é menor que o limite;
+3. nenhuma falha anterior dela é **permanente**.
+
+São permanentes (`PERMANENT_FAILURE` em `flow.py`): HTTP 401, 402, 403, 404 e 410, `redirect_cycle`, destino fora dos domínios do site, `robots_unavailable` e erro de credencial do provedor pago. Por exemplo, um 403 de bloqueio não é repetido: ele costuma continuar, e cada tentativa extra aumenta a carga sobre o site; a saída é o acesso pago, não a repetição. Já "tempo esgotado", erro 5xx, conexão interrompida, "análise sem resposta válida" e "lote pendente" podem passar sozinhos e são repetidos.
+
+Consequência para os horários 01h, 06h, 12h e 16h: a falha das 01h é retentada às 06h, 12h e 16h (até o limite); a falha das 16h é retentada na rodada das 01h seguinte, cuja janela inclui o dia anterior, mas só **uma** vez. A regra só age sobre notícias que continuam listadas no feed e dentro da janela da rodada; falhas anteriores à ativação não são reprocessadas sozinhas.
 
 ## Estados e interpretação do progresso
 
@@ -190,6 +206,41 @@ disputavam a trava com o publicador principal, o que espaçava os lotes do `fetc
 host. A trava de execução usa vagas por host (`Engine.reserve_host`); com 1, o comportamento
 é o anterior. Valores maiores aumentam a carga sobre cada site e só devem ser usados com
 hosts que toleram.
+
+`host_concurrency_max` (1 a 8, padrão 1, que desliga) concede vagas **extras só a hosts com fila
+longa**: o limite do host é `min(host_concurrency_max, host_concurrency + fila_pronta ÷ 100)`
+(`admission.host_limit`), recalculado a cada ciclo do publicador. Motivo: o fim de uma rodada
+costuma ser dois ou três hosts grandes, com centenas de páginas cada, lidos uma por vez. Com 360
+páginas na fila de um host e teto 3, ele passa a ter 3 em trânsito; um site com 20 páginas
+continua com uma. O limite cai sozinho à medida que a fila esvazia. As travas do motor
+(`Engine.reserve_host`) usam o maior limite possível (`Service.host_slot_ceiling`) e a admissão é
+quem impõe o limite de cada host. Aumentar o número de workers de análise não encurta essa
+cauda: a análise raramente é o gargalo (espera mediana de 1 s na fila, workers com folga).
+
+## Corte pelo topo e parada antecipada
+
+Muitos RSS e sitemaps listam do mais novo para o mais antigo. Se a entrada do topo já é anterior ao início da janela, o documento inteiro está fora dela, e baixar e interpretar o resto é desperdício. `head_filter` (`off`, `shadow` ou `enforce`; padrão `shadow`) aplica essa regra:
+
+- **Ordem de leitura do link** (`links.read_order`: `newest_first`, `oldest_first`, `unordered`, `unknown`), medida uma vez e gravada. Só vira `newest_first` quando o documento inteiro a confirma: todas as entradas datadas, pelo menos 8, em ordem (tolerância de 1 minuto) e com o topo sendo de fato o mais recente. Qualquer dúvida vira `unordered`/`unknown`, que mantém a leitura completa; errar para esse lado só custa tempo. Ver [Catálogo](CATALOGO_MECANISMOS.md).
+- **`shadow`**: lê tudo e só registra o que teria cortado (`head_shadow_would_skip`) e se teria perdido URL da janela (`head_shadow_missed`).
+- **`enforce`**: com o topo fora da janela, devolve `sem_novidades` sem processar o documento. Leitores que sabem parar (direto e curl; não Bright Data nem leitura em lote) interrompem o **download** nos degraus de 32 KiB, 128 KiB, 512 KiB e 2 MiB quando o prefixo, fechado na última entrada completa, tem pelo menos 3 datas em ordem decrescente e todas fora da janela. Arquivos `.gz` e `.zip` não usam parada antecipada.
+- **Conferência a cada leitura**: a ordem registrada nunca é só presumida. Se o documento contradiz o rótulo, a leitura segue completa, a métrica `read_order_contradicted` conta o caso e o link é rebaixado para a ordem observada. Exemplo: um feed com uma matéria fixada de ontem no topo e notícias de hoje abaixo é detectado como fora de ordem e nunca é cortado.
+
+Em produção, cerca de 4 em cada 10 leituras de descoberta são cortadas por esta regra, boa parte pelo download interrompido.
+
+## Auditoria do corte pelo topo
+
+Com `enforce` não há como saber, olhando só o resultado, se algum corte perdeu notícia. `head_audit_rate` (0 a 1; padrão 0; **0,02** em produção) escolhe uma fração dos links, por sorteio determinístico de rodada e link (`flow.audit_sampled`; um reinício ou retentativa não troca a amostra), que **lê o documento inteiro em modo sombra** mesmo com o corte ativo. Nessas leituras são gravados `head_audit_sampled`, `head_shadow_would_skip` (o corte teria atuado) e `head_shadow_missed` (e teria perdido URL da janela). O caminho do download interrompido também é auditado: verifica se o prefixo teria disparado a parada em algum degrau. A perda estimada é `missed ÷ would_skip` da amostra.
+
+`scripts/head_filter_report.py [--run-id ID]` resume uma rodada. O Painel mostra a prova da janela escolhida, contando só rodadas com `head_filter=enforce`: em modo sombra os "cortes" são simulações de uma fase anterior das regras, e somá-los faria um erro já corrigido aparecer como perda de hoje.
+
+## Leitura adaptativa dos links frios
+
+A maioria dos links nunca traz notícia nova: em seis rodadas seguidas, 85% dos links lidos não gravaram nada. `adaptive_polling` (`off` ou `enforce`; padrão `off`) lê esses links menos.
+
+Um link é **frio** quando suas últimas 4 leituras (dos últimos 7 dias) não trouxeram nenhuma URL candidata e nenhuma descoberta falhou (link com falha continua sendo lido para poder se recuperar). A evidência é por leitura **do link**, não por rodada: se fosse "últimas rodadas", um link lido só duas vezes por dia deixaria de parecer frio e voltaria a ser lido sempre.
+
+Rodadas de horário fixo que não são de ponta pulam os links frios: com 01h, 06h, 12h e 16h, eles são lidos às 01h e às 16h. Isso não perde notícia **desde que** `close_previous_day` esteja ligado, porque a janela da rodada das 16h cobre 00h–16h e a das 01h cobre o dia anterior inteiro mais a primeira hora do dia: todo instante fica dentro de alguma leitura do link, só a entrega pode atrasar. Rodada manual e lista explícita de links leem tudo, todo link continua sendo lido todos os dias, e a rodada registra em `config.adaptive_skipped` quantos pulou.
 
 ## Resposta vazia do OpenRouter
 

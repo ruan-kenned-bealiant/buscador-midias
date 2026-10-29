@@ -295,7 +295,7 @@
     const state = RUN_STATE[run.state] || [run.state, 'gray'];
     hero.append(el('h2', run.trigger === 'scheduled' ? `Rodada das ${parts(run.started_at).hour}h · ${dayMonth(run.started_at)}` : `Rodada manual · ${dayMonth(run.started_at)} ${clock(run.started_at)}`));
     const meta = el('div', undefined, 'last-meta');
-    meta.append(el('span', state[0], 'badge ' + state[1]), el('span', span(run.duration_s) + (run.final ? '' : ' até agora'), 'badge gray'));
+    meta.append(el('span', state[0], 'badge ' + state[1]), el('span', span(run.duration_s) + (run.final ? '' : ' até agora'), 'badge gray'), el('span', `Notícias desde ${dayMonth(run.since)} ${clock(run.since)}`, 'badge gray'));
     hero.append(meta, el('div', fmt(run.persisted), 'hero-figure'), el('div', 'notícias gravadas no corpus', 'hero-label'));
     if (d.previous) {
       const diff = run.persisted - d.previous.persisted;

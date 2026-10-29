@@ -218,7 +218,7 @@ class HealthStore:
             rows = db.execute(
                 "SELECT l.id,l.source_id,l.url,l.kind,l.model,l.version,l.last_test,"
                 "s.version source_version,s.active source_active,s.name source_name,"
-                "s.url source_url,l.updated_at changed_at,h.category "
+                "s.url source_url,h.category "
                 "health_category,"
                 "h.link_version health_link_version,h.source_version health_source_version,"
                 "h.model_version health_model_version,h.checked_at health_checked_at,"
@@ -231,6 +231,24 @@ class HealthStore:
                 + condition
                 + " ORDER BY l.id"
             ).fetchall()
+            # A rotina agendada de inativos só retesta toda rodada quem a saúde inativou há pouco;
+            # os demais voltam a cada SWEEP_DAYS. A execução manual testa todo o escopo.
+            inactivated: dict[int, datetime] | None = None
+            if kind == "recovery" and trigger == "scheduled" and not restore:
+                inactivated = {
+                    row["entity_id"]: row["at"]
+                    for row in db.execute(
+                        "SELECT entity_id,max(happened_at) at FROM events WHERE "
+                        "entity='endpoint' AND action='health_inactivate' GROUP BY entity_id"
+                    ).fetchall()
+                }
+                rows = [
+                    row
+                    for row in rows
+                    if recovery_due(
+                        inactivated.get(row["id"]), row["health_checked_at"], datetime.now(UTC)
+                    )
+                ]
             ident = uuid.uuid4().hex
             db.execute(
                 "INSERT INTO health_runs(id,kind,trigger,status,configuration) "
@@ -293,9 +311,7 @@ class HealthStore:
                             if manual_current
                             else None
                         )
-                        if category != "access_error" or not recovery_due(
-                            row["changed_at"], row["health_checked_at"], datetime.now(UTC)
-                        ):
+                        if category != "access_error":
                             continue
                     parameters = dict(
                         model["parameters"],

@@ -1,14 +1,15 @@
 # buscador-midias
 
-**Documentação atual:** [índice completo](docs/atual/README.md), com arquitetura, fluxo de notícias, catálogo/mecanismos, dicionário de dados, API, operação e inventário por arquivo. Revisada contra o código em 26/10/2026. As seções de levantamento e auditorias abaixo preservam resultados históricos; suas contagens não são o estado permanente da base.
+**Documentação atual:** [índice completo](docs/atual/README.md), com arquitetura, fluxo de notícias, catálogo/mecanismos, dicionário de dados, API, operação e inventário por arquivo. Revisada contra o código em 26/10/2026 e atualizada com as mudanças de 28 e 29/10/2026 (ver [otimização de rodadas e telas](docs/OTIMIZACAO_ROTINAS_20261029.md)). As seções de levantamento e auditorias abaixo preservam resultados históricos; suas contagens não são o estado permanente da base.
 
 MVP local do gerenciador de fontes e buscador de notícias, com cadastro de sites,
 RSS/sitemaps, modelos de leitura e testes interativos. O mapeamento inicial alimenta o cadastro.
 
 ## Buscador de notícias
 
-Abra **http://127.0.0.1:8765/buscador** para configurar a janela, executar rodadas
-e acompanhar as seis etapas de ingestão. O serviço contínuo usa **RabbitMQ próprio**,
+Abra **http://127.0.0.1:8765/** (o **Painel**) para ver a última rodada, o histórico, as falhas,
+a saúde e a auditoria do corte; em **http://127.0.0.1:8765/buscador** configure a janela, execute
+rodadas e acompanhe as seis etapas de ingestão. O cadastro de sites fica em `/gerenciador`. O serviço contínuo usa **RabbitMQ próprio**,
 com filas de descoberta, deduplicação, extração, análise, evidência e persistência.
 O painel administrativo do broker fica em **http://127.0.0.1:15673**.
 Configuração, histórico, retomada e comandos: [operação do buscador](docs/BUSCADOR_NOTICIAS.md).
@@ -24,14 +25,16 @@ Veja [tabelas, migração e configuração](docs/MIGRACAO_POSTGRES_GERENCIADOR.m
 
 ## Saúde das fontes
 
-Abra **http://127.0.0.1:8765/saude**. Duas rotinas verificam os links ativos e
-retestam inativos com falhas de acesso, rede ou permissão. A tela permite configurar
-frequência, paralelismo e tentativas, executar/cancelar rodadas e consultar histórico
-por link. O padrão é 24 horas, 8 sites em paralelo e até 2 tentativas por link.
-O agendador funciona no serviço do gerenciador; as primeiras rodadas ficam para
-24 horas após a instalação. Não altera intervalos de busca. O fallback Bright Data e a ativação auditada de
-recuperados são configuráveis. Ver [integração Bright Data](docs/BRIGHT_DATA_TESTES.md).
-Ver [funcionamento e tabelas](docs/SAUDE_DAS_FONTES.md).
+Abra **http://127.0.0.1:8765/saude**. Duas rotinas independentes rodam às **10h e 20h**
+(Brasília): a de **links ativos** lê o documento de cada link e **inativa** o que está parado há
+mais de 1 mês ou quebrado (falha passageira só na segunda verificação seguida), **exclui** o parado
+há 1 ano ou mais, o de período encerrado e o de tema inútil, e troca o transporte quando outro jeito
+de conectar resolve; a de **inativos** reativa só com texto comprovado e notícia nos últimos 30
+dias, e na rodada agendada retesta toda vez só quem a saúde inativou na última semana. A tela
+permite configurar, executar/cancelar rodadas e consultar o histórico por link. O agendador
+funciona no serviço do gerenciador. Não altera intervalos de busca. O fallback Bright Data e a
+ativação auditada de recuperados são configuráveis. Ver [integração Bright Data](docs/BRIGHT_DATA_TESTES.md)
+e [funcionamento, regras e tabelas](docs/SAUDE_DAS_FONTES.md).
 
 ## Intervalo de busca por link
 
