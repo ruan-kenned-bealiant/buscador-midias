@@ -189,6 +189,20 @@ def test_complete_merges_the_patch_without_losing_other_keys(q):
     assert payload == dict(title="T", body=None, language="pt")
 
 
+def test_a_text_with_a_nul_character_is_stored_without_it(q):
+    """O Postgres recusa o NUL em JSONB; uma página assim não pode virar falha interna."""
+    job = taken(q)
+    assert complete(q, job, dict(next="fetch", article=dict(title="Ti\x00tulo", body="a\x00b")))
+    payload = current(q, job["hash"])["payload"]
+    assert payload["title"] == "Titulo" and payload["body"] == "ab"
+
+
+def test_a_failure_detail_with_a_nul_character_is_stored_without_it(q):
+    job = taken(q)
+    assert fail(q, job, "Erro\x00 estranho") in ("retry", "failed")
+    assert "\x00" not in (current(q, job["hash"])["detail"] or "")
+
+
 def test_a_stale_owner_or_attempt_cannot_complete(q):
     job = taken(q)
     assert not complete(q, {**job, "owner": "other"}, dict(next="fetch"))

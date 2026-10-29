@@ -11,6 +11,7 @@ from psycopg.types.json import Jsonb
 
 from buscador_midias.catalog.store_errors import CatalogError
 from buscador_midias.db.queue import DISCOVERY, admit, entry, host_of, locked
+from buscador_midias.db.serialize import clean
 
 OPEN_STATES = "('pending','queued','running','retry')"
 _BULKY = ("candidates", "children", "article")
@@ -86,7 +87,7 @@ def complete_discovery(
         "UPDATE bm_discovery_tasks SET state='done',outcome=%s,result=%s,history=%s,"
         "owner=NULL,locked_until=NULL,queued_at=NULL,finished_at=now(),updated_at=now() "
         "WHERE id=%s",
-        (output.get("outcome", "ok"), Jsonb(summary), Jsonb(history), job["id"]),
+        (output.get("outcome", "ok"), Jsonb(clean(summary)), Jsonb(history), job["id"]),
     )
     db.execute(
         "UPDATE bm_run_links SET state='running' WHERE run_id=%s AND link_id=%s "

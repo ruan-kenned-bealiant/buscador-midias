@@ -15,6 +15,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from buscador_midias.db.failures import classify
+from buscador_midias.db.serialize import clean
 from buscador_midias.domain.url import url_hash
 
 BATCH = 500
@@ -114,7 +115,9 @@ def admit(
     totals = [0, 0, 0]
     for start in range(0, len(unique), BATCH):
         part = list(unique.items())[start : start + BATCH]
-        batch = [dict(hash=h, url=c["url"], host=host_of(c["url"]), payload=c) for h, c in part]
+        batch = [
+            dict(hash=h, url=c["url"], host=host_of(c["url"]), payload=clean(c)) for h, c in part
+        ]
         row = db.execute(
             _ADMIT,
             dict(
@@ -281,8 +284,8 @@ def complete_many(
                 nxt=nxt,
                 status=None if nxt else output["status"],
                 attempts=0 if nxt else row["attempts"],
-                patch=output.get("article") or {},
-                cost=cost,
+                patch=clean(output.get("article") or {}),
+                cost=clean(cost),
                 history=history,
                 article_id=output.get("article_id"),
             )
@@ -342,6 +345,7 @@ def fail(
     row = locked(db, job, queue)
     if row is None:
         return "stale"
+    reason = clean(reason)
     config = job["run"]["config"]
     limit = min(MAX_ATTEMPTS_CAP, int(config.get("max_attempts", MAX_ATTEMPTS_CAP)))
     failure = classify(reason, retryable=retryable)
