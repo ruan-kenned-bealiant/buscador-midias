@@ -68,7 +68,7 @@ def _clean(schema: str, category: str | None, days: int | None, batch: int | Non
     spec = CATEGORIES.get(category or "")
     if spec is None:
         return _fail("Informe a categoria de limpeza: " + ", ".join(CATEGORIES))
-    age = days or spec.days
+    age = days or spec.days  # sem idade (None) nas categorias que não olham idade
     removed = RetentionRepository(schema).run(category or "", days=age, batch=batch or BATCH)
     _print(dict(schema=schema, category=category, days=age, removed=removed))
     return 0

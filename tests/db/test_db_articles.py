@@ -103,7 +103,7 @@ def test_each_entity_comes_with_its_context_and_alert(world):
     assert (joao["type"], joao["role"], joao["mentions"]) == ("PER", "investigado", 3)
     assert joao["context"] == "Foi apontado por desvio de verba."
     [analysis] = joao["analyses"]
-    assert analysis["alert"] is True and analysis["theme"] == "corrupção"
+    assert analysis["alert"] is True and analysis["themes"] == ["corrupção"]
     assert analysis["justification"] == "Citado como investigado em desvio."
     assert analysis["adverse_fact"] == "Desvio de verba na obra." and analysis["confidence"] == 0.95
     assert by_name["Construtora Alfa"]["analyses"][0]["alert"] is False
@@ -197,3 +197,82 @@ def test_invalid_requests_are_refused_with_a_clear_message(world):
 
 def _day(offset: int) -> str:
     return (datetime.now(UTC).astimezone(ZONE).date() + timedelta(days=offset)).isoformat()
+
+
+def test_the_same_analysis_stored_once_per_theme_is_shown_once_with_its_themes(world):
+    """O gravador replica o parecer de uma entidade em uma linha por ``theme_id`` do catálogo."""
+    articles = world["articles"]
+    with articles.connection() as db:
+        db.execute(
+            "INSERT INTO midias_ia_article_entities(article_id,name,name_norm,entity_type,role) "
+            "VALUES (2,'Banda X','banda x','ORG','outro')"
+        )
+        db.execute(
+            "INSERT INTO midias_ia_article_contexts(article_id,entity_name,entity_hash,theme_id,"
+            "theme,alerta,confianca,justificativa,papel_entidade,fato_adverso) VALUES "
+            "(2,'Banda X','h1',13,'Criminal',true,0.9,'Acusada de fraude.','acusado','Fraude.'),"
+            "(2,'Banda X','h1',37,'Criminal',true,0.9,'Acusada de fraude.','acusado','Fraude.'),"
+            "(2,'Banda X','h1',27,'Reputacional',true,0.9,'Acusada de fraude.','acusado','Fraude.'),"
+            "(2,'Banda X','h1',23,'Reputacional',true,0.9,'Acusada de fraude.','acusado','Fraude.'),"
+            "(2,'Banda X','h1',99,'Fiscal',true,0.7,'Outro parecer, outro texto.','acusado','')"
+        )
+
+    [article] = articles.search(q="festival", field="url")["items"]
+
+    banda = next(e for e in article["entities"] if e["name"] == "Banda X")
+    assert len(banda["analyses"]) == 2
+    same, other = sorted(banda["analyses"], key=lambda a: a["justification"])
+    assert same["themes"] == ["Criminal", "Reputacional"]
+    assert same["justification"] == "Acusada de fraude." and same["alert"] is True
+    assert other["themes"] == ["Fiscal"]
+    # Quatro linhas de alerta da mesma entidade contam como um alerta, não quatro.
+    assert article["alert_count"] == 1
+
+
+def test_the_alert_count_is_per_entity_not_per_stored_row(world):
+    articles = world["articles"]
+    with articles.connection() as db:
+        db.execute(
+            "INSERT INTO midias_ia_article_contexts(article_id,entity_name,entity_hash,theme_id,"
+            "theme,alerta) VALUES (1,'João Silva','jh',1,'A',true),(1,'João Silva','jh',2,'B',true),"
+            "(1,'Construtora Alfa','ch',1,'A',true)"
+        )
+
+    [article] = articles.search(q="obra", field="title")["items"]
+
+    # João Silva aparece em três linhas e Construtora Alfa em uma: são duas entidades em alerta.
+    assert article["alert_count"] == 2
+
+
+def test_the_theme_is_the_slug_name_whatever_the_person_type_or_the_kyx_label(world):
+    """PF, PJ, nacional e estrangeira são ids do KyX; o tema é um só (``midias_ia_theme_prompts``)."""
+    articles = world["articles"]
+    with articles.connection() as db:
+        db.execute(
+            "INSERT INTO midias_ia_theme_prompts(slug,theme_name) VALUES "
+            "('criminal','Criminal'),('ciber_seguranca','Ciber Segurança')"
+        )
+        db.execute(
+            "INSERT INTO midias_ia_article_entities(article_id,name,name_norm,entity_type,role) "
+            "VALUES (2,'Banda X','banda x','ORG','outro')"
+        )
+        db.execute(
+            "INSERT INTO midias_ia_article_contexts(article_id,entity_name,theme_id,theme,alerta,"
+            "confianca,justificativa) VALUES "
+            "(2,'Banda X',13,'Criminal',true,0.9,'Mesmo parecer.'),"
+            "(2,'Banda X',38,'Criminal',true,0.9,'Mesmo parecer.'),"
+            "(2,'Banda X',53,'Privacidade e Cibersegurança',true,0.9,'Mesmo parecer.'),"
+            "(2,'Banda X',43,'Privacidade e Cibersegurança',true,0.9,'Mesmo parecer.'),"
+            "(2,'Banda X',999999,'Entidades Associadas (PF)',true,0.9,'Mesmo parecer.'),"
+            "(2,'Banda X',NULL,'Tema sem id',true,0.9,'Mesmo parecer.')"
+        )
+
+    [article] = articles.search(q="festival", field="url")["items"]
+
+    [analysis] = next(e for e in article["entities"] if e["name"] == "Banda X")["analyses"]
+    assert analysis["themes"] == [
+        "Criminal",
+        "Ciber Segurança",
+        "Entidades Associadas (PF)",  # id fora do catálogo: fica o nome gravado
+        "Tema sem id",
+    ]

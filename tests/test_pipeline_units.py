@@ -86,22 +86,30 @@ def test_the_cleaning_service_runs_one_category_and_exits():
 
 
 @pytest.mark.parametrize("category", sorted(CATEGORIES))
-def test_a_timer_fires_its_own_category_every_day_and_catches_up(category: str):
+def test_a_timer_fires_its_own_category_on_a_calendar_and_catches_up(category: str):
     text = TIMERS[category].read_text()
     assert f"Unit=buscador-midias-limpeza@{category}.service" in text
-    assert re.search(r"^OnCalendar=\*-\*-\* \d\d:\d\d:00$", text, re.M)
+    assert re.search(r"^OnCalendar=(\*-\*-\* \d\d:\d\d:00|\*:0/\d+)$", text, re.M)
     assert "Persistent=true" in text and "WantedBy=timers.target" in text
 
 
-def test_each_timer_fires_at_the_time_the_panel_announces():
-    """O horário mostrado na tela vem de ``Category.at``; o timer precisa marcar o mesmo."""
+def test_each_timer_fires_when_the_panel_announces():
+    """O horário mostrado na tela vem de ``Category``; o timer precisa marcar o mesmo."""
     for category, timer in TIMERS.items():
-        match = re.search(r"^OnCalendar=\*-\*-\* (\d\d:\d\d):00$", timer.read_text(), re.M)
-        assert match and match[1] == CATEGORIES[category].at, category
+        spec = CATEGORIES[category]
+        calendar = re.search(r"^OnCalendar=(.+)$", timer.read_text(), re.M)
+        assert calendar, category
+        expected = f"*:0/{spec.every}" if spec.every else f"*-*-* {spec.at}:00"
+        assert calendar[1] == expected, category
 
 
-def test_the_cleanings_never_start_together_nor_during_a_search_round():
-    times = [c.at for c in CATEGORIES.values()]
+def test_the_daily_cleanings_never_start_together_nor_during_a_search_round():
+    times = [c.at for c in CATEGORIES.values() if c.at]
     assert len(set(times)) == len(times)
     # As rodadas de busca saem às 01, 06, 12 e 16h e a de 01h dura cerca de uma hora.
     assert all(at.split(":")[0] in ("03", "04") for at in times)
+
+
+def test_a_frequent_category_divides_the_hour_evenly():
+    """``OnCalendar=*:0/N`` só dispara em horários certos se N divide 60; a tela mostra o mesmo."""
+    assert all(60 % c.every == 0 for c in CATEGORIES.values() if c.every)

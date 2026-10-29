@@ -308,12 +308,13 @@ CREATE INDEX IF NOT EXISTS bm_articles_retry ON bm_articles (retry_id, state)
 CREATE TABLE IF NOT EXISTS bm_cleanup_runs (
  id BIGSERIAL PRIMARY KEY,
  category TEXT NOT NULL,
- days INTEGER NOT NULL,
+ days INTEGER,
  started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
  finished_at TIMESTAMPTZ,
  removed INTEGER NOT NULL DEFAULT 0,
  error TEXT
 );
+ALTER TABLE bm_cleanup_runs ALTER COLUMN days DROP NOT NULL;
 CREATE INDEX IF NOT EXISTS bm_cleanup_runs_category ON bm_cleanup_runs (category, started_at DESC);
 CREATE TABLE IF NOT EXISTS bm_host_state (
  host TEXT PRIMARY KEY,

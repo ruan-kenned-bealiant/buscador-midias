@@ -55,7 +55,8 @@ saíram. Reprocessar sem encontrar nada não cria pedido.
 
 ## Retenção
 
-A linha de `bm_articles` é a memória de que a URL já foi vista, e não precisa durar para sempre. As
+A linha de `bm_articles` é a memória de que a URL já foi vista, e não precisa durar para sempre. Uma rotina a cada 10 minutos (`conferencia-corpus`) encerra as notícias em aberto cujo artigo o corpus já
+tem, para não gastar IA com elas. As
 gravadas e conhecidas saem depois de 3 dias e as descartadas depois de 14 (o texto delas, depois de
 1); falhas e trabalho em andamento ficam. Os artigos continuam consultáveis na tela **Artigos**, que
 lê o corpus. Detalhes e

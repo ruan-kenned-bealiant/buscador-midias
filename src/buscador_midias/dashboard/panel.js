@@ -508,6 +508,52 @@
     $('audit').replaceChildren(...tiles);
   }
 
+  /* ---------- limpeza periódica ---------- */
+  const CLEANUP = { 'conferencia-corpus': 'Conferência com o corpus', concluidas: 'Notícias concluídas', descartadas: 'Notícias descartadas', 'corpo-descartadas': 'Texto das descartadas' };
+  const CLEANUP_STATE = { running: ['Em andamento', 'blue'], done: ['Concluída', 'green'], error: ['Com erro', 'amber'], interrupted: ['Interrompida', 'amber'] };
+  const cleanupBadge = (run) => { const [text, tone] = CLEANUP_STATE[run.state] || [run.state, 'gray']; return el('span', text, 'badge ' + tone); };
+  const when = (iso) => `${dayMonth(iso)} ${clock(iso)}`;
+  const takes = (run) => (run.finished_at ? span((new Date(run.finished_at) - new Date(run.started_at)) / 1000) : '—');
+  const cleanupAge = (c) => (c.days ? `${c.days} dia(s) parada` : 'sem idade');
+  function cleanupTable(headers, rows) {
+    const wrap = el('div', undefined, 'table-wrap'), table = el('table', undefined, 'fail-table'), head = el('tr'), thead = el('thead'), body = el('tbody');
+    headers.forEach((h) => head.append(el('th', h)));
+    thead.append(head); table.append(thead);
+    rows.forEach((cells) => { const tr = el('tr'); cells.forEach((cell) => { const td = el('td'); td.append(...[].concat(cell)); tr.append(td); }); body.append(tr); });
+    table.append(body); wrap.append(table);
+    return wrap;
+  }
+  function renderCleanup(categories) {
+    const holder = $('cleanup');
+    holder.replaceChildren();
+    const rows = categories.map((c) => {
+      const name = el('div'); name.append(el('strong', CLEANUP[c.category] || c.category), el('br'), el('small', c.description, 'muted'));
+      const last = c.last ? [cleanupBadge(c.last), document.createTextNode(` ${fmt(c.last.removed)} linha(s)`)] : [el('span', 'Ainda não rodou', 'muted')];
+      if (c.last && c.last.error) last.push(el('br'), el('small', 'Erro: ' + c.last.error, 'muted'));
+      return [name, `${c.schedule} · ${cleanupAge(c)}`, fmt(c.eligible), c.last ? when(c.last.started_at) : '—', last, `${when(c.next_run)} (${until(c.next_run)})`];
+    });
+    holder.append(cleanupTable(['Rotina', 'Quando roda', 'Esperando agora', 'Última execução', 'Resultado', 'Próxima'], rows));
+    // O servidor já separa as execuções que mudaram algo ou falharam das que não acharam nada.
+    const notable = categories.flatMap((c) => c.runs.map((r) => ({ ...r, category: c.category })));
+    const recent = notable.sort((a, b) => b.started_at.localeCompare(a.started_at)).slice(0, 10);
+    const heading = el('h3', 'Execuções recentes com resultado');
+    heading.style.margin = '22px 0 8px';
+    holder.append(heading);
+    holder.append(recent.length
+      ? cleanupTable(['Rotina', 'Início', 'Duração', 'Linhas', 'Situação'], recent.map((r) => [CLEANUP[r.category] || r.category, when(r.started_at), takes(r), fmt(r.removed), cleanupBadge(r)]))
+      : el('div', 'Nenhuma execução apagou ou encerrou linhas ainda.', 'empty'));
+  }
+  async function loadCleanup() {
+    try {
+      const response = await fetch('/api/gerenciador/busca/limpeza');
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || 'Falha ao consultar a limpeza.');
+      renderCleanup(body.categories);
+    } catch (error) {
+      $('cleanup').replaceChildren(el('div', error.message, 'empty'));
+    }
+  }
+
   /* ---------- carga ---------- */
   function render(d) {
     data = d;
@@ -531,6 +577,7 @@
       if (!response.ok) throw new Error(body.error || 'Não foi possível carregar o painel.');
       $('error').hidden = true;
       render(body);
+      loadCleanup();
     } catch (error) {
       $('error').textContent = error.message + ' Os números abaixo são os da última carga bem-sucedida.';
       $('error').hidden = false;

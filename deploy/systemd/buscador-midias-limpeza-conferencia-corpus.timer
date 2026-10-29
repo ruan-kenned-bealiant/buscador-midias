@@ -1,0 +1,10 @@
+[Unit]
+Description=Buscador de mídias - agenda da limpeza: notícias em aberto que o corpus já tem
+
+[Timer]
+OnCalendar=*:0/10
+Persistent=true
+Unit=buscador-midias-limpeza@conferencia-corpus.service
+
+[Install]
+WantedBy=timers.target

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from buscador_midias.analysis.themes import THEME_SLUGS
-from buscador_midias.corpus.theme_catalog import theme_refs
+from buscador_midias.corpus.theme_catalog import slug_of, theme_refs
 
 UNMAPPED = {"processos_judiciais"}
 MAPPED = [slug for slug in THEME_SLUGS if slug not in UNMAPPED]
@@ -52,3 +52,16 @@ def test_every_theme_carries_name_and_description():
     for slug in MAPPED:
         for ref in (*theme_refs(slug, "PF"), *theme_refs(slug, "PJ")):
             assert ref.name.strip() and ref.description.strip()
+
+
+def test_every_catalog_id_leads_back_to_its_slug_whatever_the_person_type():
+    """Os ids do KyX variam com PF/PJ e nacional/estrangeira; o tema da análise é o slug."""
+    assert {slug_of(i) for i in (13, 37, 14, 38)} == {"criminal"}
+    assert {slug_of(i) for i in (1, 15, 2, 16)} == {"corrupcao"}
+    for slug in ("corrupcao", "criminal", "reputacional", "ciber_seguranca"):
+        for kind in ("PF", "PJ"):
+            assert all(slug_of(ref.theme_id) == slug for ref in theme_refs(slug, kind))
+
+
+def test_an_id_outside_the_catalog_has_no_slug():
+    assert slug_of(999_999) is None

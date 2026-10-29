@@ -37,28 +37,35 @@ O painel fica em `http://127.0.0.1:8765` (`/`, `/buscador`, `/gerenciador`, `/me
 
 ## Limpeza periódica
 
-`bm_articles` não deve crescer sem limite: o corpus guarda o resultado das notícias gravadas e já
-conhecidas (o dedup consulta o corpus por `url_hash`), então a linha delas pode sair. Cada categoria
-tem o seu timer do systemd (`buscador-midias-limpeza-<categoria>.timer`, que dispara o service
-`buscador-midias-limpeza@<categoria>`), de madrugada, depois da rodada de 01h:
+`bm_articles` não deve crescer sem limite, e a fila não deve gastar IA com o que o corpus já tem.
+Cada rotina tem o seu timer do systemd (`buscador-midias-limpeza-<rotina>.timer`, que dispara o
+service `buscador-midias-limpeza@<rotina>`):
 
-| Categoria | Hora | O que faz | Idade |
+| Rotina | Quando | O que faz | Idade |
 |---|---|---|---|
+| `conferencia-corpus` | a cada 10 min | Encerra como `known` as notícias em aberto (ou falhas) cujo artigo o corpus já tem. Não olha idade. | — |
 | `concluidas` | 03:30 | Apaga notícias gravadas (`persisted`) ou já conhecidas (`known`). | 3 dias |
 | `descartadas` | 03:40 | Apaga as descartadas: fora da janela, sem data, sem texto, conteúdo excluído, sem entidade. | 14 dias |
 | `corpo-descartadas` | 03:50 | Tira só o texto da página (`payload.body`) das descartadas; os motivos ficam. | 1 dia |
 
-O acompanhamento está na aba **Limpeza** da tela Buscador de notícias: horário, idade, quantas linhas esperam,
-resultado e duração das últimas execuções e a próxima. Cada execução fica em `bm_cleanup_runs` (90 dias).
+A `conferencia-corpus` repete, ao longo do dia, a conferência do início da fila: cobre a retentativa de
+uma falha (que retoma na etapa em que falhou) e a notícia que espera na fila enquanto outra fonte a
+grava. Notícia que um worker está processando (`running`) não é tocada.
 
-A idade vale para quem ficou parado e não foi visto de novo (`updated_at` e `last_seen_at`). Nunca
-saem: falhas (esperam decisão), notícias em andamento, `evidence_pending`. Um timer perdido (máquina
-desligada) roda assim que ela volta (`Persistent=true`). A limpeza é feita em lotes de 2.000 linhas,
-cada um confirmado à parte, com pausa entre eles, porque o Postgres é compartilhado com o PowerDD.
+As rotinas por idade valem para quem ficou parado e não foi visto de novo (`updated_at` e
+`last_seen_at`). Nunca saem por idade: falhas (esperam decisão), notícias em andamento,
+`evidence_pending`. Os pedidos de reprocessamento (`bm_retry_requests`) não são limpos. Um timer
+perdido (máquina desligada) roda assim que ela volta (`Persistent=true`). Os lotes são de 2.000
+linhas, cada um confirmado à parte, com pausa entre eles, porque o Postgres é compartilhado com o
+PowerDD.
+
+O acompanhamento está no **Painel** (`/`), seção "Limpeza periódica": horário, idade, quantas linhas
+esperam, última execução, próxima e as execuções que apagaram ou encerraram algo ou falharam. Cada
+execução fica em `bm_cleanup_runs` (90 dias e no máximo 200 por rotina).
 
 ```bash
 systemctl --user list-timers 'buscador-midias-limpeza*'
-scripts/bm.sh db clean concluidas --dias 3     # roda uma categoria na hora (--lote N para o tamanho)
+scripts/bm.sh db clean concluidas --dias 3     # roda uma rotina na hora (--lote N para o tamanho)
 journalctl --user -u 'buscador-midias-limpeza@*' -n 20
 ```
 
@@ -66,7 +73,7 @@ Uma URL gravada que ainda esteja listada num feed depois de apagada volta a entr
 reconhecida pelo corpus; isso custa só uma consulta, não a IA. Se os números de "novas" por rodada
 parecerem inflados, aumente a idade de `concluidas`.
 
-Para ligar em outra máquina: `systemctl --user link` do service modelo e dos três timers e
+Para ligar em outra máquina: `systemctl --user link` do service modelo e dos quatro timers e
 `systemctl --user enable --now` dos timers.
 
 ## Configuração

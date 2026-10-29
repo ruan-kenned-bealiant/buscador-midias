@@ -213,11 +213,13 @@ def test_the_cleanup_screen_lists_each_category_with_schedule_and_history(client
 
     assert status == 200
     assert [c["category"] for c in data["categories"]] == [
+        "conferencia-corpus",
         "concluidas",
         "descartadas",
         "corpo-descartadas",
     ]
-    first = data["categories"][0]
+    check, first = data["categories"][:2]
+    assert check["schedule"] == "a cada 10 min" and check["days"] is None
     assert first["at"] == "03:30" and first["days"] == 3 and first["last"] is None
     assert first["next_run"] and first["eligible"] == 0
 

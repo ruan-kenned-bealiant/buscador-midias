@@ -60,7 +60,7 @@ class CatalogAPI:
         self.reports = ReportRepository(schema, env, corpus_schema=self.corpus_schema)
         self.work = WorkStore(schema, env)
         self.settings = SettingsRepository(schema, env)
-        self.retention = RetentionRepository(schema, env)
+        self.retention = RetentionRepository(schema, env, corpus_schema=self.corpus_schema)
         self.articles = ArticleRepository(schema, env, corpus_schema=self.corpus_schema)
 
     def handle(self, handler: BaseHTTPRequestHandler) -> tuple[int, dict[str, Any]]:

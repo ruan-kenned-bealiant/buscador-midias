@@ -18,6 +18,7 @@ from psycopg import sql
 
 from buscador_midias.catalog.store_errors import CatalogError
 from buscador_midias.corpus.article import normalize_entity_name
+from buscador_midias.corpus.theme_catalog import slug_of
 from buscador_midias.db.connection import Repository
 
 PAGE = 25
@@ -111,8 +112,8 @@ class ArticleRepository(Repository):
                     db,
                     "SELECT c.id,c.url_hash,c.url,c.titulo title,c.domain,c.source_name source,"
                     "c.published_at,c.created_at entered_at,c.origin,c.language,c.ai_verdict,"
-                    "c.ai_score,c.evidencia_status,c.evidencia_path,(SELECT count(*) FROM "
-                    "{contexts} x WHERE x.article_id=c.id AND x.alerta) alert_count "
+                    "c.ai_score,c.evidencia_status,c.evidencia_path,(SELECT count(DISTINCT x.entity_name) "
+                    "FROM {contexts} x WHERE x.article_id=c.id AND x.alerta) alert_count "
                     f"FROM {{articles}} c WHERE {condition} "  # noqa: S608
                     "ORDER BY c.created_at DESC,c.id DESC LIMIT %(limit)s OFFSET %(offset)s",
                     dict(args, limit=limit, offset=offset),
@@ -189,6 +190,16 @@ class ArticleRepository(Repository):
         # O texto da análise (1,2 milhão de linhas) fica de fora: é um campo à parte, escolhido.
         return "(" + " OR ".join(f"({clauses[name]})" for name in ("entity", "url", "title")) + ")"
 
+    @staticmethod
+    def _theme(row: dict[str, Any], names: dict[str, str]) -> str | None:
+        """O tema pelo slug (nome de ``midias_ia_theme_prompts``); sem slug, o nome gravado.
+
+        O gravador escreve o id do KyX, que muda com PF/PJ e nacional/estrangeira e traz o nome
+        do KyX; o tema da análise é um só, o do slug.
+        """
+        slug = slug_of(row["theme_id"]) if row["theme_id"] is not None else None
+        return names.get(slug or "") or row["theme"] or None
+
     def _domain(self, db: psycopg.Connection[dict[str, Any]], site_id: int) -> str:
         row = db.execute(
             "SELECT url_without_https_www d FROM midias_ia_trusted_sources "
@@ -211,6 +222,7 @@ class ArticleRepository(Repository):
                 ("articles", "midias_ia_articles"),
                 ("entities", "midias_ia_article_entities"),
                 ("contexts", "midias_ia_article_contexts"),
+                ("prompts", "midias_ia_theme_prompts"),
             )
         }
         return db.execute(sql.SQL(text).format(**names), args)
@@ -228,8 +240,8 @@ class ArticleRepository(Repository):
         ).fetchall()
         analyses = self._query(
             db,
-            "SELECT article_id,entity_name,theme,alerta,confianca,justificativa,papel_entidade,"
-            "fato_adverso,verification_status,ai_verdict FROM {contexts} "
+            "SELECT article_id,entity_name,theme_id,theme,alerta,confianca,justificativa,"
+            "papel_entidade,fato_adverso,verification_status,ai_verdict FROM {contexts} "
             "WHERE article_id=ANY(%(ids)s) ORDER BY article_id,alerta DESC,confianca DESC,id",
             dict(ids=ids),
         ).fetchall()
@@ -248,6 +260,13 @@ class ArticleRepository(Repository):
                     analyses=[],
                 ),
             )
+        names = {
+            row["slug"]: row["theme_name"]
+            for row in self._query(
+                db, "SELECT slug,theme_name FROM {prompts} WHERE slug IS NOT NULL", {}
+            ).fetchall()
+        }
+        merged: dict[tuple[Any, ...], dict[str, Any]] = {}
         for row in analyses:
             key = normalize_entity_name(row["entity_name"] or "")
             entity = by_article[row["article_id"]].setdefault(
@@ -263,9 +282,23 @@ class ArticleRepository(Repository):
                 ),
             )
             entity["alert"] = entity["alert"] or bool(row["alerta"])
-            entity["analyses"].append(
-                dict(
-                    theme=row["theme"],
+            # O gravador repete o mesmo parecer em uma linha por tema do catálogo (é assim que o
+            # front do KyX lista); aqui um parecer igual aparece uma vez, com a lista de temas.
+            content = (
+                row["article_id"],
+                key,
+                bool(row["alerta"]),
+                row["confianca"],
+                row["justificativa"],
+                row["fato_adverso"] or None,
+                row["papel_entidade"],
+                row["ai_verdict"],
+                row["verification_status"],
+            )
+            analysis = merged.get(content)
+            if analysis is None:
+                analysis = merged[content] = dict(
+                    themes=[],
                     alert=bool(row["alerta"]),
                     confidence=None if row["confianca"] is None else float(row["confianca"]),
                     justification=row["justificativa"],
@@ -274,7 +307,10 @@ class ArticleRepository(Repository):
                     verdict=row["ai_verdict"],
                     verification=row["verification_status"],
                 )
-            )
+                entity["analyses"].append(analysis)
+            theme = self._theme(row, names)
+            if theme and theme not in analysis["themes"]:
+                analysis["themes"].append(theme)
         for article in articles:
             found = sorted(
                 by_article.get(article["id"], {}).values(),

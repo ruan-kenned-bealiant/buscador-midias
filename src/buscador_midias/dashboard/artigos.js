@@ -75,7 +75,7 @@ function analysisBlock(a) {
   const box = el('div', undefined, 'analysis');
   const head = el('div', undefined, 'meta');
   head.append(el('span', a.alert ? 'Alerta' : 'Sem alerta', 'badge ' + (a.alert ? 'amber' : 'gray')));
-  if (a.theme) head.append(el('span', 'Tema: ' + a.theme));
+  if (a.themes.length) head.append(el('span', (a.themes.length === 1 ? 'Tema: ' : 'Temas: ') + a.themes.join(', ')));
   if (a.confidence !== null) head.append(el('span', 'Confiança ' + Math.round(a.confidence * 100) + '%'));
   if (a.role) head.append(el('span', 'Papel: ' + (roles[a.role] || a.role)));
   box.append(head);

@@ -43,3 +43,23 @@ def theme_refs(slug: str, entity_type: str) -> tuple[ThemeRef, ...]:
     """Temas do catálogo para o slug e o tipo da entidade; ``OUTRO`` segue como pessoa jurídica."""
     kind = "pf" if entity_type == "PF" else "pj"
     return _catalog().get(slug, {}).get(kind, ())
+
+
+@cache
+def _slugs() -> dict[int, str]:
+    """Cada ``theme_id`` do KyX com o slug da análise a que pertence."""
+    return {
+        ref.theme_id: slug
+        for slug, kinds in _catalog().items()
+        for refs in kinds.values()
+        for ref in refs
+    }
+
+
+def slug_of(theme_id: int) -> str | None:
+    """O slug da análise de um ``theme_id`` do KyX, seja PF, PJ, nacional ou estrangeira.
+
+    O tema da análise é o slug (``midias_ia_theme_prompts``); a variante por tipo de pessoa só
+    existe nos ids do KyX. ``None`` para um id fora do catálogo.
+    """
+    return _slugs().get(theme_id)

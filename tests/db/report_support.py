@@ -163,6 +163,8 @@ CREATE TABLE midias_ia_article_entities (id BIGSERIAL PRIMARY KEY, article_id BI
  name_norm TEXT, entity_type TEXT, role TEXT, salience NUMERIC, mention_count INTEGER,
  context TEXT);
 CREATE TABLE midias_ia_article_contexts (id BIGSERIAL PRIMARY KEY, article_id BIGINT,
- entity_name TEXT, theme TEXT, alerta BOOLEAN, confianca NUMERIC, justificativa TEXT,
+ entity_name TEXT, entity_hash TEXT, theme_id BIGINT, theme TEXT, alerta BOOLEAN, confianca NUMERIC, justificativa TEXT,
  papel_entidade TEXT, fato_adverso TEXT, verification_status TEXT, ai_verdict TEXT);
+CREATE TABLE midias_ia_theme_prompts (id BIGSERIAL PRIMARY KEY, slug TEXT, theme_name TEXT,
+ active BOOLEAN DEFAULT true);
 """

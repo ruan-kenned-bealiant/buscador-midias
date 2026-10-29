@@ -10,11 +10,11 @@ from typing import Any
 
 import pytest
 from psycopg.types.json import Jsonb
-from report_support import seed
+from report_support import ARTICLE_CORPUS_DDL, seed
 
 from buscador_midias.catalog.store_errors import CatalogError
 from buscador_midias.db import cli
-from buscador_midias.db.retention import CATEGORIES, RetentionRepository, next_run
+from buscador_midias.db.retention import CATEGORIES, RetentionRepository
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("BM_TEST_POSTGRES") != "1", reason="Requer PostgreSQL de teste explícito."
@@ -28,7 +28,9 @@ def repo(schema_name: str) -> RetentionRepository:
     world = seed(schema_name)
     with world["health"].connection() as db:
         db.execute("DELETE FROM bm_articles")  # parte de um banco sem notícias
-    repository = RetentionRepository(schema_name)
+    with world["health"].connection() as db:
+        db.execute(ARTICLE_CORPUS_DDL)
+    repository = RetentionRepository(schema_name, corpus_schema=schema_name)
     repository.site_id = world["sites"][0]["id"]  # type: ignore[attr-defined]
     return repository
 
@@ -171,8 +173,14 @@ def test_the_age_can_be_changed_but_never_to_nothing(repo):
 
 
 def test_every_category_has_a_description_and_a_default_age():
-    assert set(CATEGORIES) == {"concluidas", "descartadas", "corpo-descartadas"}
-    assert all(c.description and c.days >= 1 for c in CATEGORIES.values())
+    assert set(CATEGORIES) == {
+        "conferencia-corpus",
+        "concluidas",
+        "descartadas",
+        "corpo-descartadas",
+    }
+    assert all(c.description and (c.days is None or c.days >= 1) for c in CATEGORIES.values())
+    assert all((c.at is None) != (c.every is None) for c in CATEGORIES.values())
 
 
 def test_the_command_cleans_one_category_and_reports_it(repo, schema_name, capsys):
@@ -236,6 +244,9 @@ def test_the_status_shows_schedule_last_run_and_what_is_waiting(repo):
     assert status["corpo-descartadas"]["last"]["removed"] == 1
     assert status["corpo-descartadas"]["last"]["state"] == "done"
     assert status["concluidas"]["at"] == CATEGORIES["concluidas"].at
+    assert status["concluidas"]["schedule"] == "03:30"
+    assert status["conferencia-corpus"]["schedule"] == "a cada 10 min"
+    assert status["conferencia-corpus"]["days"] is None
     assert status["concluidas"]["next_run"] > datetime.now(UTC)
 
 
@@ -255,8 +266,22 @@ def test_the_next_run_is_the_next_clock_time_in_the_configured_zone():
     before = datetime(2026, 10, 30, 5, 0, tzinfo=UTC)  # 02:00 em Brasília
     after = datetime(2026, 10, 30, 7, 0, tzinfo=UTC)  # 04:00 em Brasília
 
-    assert next_run("03:30", before) == datetime(2026, 10, 30, 6, 30, tzinfo=UTC)
-    assert next_run("03:30", after) == datetime(2026, 10, 31, 6, 30, tzinfo=UTC)
+    daily = CATEGORIES["concluidas"]
+    assert daily.next_run(before) == datetime(2026, 10, 30, 6, 30, tzinfo=UTC)
+    assert daily.next_run(after) == datetime(2026, 10, 31, 6, 30, tzinfo=UTC)
+
+
+def test_an_interval_category_fires_on_the_next_multiple_of_its_period():
+    every = CATEGORIES["conferencia-corpus"].every
+    assert every == 10
+    now = datetime(2026, 10, 30, 5, 3, 20, tzinfo=UTC)
+
+    assert CATEGORIES["conferencia-corpus"].next_run(now) == datetime(
+        2026, 10, 30, 5, 10, tzinfo=UTC
+    )
+    assert CATEGORIES["conferencia-corpus"].next_run(
+        datetime(2026, 10, 30, 5, 10, tzinfo=UTC)
+    ) == datetime(2026, 10, 30, 5, 20, tzinfo=UTC)
 
 
 def test_old_history_is_trimmed_so_the_log_does_not_grow_forever(repo):
@@ -269,3 +294,113 @@ def test_old_history_is_trimmed_so_the_log_does_not_grow_forever(repo):
     repo.run("concluidas")
 
     assert len(history(repo)) == 1
+
+
+# --- conferência com o corpus ------------------------------------------------------------------
+
+
+def in_corpus(repo: RetentionRepository, *hashes: str) -> None:
+    with repo.connection() as db:
+        for number, value in enumerate(hashes, start=100):
+            db.execute(
+                "INSERT INTO midias_ia_articles(id,url_hash,url,titulo) VALUES(%s,%s,%s,%s)",
+                (number, value, f"https://alfa.example/{value}", value),
+            )
+
+
+def test_open_news_already_in_the_corpus_are_closed_as_known(repo):
+    heavy = dict(body="texto", analysis=dict(a=1), title="T")
+    for name, state in (
+        ("pending", "pending"),
+        ("queued", "queued"),
+        ("retry", "retry"),
+        ("failed", "failed"),
+        ("cancelled", "cancelled"),
+    ):
+        add(repo, f"{name}_in", state=state, payload=heavy)
+    add(repo, "running_in", state="running")
+    add(repo, "pending_out", state="pending")
+    add(repo, "done_in", outcome="no_entities")
+    in_corpus(
+        repo,
+        "pending_in",
+        "queued_in",
+        "retry_in",
+        "failed_in",
+        "cancelled_in",
+        "running_in",
+        "done_in",
+    )
+
+    assert repo.run("conferencia-corpus") == 5
+
+    with repo.connection() as db:
+        rows = {r["hash"]: r for r in db.execute("SELECT * FROM bm_articles").fetchall()}
+    for name in ("pending", "queued", "retry", "failed", "cancelled"):
+        closed = rows[f"{name}_in"]
+        assert (closed["state"], closed["outcome"]) == ("done", "known"), name
+        assert closed["corpus_article_id"] is not None
+        assert closed["failed_stage"] is None and closed["reason"] is None
+        assert closed["owner"] is None and closed["queued_at"] is None
+        assert closed["payload"] == dict(title="T")
+    assert rows["failed_in"]["corpus_article_id"] == 100 + 3
+    # Em uso por um worker, fora do corpus ou já concluída: não se mexe.
+    assert rows["running_in"]["state"] == "running"
+    assert rows["pending_out"]["state"] == "pending"
+    assert rows["done_in"]["outcome"] == "no_entities"
+    assert repo.run("conferencia-corpus") == 0
+
+
+def test_the_corpus_check_has_no_age_and_refuses_one(repo):
+    add(repo, "fresh", state="pending", days=0)
+    in_corpus(repo, "fresh")
+
+    with pytest.raises(CatalogError):
+        repo.run("conferencia-corpus", days=3)
+    assert repo.run("conferencia-corpus") == 1
+
+
+def test_the_status_counts_the_open_news_the_corpus_already_has(repo):
+    add(repo, "waiting", state="failed")
+    add(repo, "other", state="failed")
+    in_corpus(repo, "waiting")
+
+    status = {row["category"]: row for row in repo.status()}
+
+    assert status["conferencia-corpus"]["eligible"] == 1
+
+
+def test_a_frequent_category_keeps_only_its_latest_runs(repo):
+    with repo.connection() as db:
+        db.execute(
+            "INSERT INTO bm_cleanup_runs(category,days,finished_at) "
+            "SELECT 'conferencia-corpus',1,now() FROM generate_series(1,210)"
+        )
+
+    repo.run("conferencia-corpus")
+
+    assert len(history(repo)) == 200
+
+
+def test_the_status_keeps_the_runs_that_did_something_among_many_that_did_not(repo):
+    """Uma rotina de 10 em 10 minutos roda dezenas de vezes sem achar nada."""
+    with repo.connection() as db:
+        db.execute(
+            "INSERT INTO bm_cleanup_runs(category,days,started_at,finished_at,removed) VALUES "
+            "('conferencia-corpus',NULL,now()-interval '5 hours',now()-interval '5 hours',28)"
+        )
+        db.execute(
+            "INSERT INTO bm_cleanup_runs(category,days,started_at,finished_at,removed) "
+            "SELECT 'conferencia-corpus',NULL,now()-make_interval(mins=>n),"
+            "now()-make_interval(mins=>n),0 FROM generate_series(1,30) n"
+        )
+        db.execute(
+            "INSERT INTO bm_cleanup_runs(category,days,started_at,finished_at,removed,error) "
+            "VALUES ('conferencia-corpus',NULL,now()-interval '3 hours',now()-interval '3 hours',"
+            "0,'UndefinedTable')"
+        )
+
+    row = {r["category"]: r for r in repo.status()}["conferencia-corpus"]
+
+    assert row["last"]["removed"] == 0 and row["last"]["state"] == "done"
+    assert [(r["removed"], r["state"]) for r in row["runs"]] == [(0, "error"), (28, "done")]
