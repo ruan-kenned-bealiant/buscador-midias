@@ -1,325 +1,70 @@
-# Operação e desenvolvimento
-
-Os comandos desta página são referência para o operador. Esta documentação foi produzida sem executá-los contra a rodada em andamento. Diferencie consultas, inicialização de esquema e operações que geram trabalho/custo.
+# Operação
 
 ## Ambiente
 
-Python **3.12+**, PostgreSQL, RabbitMQ e acesso aos sites/ao OpenRouter são necessários para o fluxo completo. O painel é Python/HTML/JavaScript; não requer executar o frontend PowerDD. Dependências e extras estão em [pyproject.toml](../../pyproject.toml).
+Python 3.12+, PostgreSQL (`power_dd_midias`), RabbitMQ e acesso à internet e ao OpenRouter.
+`scripts/bm.sh <subcomando>` roda `python -m buscador_midias <subcomando>` com as credenciais do KyX
+carregadas (só as variáveis que o buscador usa; o valor do `.env` nunca é executado). Para
+`pipeline` e `dashboard` ele também entrega o broker de `var/ingestion/rabbit.env`, **sem** o
+prefixo de filas do serviço antigo: as filas são `bm.<etapa>[.recovery]`.
 
 ```bash
-python3.12 -m venv .venv
-.venv/bin/python -m pip install -e '.[dev,xlsx]'
-# Apenas se for armazenar evidência em S3:
-.venv/bin/python -m pip install -e '.[s3]'
+python3.12 -m venv .venv && .venv/bin/python -m pip install -e '.[dev]'
+scripts/bm.sh db install          # cria o que falta (repetir é seguro)
+scripts/bm.sh db status           # contagens do cadastro
 ```
 
-`curl_cffi` é dependência do produto. Playwright está no extra experimental `access-pilot`; não é necessário para a coleta HTTP normal. Não se deve instalar um navegador para tentar corrigir todo erro de XML.
+## Serviços
 
-## Configuração e segredos
+Os units estão em `deploy/systemd/` e são ligados com `systemctl --user link`.
 
-| Variáveis / arquivo | Uso |
+```bash
+for s in discovery dedup fetch context evidence persist; do
+  systemctl --user start buscador-midias-worker@$s
+done
+systemctl --user start buscador-midias-{publisher,scheduler,window,health,painel}
+scripts/bm.sh pipeline queues      # fila e consumidores de cada etapa
+journalctl --user -u 'buscador-midias-*' -f
+```
+
+Parar o trabalho: `systemctl --user stop buscador-midias-{scheduler,publisher}` e depois os
+workers (esperam até 150 s para terminar o que está em curso). Nada se perde: o estado está no banco
+e o `maintain` recupera o que ficou reservado.
+
+O painel fica em `http://127.0.0.1:8765` (`/`, `/buscador`, `/gerenciador`, `/mecanismos`,
+`/saude`, `/guia`).
+
+## Configuração
+
+Tudo em `bm_settings` e editável no painel: horários, janela, tentativas, modelo de análise, filtros
+(`content_filter`, `url_filter`, `lastmod_filter`, `head_filter`: `off`, `shadow` ou `enforce`),
+categorias barradas, passadas por notícia que falha, e workers por etapa. Mudar o número de workers
+de uma etapa exige reiniciar o `worker@<etapa>`.
+
+## Banco e disco
+
+- O banco aceita **100 conexões** e é compartilhado com o KyX/PowerDD. Cada worker usa um pool
+  pequeno; descoberta e extração seguram uma conexão por leitura em curso. Se aparecer
+  `too many clients`, reduza workers ou `BM_POOL_MAX`.
+- Evidência vai para o S3 em produção (`MIDIAS_IA_STORAGE_DISK=s3`); em desenvolvimento, para
+  `var/ingestion/`. O disco tem reserva: abaixo dela a descoberta e a extração pausam.
+- Backups feitos no corte estão em `var/backups/` (cadastro anterior, arquivo de rodadas de 24/10 e
+  as tabelas do crawler legado).
+
+## Testes
+
+```bash
+BM_TEST_POSTGRES=1 .venv/bin/python -m pytest        # banco real, um schema por teste
+BM_TEST_RABBIT=1 ...                                  # inclui os testes com RabbitMQ real
+```
+Os testes de banco criam e apagam um schema próprio. Os de RabbitMQ usam um prefixo descartável.
+Rode a suíte sem rodada em andamento: ela disputa conexões com os serviços.
+
+## Quando algo não anda
+
+| Sintoma | Onde olhar |
 |---|---|
-| `DB_MIDIAS_IA_HOST`, `PORT`, `DATABASE`, `USERNAME`, `PASSWORD` com esse prefixo | Conexão PostgreSQL de Mídias |
-| `KYX_ENV` | Arquivo de credenciais lido por `scripts/bm.sh`; padrão `.env` do KyX vizinho |
-| `CORPUS_DB_HOST` | Host do banco no wrapper; padrão local `127.0.0.1` |
-| `PY` | Interpretador utilizado pelo wrapper; padrão `.venv/bin/python` do projeto |
-| `BM_CATALOG_BACKEND`, `BM_CATALOG_SCHEMA` | Seleção explícita do catálogo; instalação atual usa PostgreSQL e `midias_manager` |
-| `var/gerenciador/storage.json` | Seleção persistida no corte; lida por `catalog/storage.py` |
-| `RABBITMQ_HOST`, `PORT`, `USER`, `PASSWORD`, `VHOST` com esse prefixo | Broker exclusivo da ingestão |
-| `BM_QUEUE_PREFIX` | Prefixo das filas; padrão de código `midias.ingest` |
-| `BM_INGEST_WORK_DIR` | Diretório compartilhado de artefatos; altera também a base usada para evidência local pelo engine |
-| `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL` | Contexto; modelo é configuração da ingestão, não o nome da variável de chave |
-| `MIDIAS_IA_STORAGE_DISK` | `local` ou `s3` |
-| `AWS_BUCKET`, `AWS_ENDPOINT`, `AWS_DEFAULT_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_USE_PATH_STYLE_ENDPOINT` | Armazenamento S3/compatível |
-| `BRIGHTDATA_API_KEY`, `BRIGHTDATA_ZONE_UNLOCKER`, `BRIGHTDATA_BASE_URL` | Suporte opcional de testes/saúde e caminhos legados; ingestão atual não habilita fallback |
-| `BUSCADOR_STATE_SCHEMA` | Esquema do estado legado; não seleciona o catálogo novo |
-
-`bm.sh` lê apenas chaves permitidas, sem `eval`. Valores já exportados prevalecem sobre o arquivo lido. Para o subcomando `ingest`, também carrega chaves conhecidas de `var/ingestion/rabbit.env`. O wrapper define o host de banco por `CORPUS_DB_HOST`; não basta editar apenas outra variável de host no `.env` e esperar que esse wrapper a preserve.
-
-O padrão cru de `broker.py` usa porta 5672/usuário guest, mas o Compose exclusivo publica AMQP em **127.0.0.1:5673** e gestão em **127.0.0.1:15673**. Configure o ambiente correspondente. Credenciais reais não devem aparecer em exemplos, logs, documentação ou URLs.
-
-## Preparação da base e inicialização
-
-A instalação atual já possui catálogo importado. Para uma instalação nova baseada no retrato SQLite existente, siga a [migração PostgreSQL](../MIGRACAO_POSTGRES_GERENCIADOR.md): o comando `migrate-catalog ... --activate` cria/importa/confere o esquema e registra a seleção. Ele não é um comando de sincronização diária. Não reimportar o SQLite antigo sobre edições novas do PostgreSQL.
-
-O writer requer o corpus `midias_ia_*` preexistente e compatível; ele verifica colunas, não instala todo o banco de Mídias. SQLs de classificação/transporte são aditivos e devem acompanhar a versão instalada. O catálogo sem configuração explícita ainda tem suporte SQLite; saúde e ingestão exigem PostgreSQL. Ausência de configuração não equivale a migração automática.
-
-Com catálogo e corpus preparados:
-
-```bash
-scripts/bm.sh ingest init
-scripts/bm.sh dashboard --host 127.0.0.1 --port 8765
-# Em processo próprio, quando for operar a ingestão:
-scripts/bm.sh ingest serve
-```
-
-`ingest init` cria/ajusta tabelas aditivas e completa chaves de configuração ausentes, preservando valores salvos. Até `ingest status` inicializa estruturas se necessário; não o trate como consulta SQL estritamente sem escrita em ambiente não preparado. O agendamento nasce desabilitado no código, mas uma instalação existente conserva suas configurações.
-
-O painel inicia o worker de saúde e suas configurações/DDL. Habilitar uma rotina ou solicitar rodada faz requisições externas. Na busca, OpenRouter tem custo; saúde/testes podem usar Bright Data conforme opção/configuração. No teste interativo, omitir a opção usa a disponibilidade das credenciais como padrão: envie `bright_data=false` para garantir que não será usado. A chamada HTTP de descoberta não chama IA por si só.
-
-## RabbitMQ e serviço
-
-O [Compose](../../deploy/rabbitmq.compose.yml) usa volume externo `buscador_midias_rabbit_data`; ele deve existir antes do primeiro `up`. Usa portas locais e reinício `unless-stopped`. Não executar `down -v` ou remover volume para reduzir filas: isso elimina estado do broker.
-
-```bash
-# Primeira preparação do broker, com variáveis privadas já configuradas:
-docker volume create buscador_midias_rabbit_data
-docker compose --env-file var/ingestion/rabbit.env -f deploy/rabbitmq.compose.yml up -d
-```
-
-A unidade de exemplo [buscador-midias-ingest.service](../../deploy/systemd/buscador-midias-ingest.service) executa `scripts/bm.sh ingest serve`, com reinício em falha e desligamento cooperativo. Seus caminhos absolutos são desta máquina: ajuste `WorkingDirectory`, `EnvironmentFile` e `ExecStart` em outra instalação. Copiar o arquivo para a configuração do serviço de usuário e habilitá-lo é uma ação de implantação, não ocorre apenas por existir no repositório.
-
-O runtime pode separar papéis: `ingest serve --role scheduler|publisher|worker`, com `--stage` para workers de uma etapa. No código atual o publicador cria os publicadores de todas as etapas mesmo que `--stage` seja informado; não assumir que esse filtro se aplica a todos os papéis. `--role all` também inicia o filtro de janela.
-
-## Configuração da busca
-
-| Chave | Padrão do código / efeito |
-|---|---|
-| `enabled` | false; autoriza novas rodadas automáticas |
-| `workers_enabled` | true; autoriza processamento das existentes |
-| `schedule_mode`, `schedule_hours`, `timezone` | `clock`, `[1,6,12,16]`, `America/Sao_Paulo` |
-| `window_mode` | `today`; alternativa `lookback` |
-| `lookback_minutes` | 2880; utilizado no modo lookback |
-| `daily_routes_only` | true; restringe caminhos de atualizações |
-| `allow_undated` | false; não libera sem data no modo diário |
-| `max_attempts`, `retry_minutes` | 3 e 1; falhas comuns e espera base |
-| `model`, `analysis_text_chars` | `openai/gpt-4.1-mini`, 12000 |
-| `workers` | discovery 2, dedup 1, fetch 2, context 1, evidence 1, persist 1; são padrões, não contagem atual garantida |
-| `content_filter`, `blocked_content_categories` | `shadow`, horóscopo/clima/culinária/esportes; ver ressalva sobre filtro final em [Fluxo](FLUXO_NOTICIAS.md) |
-| `lastmod_filter` | `shadow`; `off`, `shadow` ou `enforce`; exclui URLs com `lastmod` anterior à janela, ver [Fluxo](FLUXO_NOTICIAS.md) |
-| `url_filter` | `shadow`; `off`, `shadow` ou `enforce`; exclui páginas de índice (`/topics/`, `/author/`, `/tag/`, `/taxonomy/`) e URLs cujo dia no caminho terminou antes da janela, ver [Fluxo](FLUXO_NOTICIAS.md) |
-| `head_filter` | `shadow`; `off`, `shadow` ou `enforce`; descarta o documento cujo topo (o mais novo) já é anterior à janela e interrompe o download. Ver [Fluxo](FLUXO_NOTICIAS.md) |
-| `head_audit_rate` | 0; fração de 0 a 1 dos links que, com `enforce`, lê o documento inteiro em modo sombra para provar que o corte não perde notícia |
-| `adaptive_polling` | `off`; `off` ou `enforce`; rodadas de horário fixo do meio do dia pulam links frios (lidos na primeira e na última). Exige `close_previous_day` para não perder notícia |
-| `close_previous_day` | false; a primeira rodada do dia lê também o dia anterior inteiro (o que saiu depois da última rodada) |
-| `failed_retry_limit` | 1; 1 a 5 passadas totais por notícia que falha (1 = nunca tenta de novo). Só repete falhas que podem passar; ver [Fluxo](FLUXO_NOTICIAS.md) |
-| `host_concurrency` | 1; 1 a 4 tarefas simultâneas por host; mais que 1 aumenta a carga sobre o site |
-| `host_concurrency_max` | 1; 1 a 8; teto de vagas **extras** para hosts com fila longa (`host_concurrency + fila ÷ 100`); 1 desliga |
-| `bright_data` | false; habilitação é rejeitada pela API da ingestão |
-| `evidence_paid_adverse_only` | true; compatibilidade da política do capturador, sem ativar provedor pago ausente |
-
-**Os novos recursos nascem desligados no código** (`head_audit_rate=0`, `adaptive_polling=off`, `close_previous_day=false`, `failed_retry_limit=1`, `host_concurrency_max=1`) para não mudar o comportamento de quem não os pediu; são ligados na configuração salva. Para desfazer um deles, volte ao padrão e a próxima rodada já o respeita (a configuração é congelada por rodada: a rodada em andamento não muda).
-
-Configuração em uso em 29/10/2026 (o banco manda; confira na tela de Busca): `content_filter`, `lastmod_filter`, `url_filter` e `head_filter` em `enforce`; categorias bloqueadas `horoscope, weather, cooking, sports, entertainment, lifestyle`; `head_audit_rate=0.02`; `adaptive_polling=enforce`; `close_previous_day=true`; `failed_retry_limit=3`; `host_concurrency=1` com `host_concurrency_max=3`; workers discovery 24, dedup 1, fetch 18, context 64, evidence 8, persist 3 (o máximo por etapa é 64).
-
-Alterar concorrência acima dos slots abertos requer reinício controlado do serviço. Ao separar processos, o total real depende de quantas instâncias foram iniciadas; o painel mostra seus heartbeats. Não extrapole uma previsão de duração apenas multiplicando workers.
-
-## Diagnóstico sem interromper a rodada
-
-```bash
-df -h .
-ss -ltnp 'sport = :8765'
-systemctl --user status buscador-midias-ingest.service --no-pager
-journalctl --user -u buscador-midias-ingest.service -n 100 --no-pager
-scripts/bm.sh ingest status
-```
-
-Consulte `/buscador` para a rodada/etapas/sites e `/saude` para as verificações. Porta ocupada ao iniciar `dashboard` pode indicar painel já aberto: verificar o processo antes de iniciar outro ou encerrá-lo. Não usar `kill -9` como primeira medida de diagnóstico.
-
-| Sintoma | Verificação indicada |
-|---|---|
-| Rabbit mostra zero consumidores | Runtime usa `basic_get`; conferir heartbeat, tarefas e logs |
-| Fila diminui e fim fica lento | Hosts restantes, cooldown, retentativas, backpressure e conteúdo de tarefas; não concluir que workers foram reduzidos |
-| Descoberta para de produzir | Reserva de disco, backlog seguinte, host ocupado, configuração de workers e outbox |
-| Contexto acumula | Credencial/modelo, limites/resposta do OpenRouter, disjuntor (pausa de 60 s após 5 falhas do provedor em 60 s) e custo/uso registrado |
-| 403/503 abre no navegador | Comparar transporte/headers/sessão, resposta e conteúdo; executar amostra finita pelo teste, sem presumir artigo válido |
-| Site com 100% e pendências | Abrir tarefas e diagnósticos: falhas atuais/herdadas, cobertura parcial, data/evidência pendente |
-| Evidência em branco | Conferir arquivo e resposta original, conteúdo realmente capturado, dependência de recursos externos e rejeições do capturador |
-| PostgreSQL indisponível | Corrigir serviço/conexão; não há fallback automático para escrever SQLite |
-
-Desligar apenas `enabled` impede novas rodadas automáticas e deixa as existentes escoarem. Desligar `workers_enabled` pausa processamento; manter o serviço vivo permite supervisão. Encerrar o serviço é outra ação. Retomada usa checkpoints/leases/outbox; não exige apagar filas nem reiniciar do zero. `.failed` requer diagnóstico e reprocessamento explícito, não purge.
-
-## Evidências, disco e backup
-
-HTML transitório pode crescer enquanto contexto/evidência aguardam; não remover esses arquivos de tarefas em aberto. Evidências definitivas devem ser preservadas junto com o corpus. O script abaixo só calcula o que poderia compactar quando executado sem `--apply`:
-
-```bash
-.venv/bin/python scripts/compact_old_evidence.py
-```
-
-A aplicação explícita compacta HTML com mais de 24 horas, verifica SHA-256 e mantém a chave lógica; registra ledger em `var/maintenance`. Não substitui uma política de backup. Ver [relatório da compactação](../LIMPEZA_ESPACO_20261026.md).
-
-Backup deve abranger catálogo/saúde/ingestão, corpus e evidências, incluindo representações gzip e objetos S3 quando usados. O broker tem volume próprio; restaurar apenas Rabbit sem checkpoints do PostgreSQL não restaura todo o fluxo. Guardar configurações privadas separadamente e conferir vínculos/contagens após restauração. Relatórios/manifestos históricos externos são necessários para reproduzir auditorias e não estão todos convertidos em tabelas.
-
-## Desenvolvimento e testes
-
-```bash
-.venv/bin/ruff check src tests scripts
-.venv/bin/mypy
-.venv/bin/pytest
-```
-
-Esses comandos são referência, não foram executados como parte desta alteração documental. **`pytest` não é estritamente offline nesta base:** `tests/conftest.py` tem fixture autouse que tenta conectar ao PostgreSQL local, criar o banco `buscador_midias_test` se necessário e criar/remover um esquema por teste. As credenciais podem vir do `.env` vizinho. O corpus de produção não deve ser apontado como destino dos testes.
-
-Testes do catálogo/saúde/ingestão PostgreSQL usam habilitação explícita `BM_TEST_POSTGRES=1` e esquemas descartáveis. O teste real do Rabbit também exige `BM_TEST_RABBIT=1`; confira seu prefixo isolado. Sem dependências/configuração, vários testes são pulados: uma suíte verde com skips não comprova integração com infraestrutura.
-
-As chamadas a sites/OpenRouter são substituídas por leitores/analisadores injetáveis nos testes de comportamento. Executar scripts de auditoria não equivale a rodar testes unitários: eles podem acessar internet, consumir serviços e aplicar alterações reais. Conferir `--help`, caminho de saída, manifesto e flags de aplicação antes de usar.
-
-Coberturas importantes: canonicalização com fixture gerada pelo PHP, parser defensivo, escopo/DNS/TLS, amostras textuais, revisões concorrentes, recuperação de host/filas, janela diária, classificação/país, writer idempotente e leitura comprimida de evidência. O [inventário](INVENTARIO.md) localiza cada suíte.
-
-## Manutenção da documentação
-
-Ao alterar etapas/estados/defaults, revisar [Fluxo](FLUXO_NOTICIAS.md) e esta página; ao alterar DDL, revisar [Dados](DADOS.md); ao alterar endpoints, revisar [API](API.md); novos módulos/scripts devem entrar no [Inventário](INVENTARIO.md). Relatórios datados permanecem como observações da execução, sem substituir a especificação atual.
-
-## Comandos da CLI e estágio de uso
-
-| Comando | Finalidade / efeito |
-|---|---|
-| `dashboard` | Painel atual, com escrita de cadastro, saúde e comandos da busca; o texto antigo “somente leitura” no help não descreve todas as rotas atuais |
-| `ingest init/status/serve` | Inicialização, diagnóstico e runtime das seis filas; entrada encaminhada pelo CLI ao módulo de ingestão |
-| `ingest ensure-indexes` | Cria, em bases existentes, a tabela `ingest_run_stats` e os índices de relatório que faltarem, com `CREATE INDEX CONCURRENTLY` (não bloqueia a escrita; ~30 s). Idempotente; refaz um índice que tenha ficado inválido |
-| `ingest backfill-stats [--days N] [--force]` | Calcula as estatísticas por rodada (Painel) das rodadas terminadas da janela (padrão 30 dias) que ainda não as têm; `--force` recalcula também as existentes, por exemplo depois de um campo novo. Leva ~1 min para 14 rodadas |
-| `ingest g1-pilot/sources-pilot` | Pilotos de coleta finita, com acesso externo; não são consultas de status |
-| `migrate-catalog` | Importação transacional SQLite → PostgreSQL e conferência |
-| `probe`, `probe-sources` | Sondagem de acesso e escolha de estratégias do levantamento anterior; fazem rede |
-| `map-sites` | Mapeamento estrutural retomável; relatório sem nova rede somente com as opções correspondentes |
-| `discover` | Descoberta incremental do fluxo anterior; grava estado |
-| `enrich` | Texto/contexto/evidência do fluxo anterior; pode consumir provedores |
-| `corpus-sync` | Escrita do fluxo anterior no corpus compartilhado |
-| `run` | Encadeia o fluxo anterior; é chamado por `scripts/run.sh`/cron legado |
-| `export-mechanisms`, `export-strategies` | Exportações do inventário/estratégias para artefatos; não configuram a ingestão atual |
-| `strategy-health`, `report` | Diagnóstico do estado legado, distinto da tela `/saude` |
-| `migrate-sqlite` | Migração do estado antigo, distinta de `migrate-catalog` |
-| `labels export/serve/score` | Lote cego, tela de rotulagem e cálculo de precisão/recall do levantamento |
-
-Consulte `python -m buscador_midias <comando> --help` antes de escolher opções. `ingest` é encaminhado antes do parser geral e não aparece na listagem principal do `--help`; seu contrato está em `ingestion/runtime.py`. A ajuda da CLI conserva descrições históricas, enquanto esta seção separa os caminhos operacionais.
-
-## Limpeza de pilotos e testes
-
-Filas de pilotos têm prefixos próprios (`midias.g1_pilot.*`, `midias.sources_pilot.*`,
-`midias.daily_smoke.*`). Sua remoção deve usar o prefixo exato da execução encerrada,
-inventário antes/depois e as duas condições `--if-empty --if-unused`. Contador de
-consumidores zerado não basta, porque o runtime usa polling. Não aplicar essa limpeza
-às filas `midias.daily.v1.*` da instalação atual. Filas antigas `midias.ingest.*` ainda
-podem conter mensagens e não devem ser descartadas apenas pela idade do prefixo.
-
-Arquivos `tests/**/test_*.py` são testes automatizados de regressão, diferentes de
-artefatos de pilotos. O fato de uma auditoria ter acabado não torna automaticamente
-seus testes redundantes: várias dessas rotinas continuam expostas na CLI ou na API.
-A retirada de um subsistema legado deve remover em conjunto seu comando/rota, código,
-testes específicos e referências documentais, preservando os parsers compartilhados.
-Caches `__pycache__` podem ser recriados e não fazem parte do histórico.
-
-## Ajuste de latência de pausa e polling
-
-O runtime compartilha a checagem de capacidade por etapa/processo em cache de 0,5 segundo.
-Workers pausados por backlog voltam a checar a cada 0,5 segundo; uma consulta de fila
-vazia aguarda 0,25 segundo. A evidência reaproveitada não abre um leitor ou transação
-de rede sem uso. Limites de backlog e controle por host continuam válidos. Veja
-[medição, testes e limites da melhoria](../AJUSTE_GAPS_FILAS_20261026.md).
-
-O contexto não é mais pausado pelo acúmulo de evidências. O backlog dessa etapa
-pode crescer no PostgreSQL, enquanto o RabbitMQ recebe lotes limitados. Isso
-desacopla o avanço das análises da capacidade de captura; não aumenta por si
-só a quantidade de workers de evidência. A proteção de disco continua ativa.
-
-## Otimização de descoberta/verificação
-
-O serviço requer `psycopg_pool>=3.2,<4`, declarado no `pyproject.toml`. O pool abre
-entre 2 e 24 conexões curtas por processo (`CHECKPOINT_POOL_SIZE`), com espera máxima de
-10 segundos; com 12 ele estourava `PoolTimeout` quando dezenas de threads acordavam juntas
-(início do serviço, abertura de rodada, religar workers). Publicadores
-usam um segundo pool de 0 a 12 conexões: confirmações RabbitMQ não podem ocupar os
-slots dos checkpoints. Locks HTTP mantêm conexões próprias (só leitores de fetch e
-descoberta); dimensione também os demais serviços no PostgreSQL. Os pools podem somar 36
-conexões, além dos leitores HTTP. A concorrência aceita 1 a 64 workers por etapa; mais
-slots que os abertos na inicialização exigem reiniciar o serviço.
-A fila de recuperação (tarefas com falha anterior) tem workers próprios: um para cada oito
-principais da etapa, no mínimo um (`recovery_workers`; 45 de contexto dão 5). Os principais
-só ajudam a recuperação quando sua fila esvazia, o que não acontece enquanto a etapa
-anterior a alimenta; com um único worker dedicado as retentativas se acumulavam (505 jobs
-de contexto elegíveis e parados em 27/10).
-O pool encerra depois da drenagem cooperativa dos workers. Alterações no código
-exigem reiniciar o serviço de ingestão, preservando a rodada e suas tarefas.
-
-Os logs `Lote dedup` medem consulta, checkpoint e total até commit. A reserva do lote
-e o transporte RabbitMQ ficam fora desse cronômetro. Descoberta/verificação podem
-acumular metadados no banco; monitorar seu tamanho faz parte da operação. A redução
-de latência dessas etapas não elimina gargalos posteriores de rede ou contexto.
-Detalhes e testes: [plano aplicado](../PLANO_OTIMIZACAO_DESCOBERTA_CORPUS.md).
-
-## Retroativo do filtro por `lastmod`
-
-```bash
-scripts/bm.sh ingest backfill-lastmod            # relatório, não altera nada
-scripts/bm.sh ingest backfill-lastmod --apply    # encerra as tarefas comprovadamente antigas
-```
-
-Atua na rodada em execução mais recente (`--run-id` escolhe outra) e lê os XMLs interpretados
-das últimas `--hours` horas (padrão 6). Só toca tarefas abertas de dedup/fetch de artigos que
-ainda não estão no corpus; as encerradas ficam como `outside_window` com resultado
-`fora_da_janela_por_lastmod`. Com `--apply`, qualquer notícia já confirmada dentro da janela
-que a regra teria excluído (campo `violations`) cancela a aplicação inteira.
-
-## Parar as rodadas abertas
-
-```bash
-scripts/bm.sh ingest stop-runs --apply   # sem --apply só mostra o aviso
-```
-
-Cancela as tarefas ainda não executadas de descoberta, dedup, fetch e contexto das rodadas
-em andamento (as que um worker está rodando terminam sozinhas), descarta as mensagens ainda
-não publicadas e marca os artigos interrompidos como `cancelled`. A descoberta seguinte
-readmite `cancelled` com nova geração; sem isso a próxima rodada trataria o artigo como já
-conhecido e a notícia se perderia. Evidência e persistência seguem até o fim, pois o artigo
-já foi analisado. As rodadas fecham como `partial` quando a última tarefa termina. Pausar
-os workers (`workers_enabled`) não cancela nada: o serviço fica ativo, mas ocioso.
-
-## Reinício sem disputa de locks
-
-- **Versão do esquema.** `ingest_schema` guarda a versão do DDL aplicada (`SCHEMA_VERSION` em
-  [schema.py](../../src/buscador_midias/ingestion/schema.py)). `initialize()` só executa o DDL
-  quando a versão gravada é menor; com o esquema atual nem toca as tabelas de fila. Antes, todo
-  início (serviço, painel, CLI) reexecutava `CREATE INDEX IF NOT EXISTS`/`ALTER TABLE`, que pedem
-  lock de tabela e entravam em deadlock ou estouravam `lock_timeout` com o serviço no ar, o que
-  fazia o systemd falhar o restart. **Ao alterar o `DDL`, aumente `SCHEMA_VERSION`.**
-  *Exceção deliberada:* os objetos de relatório (a tabela `ingest_run_stats` e os índices
-  `ingest_job_run`, `ingest_job_run_created`, `ingest_occurrence_run`) estão no `DDL`, para
-  instalações novas, mas **não** aumentaram a versão: bases existentes os recebem por
-  `ingest ensure-indexes`, que cria sem bloquear a escrita. Reaplicar o `DDL` inteiro só para
-  criar um índice em uma tabela de milhões de linhas, com o serviço no ar, repetiria o problema
-  acima. Se um dia a versão subir por outro motivo, esses comandos `IF NOT EXISTS` não fazem mal.
-- **Reiniciar o painel interrompe a rodada de saúde em andamento** (o agendador a retoma, mas
-  perde progresso do teste corrente). Reinicie entre rodadas (10h e 20h dão ~1 h 15 min de
-  ativos e até ~2 h 30 min de inativos) e fora do horário das buscas.
-- **Ordem de travamento.** Publicador (`confirm_published`) e workers (`claim_many`) travam as
-  linhas de `ingest_jobs` sempre em ordem de `id`. Em ordens diferentes, 175 de 175 execuções de um
-  teste de concorrência acabaram em deadlock; cada deadlock derrubava um ciclo do publicador ou um
-  lote inteiro de dedup.
-- **Sem consultas paralelas.** As sessões do buscador definem `max_parallel_workers_per_gather=0`
-  ([postgres.py](../../src/buscador_midias/catalog/postgres.py)). O contêiner do PostgreSQL tem
-  `/dev/shm` de 64 MB e o paralelismo o esgotava (`could not resize shared memory segment`,
-  reportado pelo psycopg como `DiskFull`) em consultas que já são curtas.
-- **Concorrência de workers** só muda após reinício, porque os slots são abertos na inicialização.
-
-## Painel: números por rodada e leitura de tempos
-
-O Painel não soma as tarefas a cada abertura: lê `ingest_run_stats`, uma linha por rodada. O agendador da ingestão (`Service.scheduler`) fecha uma rodada terminada por minuto (`finalize_pending`), fora da transação de manutenção. A rodada aberta é recalculada quando seus números têm mais de 30 s, e o que ainda não foi calculado é completado sob demanda, até 3 por requisição. Depois de ligar o recurso em uma base existente, rode uma vez `ingest ensure-indexes` e `ingest backfill-stats --days 10`.
-
-A tela de Busca abre já filtrada pela rodada mais recente (`run_id=latest`) e busca os custos depois do primeiro desenho. Sem filtro de rodada as consultas cobrem **todo o histórico** (`ingest_jobs` cresce ~50 mil linhas por rodada) e ficam entre 25 e 45 s. O histórico de rodadas guarda em memória os totais das rodadas já terminadas (`IngestStore._run_totals`) e a aba "Por site" guarda 15 s das linhas calculadas; ambos são zerados ao reiniciar o painel.
-
-**Ao medir tempo de tela ou de consulta, lembre que o PostgreSQL é compartilhado com o PowerDD** (mesmo banco `power_dd_midias`). Consultas pesadas do PowerDD (contagens em `midias_ia_article_contexts`) já levaram o banco a 250–480% de CPU e multiplicaram qualquer tempo do buscador por 3 a 5. Compare versões antiga e nova **na mesma sessão, intercaladas**, e consulte `pg_stat_activity` antes de concluir que algo regrediu. O banco também grava arquivos temporários grandes em consultas de agregação (centenas de GB acumulados em um dia); como o `Docker.raw` do Docker Desktop cresce e não encolhe, picos de consultas pesadas consomem disco do hospedeiro de forma permanente.
-
-## Disco: o que já aconteceu e o que falta
-
-Em 28–29/10 o disco chegou a 1 GB livres durante uma rodada, e a ingestão foi parada por um vigia de disco (apaga evidência local com mais de 1 h abaixo de 6 GB livres e para o serviço abaixo de 2 GB). **Esse vigia era um script fora do repositório e não sobrevive a um reinício da máquina**, assim como o monitor de status da rodada. A política permanente continua pendente: evidência em S3, ou uma limpeza agendada versionada. Até lá, acompanhe o espaço livre (o Painel mostra, com severidade) antes de cada rodada: uma rodada grava de 3 a 5 GB de evidência local, mais o crescimento do PostgreSQL.
-
-## Retroativo do tema nos contextos
-
-```bash
-scripts/bm.sh ingest backfill-context-themes            # relatório, não altera nada
-scripts/bm.sh ingest backfill-context-themes --apply    # troca as linhas sem tema pelas temáticas
-```
-
-Atua nas linhas de contexto deste escritor sem `theme_id` e sem vínculo de processo, cliente ou
-grupo. O tema vem das palavras-chave do próprio artigo, sem chamar o OpenRouter. Cada lote de 500
-é uma transação; um erro desfaz o lote e interrompe. Idempotente. O relatório informa `rows`
-(linhas sem tema), `themed_rows` (linhas temáticas que seriam criadas) e `applied`.
-
-**Testes do corpus.** `tests/conftest.py` redireciona o banco para `buscador_midias_test`, que
-precisa conter a estrutura das quatro tabelas `midias_ia_*` em `public` para os testes do writer
-rodarem; sem ela eles são pulados em silêncio. Para criar (só estrutura, sem dados):
-`pg_dump -s -t public.midias_ia_articles -t public.midias_ia_article_entities
--t public.midias_ia_article_keywords -t public.midias_ia_article_contexts <banco do corpus>`
-aplicado no banco de testes.
-
+| Etapa com fila e "sem worker" no painel | `systemctl --user status buscador-midias-worker@<etapa>` |
+| Muitas pendências `blocked` num site | Tela Pendências; só Bright Data resolve 401/403 |
+| Rodada que não fecha | Ver por etapa quem ainda tem `queued/running/retry`; `maintain` do scheduler republica e recupera |
+| `too many clients` | Conexões acima; veja `pg_stat_activity` |

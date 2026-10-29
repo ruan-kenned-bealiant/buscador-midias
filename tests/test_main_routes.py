@@ -10,7 +10,7 @@ import pytest
 
 @pytest.mark.parametrize(
     ("family", "expected"),
-    [("pipeline", "serve"), ("db", "install"), ("ingest", "serve")],
+    [("pipeline", "serve"), ("db", "install"), ("dashboard", "--port")],
 )
 def test_each_family_has_its_own_help(family: str, expected: str):
     done = subprocess.run(

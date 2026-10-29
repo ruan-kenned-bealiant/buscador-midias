@@ -1,0 +1,33 @@
+# Saúde das fontes
+
+A saúde é uma rodada como as outras (`bm_runs` com `type='health'`), conduzida pelo serviço
+`buscador-midias-health`. Só um líder por banco trabalha (advisory lock).
+
+| Rotina | Escopo |
+|---|---|
+| `active` | Links ativos de sites ativos. |
+| `recovery` | Links inativos cuja última verificação foi falha de acesso (ou todos, manual). |
+
+Horários padrão: 10h e 20h de Brasília. Cada rodada congela os elegíveis e a revisão de cada link.
+
+## Modos
+
+- **`probe`** (ativos): uma leitura leve do documento. Decide `keep`, `inactivate`, `delete` ou
+  `review` pelas regras de frescor, período encerrado e tema inútil. Falha de acesso passageira só
+  inativa na segunda verificação seguida; 404, 410 e ciclo de redirecionamento inativam na hora.
+  Se o transporte do link foi recusado, tenta os outros e, achando um que funcione, troca o
+  transporte (a prova antiga é descartada).
+- **`full`** (teste completo): o mesmo teste do Gerenciador, em amostra, sem alterar o cadastro,
+  salvo a reativação opcional.
+
+## Reativação e restauração
+
+Com `activate_recovered`, um link inativo volta a ficar ativo se o teste completo comprova texto de
+notícia **e** o portão de frescor libera. O escopo `auto_excluded_access` restaura o que a validação
+excluiu por falha de acesso, junto com o site-pai quando a validação também o inativou. Decisões do
+usuário (`deactivated_by='user'`) nunca são desfeitas.
+
+## Onde fica o resultado
+
+`bm_run_links` (um por link, com `attempt_log`), `bm_link_state.health_*` (a última verificação e o
+que ela provou) e `bm_events` (cada inativação, exclusão, troca de transporte e reativação).

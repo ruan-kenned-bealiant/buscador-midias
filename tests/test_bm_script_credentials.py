@@ -1,9 +1,11 @@
+"""Credenciais do KyX no `bm.sh`: só as variáveis do buscador, sem executar o conteúdo."""
+
 import os
 import stat
 import subprocess
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "run.sh"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "bm.sh"
 
 ENV_FILE = """\
 # credenciais do KyX
@@ -40,8 +42,8 @@ def run(tmp_path: Path, *args: str, env_file: Path | None = None, **extra: str):
     environment = {
         key: value
         for key, value in os.environ.items()
-        if key not in {"OPENROUTER_API_KEY", "APP_KEY", "BRIGHTDATA_API_KEY"}
-        and not key.startswith("DB_MIDIAS_IA_")
+        if key not in {"APP_KEY"}
+        and not key.startswith(("DB_MIDIAS_IA_", "BRIGHTDATA_", "OPENROUTER_"))
     }
     environment.update(PY=str(make_python(tmp_path)), KYX_ENV=str(env_path), **extra)
     return subprocess.run(
@@ -54,11 +56,11 @@ def run(tmp_path: Path, *args: str, env_file: Path | None = None, **extra: str):
     )
 
 
-def test_repassa_os_argumentos_ao_comando_run(tmp_path: Path):
-    result = run(tmp_path, "--only-file", "data/poc_sample.txt")
+def test_repassa_o_subcomando_e_os_argumentos(tmp_path: Path):
+    result = run(tmp_path, "dashboard", "--port", "8765")
 
     assert result.returncode == 0
-    assert "ARGS:-m buscador_midias run --only-file data/poc_sample.txt" in result.stdout
+    assert "ARGS:-m buscador_midias dashboard --port 8765" in result.stdout
 
 
 def test_carrega_so_as_credenciais_necessarias_e_tira_as_aspas(tmp_path: Path):
@@ -102,22 +104,3 @@ def test_sem_arquivo_de_credenciais_falha_com_mensagem_e_sem_rodar_nada(tmp_path
     assert result.returncode == 2
     assert "nao-existe.env" in result.stderr
     assert "ARGS" not in result.stdout
-
-
-def test_bm_sh_repassa_qualquer_subcomando(tmp_path: Path):
-    bm = SCRIPT.with_name("bm.sh")
-    env_path = tmp_path / "kyx.env"
-    env_path.write_text(ENV_FILE, encoding="utf-8")
-    environment = {k: v for k, v in os.environ.items() if not k.startswith("DB_MIDIAS_IA_")}
-    environment.update(PY=str(make_python(tmp_path)), KYX_ENV=str(env_path))
-
-    result = subprocess.run(
-        ["bash", str(bm), "dashboard", "--port", "8765"],
-        capture_output=True,
-        text=True,
-        env=environment,
-        timeout=30,
-        check=False,
-    )
-
-    assert "ARGS:-m buscador_midias dashboard --port 8765" in result.stdout

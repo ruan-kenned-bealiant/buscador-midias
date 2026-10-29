@@ -56,10 +56,8 @@ def client(schema_name: str) -> Iterator[Client]:
             "origin TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())"
         )
     server = server_module.make_server(
-        lambda: None, "127.0.0.1", 0, backend="bm", bm_schema=schema_name, broker=lambda: QUEUES
+        "127.0.0.1", 0, schema=schema_name, corpus_schema=schema_name, broker=lambda: QUEUES
     )
-    # O corpus de teste vive no próprio schema.
-    server.RequestHandlerClass  # noqa: B018 - garante que o servidor foi montado
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     found = Client(f"http://127.0.0.1:{server.server_address[1]}")
