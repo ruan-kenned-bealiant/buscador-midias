@@ -87,7 +87,7 @@ def world(schema_name: str):
     store.install()
     with store.connection() as db:
         db.execute(
-            "INSERT INTO bm_sites(identity,name,url) VALUES('a.example','A','https://a.example')"
+            "INSERT INTO midias_ia_trusted_sources(identity,name,url) VALUES('a.example','A','https://a.example')"
         )
         db.execute(
             "INSERT INTO bm_links(site_id,url,kind,mechanism) "

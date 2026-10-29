@@ -76,8 +76,8 @@ def search_window(
 _SELECT_LINKS = """
 SELECT l.id, l.url, l.site_id, l.version, l.mechanism, s.version AS site_version,
  m.version AS mechanism_version, m.parameters
-FROM bm_links l JOIN bm_sites s ON s.id=l.site_id JOIN bm_mechanisms m ON m.model=l.mechanism
-WHERE l.active=1 AND s.active=1 AND l.deleted_at IS NULL AND s.deleted_at IS NULL
+FROM bm_links l JOIN midias_ia_trusted_sources s ON s.id=l.site_id JOIN bm_mechanisms m ON m.model=l.mechanism
+WHERE l.active=1 AND s.active AND l.deleted_at IS NULL AND s.deleted_at IS NULL
  AND NOT EXISTS (SELECT 1 FROM bm_run_links rl WHERE rl.link_id=l.id AND rl.discovery_done=false)
  AND (%(everything)s OR l.id=ANY(%(ids)s))
  AND (NOT %(daily_only)s OR l.mechanism IN ('rss','news_sitemap','g1_daily')

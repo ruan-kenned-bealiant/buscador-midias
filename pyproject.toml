@@ -41,6 +41,9 @@ select = ["E", "F", "I", "B", "UP", "N", "SIM", "D"]
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
+# O nome da tabela de sites (midias_ia_trusted_sources) alonga as linhas de SQL.
+"src/buscador_midias/db/*" = ["E501"]
+"tests/db/*" = ["E501"]
 "tests/**" = ["D"]
 "tests/sites/test_seed_import.py" = ["D", "E501"]  # fixture espelha o formato real do seed
 "tests/extraction/**" = ["D", "E501"]  # fixtures de HTML em linha única

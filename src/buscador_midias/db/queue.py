@@ -226,12 +226,23 @@ _GUARDED = (
     "WHERE a.state='running' ORDER BY a.hash FOR UPDATE OF a"
 )
 
+# Conteúdo que, concluída a notícia, já está no corpus e não se guarda duas vezes.
+PURGED_ON_DONE = [
+    "body",
+    "analysis",
+    "description",
+    "evidence",
+    "persistence",
+    "entity_context_progress",
+]
+
 _APPLY = (
     "UPDATE bm_articles a SET stage=COALESCE(x.nxt,a.stage),"
     "state=CASE WHEN x.nxt IS NULL THEN 'done' ELSE 'pending' END,outcome=x.status,"
     "attempts=x.attempts,lane='primary',owner=NULL,locked_until=NULL,queued_at=NULL,"
     "next_attempt_at=CASE WHEN x.nxt IS NULL THEN a.next_attempt_at ELSE now() END,"
-    "payload=a.payload||x.patch,cost=x.cost,history=x.history,"
+    "payload=CASE WHEN x.status IN ('persisted','known') THEN (a.payload||x.patch)-%(purged)s::text[] "
+    "ELSE a.payload||x.patch END,cost=x.cost,history=x.history,"
     "corpus_article_id=COALESCE(x.article_id,a.corpus_article_id),"
     "failed_stage=NULL,reason=NULL,reason_class=NULL,retryable=NULL,failed_at=NULL,"
     "detail=NULL,updated_at=now() FROM jsonb_to_recordset(%(batch)s) AS x(hash text,nxt text,"
@@ -291,7 +302,7 @@ def complete_many(
             )
         )
     if batch:
-        db.execute(_APPLY, dict(batch=Jsonb(batch)))
+        db.execute(_APPLY, dict(batch=Jsonb(batch), purged=PURGED_ON_DONE))
     return len(batch)
 
 

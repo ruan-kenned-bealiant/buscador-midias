@@ -134,23 +134,25 @@ class CatalogRepository(Repository):
         """Conta cadastros visíveis e links efetivamente ativos."""
         with self.connection() as db:
             sources = db.execute(
-                "SELECT COUNT(*) AS total,COALESCE(SUM(active),0)::int AS active "
-                "FROM bm_sites WHERE deleted_at IS NULL"
+                "SELECT COUNT(*) AS total,COALESCE(SUM(active::int),0)::int AS active "
+                "FROM midias_ia_trusted_sources WHERE deleted_at IS NULL AND identity IS NOT NULL"
             ).fetchone()
             links = db.execute(
                 "SELECT COUNT(*) AS total,"
-                "COALESCE(SUM(CASE WHEN l.active=1 AND s.active=1 THEN 1 ELSE 0 END),0)::int "
-                "AS active FROM bm_links l JOIN bm_sites s ON s.id=l.site_id "
+                "COALESCE(SUM(CASE WHEN l.active=1 AND s.active THEN 1 ELSE 0 END),0)::int "
+                "AS active FROM bm_links l JOIN midias_ia_trusted_sources s ON s.id=l.site_id "
                 "WHERE l.deleted_at IS NULL AND s.deleted_at IS NULL"
             ).fetchone()
             countries = [
                 row["country"]
                 for row in db.execute(
-                    "SELECT DISTINCT country FROM bm_sites "
-                    "WHERE deleted_at IS NULL AND country<>'' ORDER BY country"
+                    "SELECT DISTINCT country FROM midias_ia_trusted_sources "
+                    "WHERE deleted_at IS NULL AND identity IS NOT NULL AND country<>'' ORDER BY country"
                 )
             ]
-            total = db.execute("SELECT COUNT(*) AS n FROM bm_sites").fetchone()
+            total = db.execute(
+                "SELECT COUNT(*) AS n FROM midias_ia_trusted_sources WHERE identity IS NOT NULL"
+            ).fetchone()
             assert sources and links and total
             return dict(
                 sources=dict(sources),
@@ -163,7 +165,7 @@ class CatalogRepository(Repository):
         self, q: str = "", status: str = "all", country: str = "", offset: int = 0, limit: int = 25
     ) -> dict[str, Any]:
         """Busca fontes com paginação, filtros e contagens por fonte."""
-        where = ["s.deleted_at IS NULL"]
+        where = ["s.deleted_at IS NULL", "s.identity IS NOT NULL"]
         args: list[Any] = []
         if q:
             where.append(
@@ -172,21 +174,23 @@ class CatalogRepository(Repository):
             args += [q, q]
         if status in ("active", "inactive"):
             where.append("s.active=%s")
-            args.append(int(status == "active"))
+            args.append(status == "active")
         if country:
             where.append("s.country=%s")
             args.append(country)
         predicate = " AND ".join(where)
         with self.connection() as db:
-            count = db.execute(f"SELECT COUNT(*) AS n FROM bm_sites s WHERE {predicate}", args)
+            count = db.execute(
+                f"SELECT COUNT(*) AS n FROM midias_ia_trusted_sources s WHERE {predicate}", args
+            )
             total = count.fetchone()
             assert total
             rows = db.execute(
                 "SELECT s.id,s.identity,s.name,s.url,s.country,s.language,s.notes,s.active,"
                 "s.deleted_at,s.version,s.origin,s.created_at,s.updated_at,"
                 "COALESCE(e.total,0) AS endpoints,COALESCE(e.rss,0) AS rss,"
-                "COALESCE(e.sitemaps,0) AS sitemaps,COALESCE(e.enabled,0)*s.active AS enabled "
-                "FROM bm_sites s LEFT JOIN (SELECT site_id,COUNT(*)::int AS total,"
+                "COALESCE(e.sitemaps,0) AS sitemaps,CASE WHEN s.active THEN COALESCE(e.enabled,0) ELSE 0 END AS enabled "
+                "FROM midias_ia_trusted_sources s LEFT JOIN (SELECT site_id,COUNT(*)::int AS total,"
                 "SUM((kind='feed')::int)::int AS rss,SUM((kind='sitemap')::int)::int AS sitemaps,"
                 "SUM(active)::int AS enabled FROM bm_links WHERE deleted_at IS NULL "
                 f"GROUP BY site_id) e ON e.site_id=s.id WHERE {predicate} "
@@ -306,7 +310,7 @@ class CatalogRepository(Repository):
                 raise CatalogError("Este registro mudou. Atualize a tela antes de excluir.", 409)
             if is_site:
                 db.execute(
-                    "UPDATE bm_sites SET deleted_at=now(),active=0,updated_at=now(),"
+                    "UPDATE midias_ia_trusted_sources SET deleted_at=now(),active=false,updated_at=now(),"
                     "version=version+1 WHERE id=%s",
                     (ident,),
                 )
@@ -341,7 +345,7 @@ class CatalogRepository(Repository):
             counts = {
                 r["mechanism"]: r["n"]
                 for r in db.execute(
-                    "SELECT l.mechanism,COUNT(*) AS n FROM bm_links l JOIN bm_sites s "
+                    "SELECT l.mechanism,COUNT(*) AS n FROM bm_links l JOIN midias_ia_trusted_sources s "
                     "ON s.id=l.site_id WHERE l.deleted_at IS NULL AND s.deleted_at IS NULL "
                     "GROUP BY l.mechanism"
                 )
@@ -409,7 +413,9 @@ class CatalogRepository(Repository):
     ) -> dict[str, Any]:
         suffix = " AND deleted_at IS NULL" if visible else ""
         row = db.execute(
-            f"SELECT {_SITE_COLUMNS} FROM bm_sites WHERE id=%s{suffix}", (ident,)
+            f"SELECT {_SITE_COLUMNS} FROM midias_ia_trusted_sources "  # noqa: S608
+            f"WHERE id=%s AND identity IS NOT NULL{suffix}",
+            (ident,),
         ).fetchone()
         if row is None:
             raise CatalogError("Registro não encontrado ou excluído.", 404)
@@ -485,30 +491,35 @@ class CatalogRepository(Repository):
         merged = {**self._stored(before), **data}
         url = clean_url(merged.get("url"), source=True)
         parts = urlsplit(url)
+        identity = (parts.hostname or "").removeprefix("www.") + parts.path
         values: dict[str, Any] = dict(
             url=url,
             notes=_text(merged, "notes", 4000),
-            active=_active(merged),
+            active=bool(_active(merged)),
             name=_text(merged, "name", 200, True),
             country=_text(merged, "country", 100),
             language=_text(merged, "language", 60),
-            identity=(parts.hostname or "").removeprefix("www.") + parts.path,
+            identity=identity,
+            url_without_https_www=identity,
         )
         if before:
             assignments = ",".join(f"{key}=%s" for key in values)
             db.execute(
-                f"UPDATE bm_sites SET {assignments},version=version+1,updated_at=now() WHERE id=%s",
+                f"UPDATE midias_ia_trusted_sources SET {assignments},version=version+1,updated_at=now() WHERE id=%s",
                 [*values.values(), ident],
             )
         else:
             names = ",".join(values)
             marks = ",".join(["%s"] * len(values))
             row = db.execute(
-                f"INSERT INTO bm_sites({names}) VALUES({marks}) RETURNING id", list(values.values())
+                f"INSERT INTO midias_ia_trusted_sources({names}) VALUES({marks}) RETURNING id",
+                list(values.values()),
             ).fetchone()
             assert row
             ident = row["id"]
-        self._provenance(db, "bm_sites", int(ident or 0), values["active"], before)
+        self._provenance(
+            db, "midias_ia_trusted_sources", int(ident or 0), int(values["active"]), before
+        )
         return self._site(db, int(ident or 0))
 
     def _write_link(

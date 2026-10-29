@@ -30,7 +30,7 @@ def q(db: psycopg.Connection[Any]) -> psycopg.Connection[Any]:
     install(db)
     db.execute("INSERT INTO bm_mechanisms(model,parameters) VALUES('rss','{}')")
     db.execute(
-        "INSERT INTO bm_sites(identity,name,url) VALUES('a.example','A','https://a.example')"
+        "INSERT INTO midias_ia_trusted_sources(identity,name,url) VALUES('a.example','A','https://a.example')"
     )
     db.execute(
         "INSERT INTO bm_runs(id,type,trigger,status,config,since,until) "
@@ -50,7 +50,7 @@ def article(db: psycopg.Connection[Any], name: str = "n1", **columns: Any) -> st
         run_id="r1",
     )
     values.update(columns)
-    site = db.execute("SELECT id FROM bm_sites").fetchone()
+    site = db.execute("SELECT id FROM midias_ia_trusted_sources").fetchone()
     assert site
     values["site_id"] = site["id"]
     names = ",".join(values)
@@ -187,6 +187,25 @@ def test_complete_merges_the_patch_without_losing_other_keys(q):
     complete(q, job, dict(next="fetch", article=dict(body=None, language="pt")))
     payload = current(q, job["hash"])["payload"]
     assert payload == dict(title="T", body=None, language="pt")
+
+
+@pytest.mark.parametrize("status", ["persisted", "known"])
+def test_what_the_corpus_already_holds_leaves_the_article_when_it_is_done(q, status):
+    """Corpo, análise e evidência de uma notícia concluída vivem no corpus: não se duplicam."""
+    heavy = dict(body="B" * 500, analysis=dict(finding=False), evidence=dict(status="captured"))
+    job = taken(
+        q, payload=psycopg.types.json.Jsonb(dict(title="T", published_at="2026-10-29", **heavy))
+    )
+    assert complete(q, job, dict(status=status, article_id=9, article=dict(description="D")))
+    payload = current(q, job["hash"])["payload"]
+    assert payload == dict(title="T", published_at="2026-10-29")
+
+
+def test_a_discarded_article_keeps_its_payload_for_the_investigation(q):
+    job = taken(q, payload=psycopg.types.json.Jsonb(dict(title="T", body="B")))
+    assert complete(q, job, dict(status="no_entities", article=dict(analysis=dict(finding=False))))
+    payload = current(q, job["hash"])["payload"]
+    assert payload["body"] == "B" and payload["analysis"] == dict(finding=False)
 
 
 def test_a_text_with_a_nul_character_is_stored_without_it(q):

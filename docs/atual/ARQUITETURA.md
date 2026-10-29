@@ -3,7 +3,8 @@
 O buscador lê feeds e sitemaps de fontes confiáveis, acha as notícias do dia, analisa o que
 interessa e grava no corpus de Mídias IA. Ele é **independente do KyX e do PowerDD**: usa o
 mesmo banco (`power_dd_midias`, schema `public`), mas só se encontra com eles no corpus
-(`midias_ia_articles` e tabelas `midias_ia_*`), que ele alimenta.
+(`midias_ia_articles` e tabelas `midias_ia_*`), que ele alimenta, e na lista de fontes
+(`midias_ia_trusted_sources`), da qual é o dono.
 
 ## Ideia central
 

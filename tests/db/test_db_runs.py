@@ -35,10 +35,10 @@ def q(db: psycopg.Connection[Any]) -> psycopg.Connection[Any]:
             (model, Jsonb(dict(max_requests=48))),
         )
     db.execute(
-        "INSERT INTO bm_sites(identity,name,url) VALUES('a.example','A','https://a.example')"
+        "INSERT INTO midias_ia_trusted_sources(identity,name,url) VALUES('a.example','A','https://a.example')"
     )
     db.execute(
-        "INSERT INTO bm_sites(identity,name,url) VALUES('b.example','B','https://b.example')"
+        "INSERT INTO midias_ia_trusted_sources(identity,name,url) VALUES('b.example','B','https://b.example')"
     )
     db.row_factory = dict_row  # type: ignore[assignment]
     return db
@@ -108,7 +108,7 @@ def test_only_active_links_of_active_sites_are_read(q):
     link(q, "off", active=0)
     link(q, "deleted", deleted_at="2026-10-01Z", active=0)
     link(q, "other", site=2, url="https://b.example/x")
-    q.execute("UPDATE bm_sites SET active=0 WHERE id=2")
+    q.execute("UPDATE midias_ia_trusted_sources SET active=false WHERE id=2")
     assert ids(q, scheduled(q)["id"]) == {ok}
 
 

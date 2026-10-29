@@ -1,4 +1,4 @@
-"""Comando ``python -m buscador_midias db``: instalar, importar e conferir o cadastro."""
+"""Comando ``python -m buscador_midias db``: instalar, migrar e conferir o cadastro."""
 
 from __future__ import annotations
 
@@ -41,33 +41,8 @@ def test_status_reports_counts_of_the_target(target, capsys):
     assert out["sites"] == 0 and out["links"] == 0 and out["mechanisms"] == 6
 
 
-def test_import_refuses_a_missing_source_schema(target, capsys):
+def test_unify_sites_reports_nothing_to_do_on_a_fresh_install(target, capsys):
     main(["install", "--schema", target])
     capsys.readouterr()
-    assert main(["import", "--schema", target, "--from", "nao_existe_" + target]) == 2
-    assert "não encontrado" in capsys.readouterr().err
-
-
-def test_import_refuses_to_read_from_the_destination_itself(target, capsys):
-    main(["install", "--schema", target])
-    capsys.readouterr()
-    assert main(["import", "--schema", target, "--from", target]) == 2
-    assert "iguais" in capsys.readouterr().err
-
-
-def test_import_requires_confirmation_to_replace_existing_data(target, capsys):
-    main(["install", "--schema", target])
-    source = target + "_src"
-    with connect(source, create=True) as db:
-        db.execute("SELECT 1")
-    with connect(target) as db:
-        db.execute(
-            "INSERT INTO bm_sites(identity,name,url) VALUES('x.example','X','https://x.example')"
-        )
-    capsys.readouterr()
-    try:
-        assert main(["import", "--schema", target, "--from", source]) == 2
-        assert "--replace" in capsys.readouterr().err
-    finally:
-        with connect() as db:
-            db.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(source)))
+    assert main(["unify-sites", "--schema", target]) == 0
+    assert json.loads(capsys.readouterr().out)["migrated"] is False

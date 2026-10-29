@@ -12,6 +12,7 @@ prefixo de filas do serviço antigo: as filas são `bm.<etapa>[.recovery]`.
 python3.12 -m venv .venv && .venv/bin/python -m pip install -e '.[dev]'
 scripts/bm.sh db install          # cria o que falta (repetir é seguro)
 scripts/bm.sh db status           # contagens do cadastro
+scripts/bm.sh db unify-sites      # migração única dos sites (já aplicada em produção)
 ```
 
 ## Serviços
@@ -48,8 +49,10 @@ de uma etapa exige reiniciar o `worker@<etapa>`.
   `too many clients`, reduza workers ou `BM_POOL_MAX`.
 - Evidência vai para o S3 em produção (`MIDIAS_IA_STORAGE_DISK=s3`); em desenvolvimento, para
   `var/ingestion/`. O disco tem reserva: abaixo dela a descoberta e a extração pausam.
-- Backups feitos no corte estão em `var/backups/` (cadastro anterior, arquivo de rodadas de 24/10 e
-  as tabelas do crawler legado).
+- Backups feitos no corte estão em `var/backups/`: cadastro anterior, arquivo de rodadas de 24/10,
+  tabelas do crawler legado e `bm_*` + fontes confiáveis antes da unificação dos sites.
+- O schema `midias_manager` (banco do serviço antigo) ainda existe só como rede de segurança e será
+  apagado depois de um dia de operação estável.
 
 ## Testes
 

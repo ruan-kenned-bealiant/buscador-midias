@@ -28,11 +28,11 @@ def ready(db: psycopg.Connection[Any]) -> psycopg.Connection[Any]:
     install(db)
     db.execute("INSERT INTO bm_mechanisms(model,parameters) VALUES('rss','{}')")
     db.execute(
-        "INSERT INTO bm_sites(identity,name,url) VALUES('a.example','A','https://a.example')"
+        "INSERT INTO midias_ia_trusted_sources(identity,name,url) VALUES('a.example','A','https://a.example')"
     )
     db.execute(
         "INSERT INTO bm_links(site_id,url,kind,mechanism) "
-        "SELECT id,'https://a.example/feed','feed','rss' FROM bm_sites"
+        "SELECT id,'https://a.example/feed','feed','rss' FROM midias_ia_trusted_sources"
     )
     return db
 
@@ -197,7 +197,7 @@ def article(db: psycopg.Connection[Any], hash_: str = "h" * 64, **extra: Any) ->
         hash=hash_,
         url="https://a.example/n/1",
         host="a.example",
-        site_id=int(one(db, "SELECT id FROM bm_sites LIMIT 1")),
+        site_id=int(one(db, "SELECT id FROM midias_ia_trusted_sources LIMIT 1")),
         first_run_id="s1",
         run_id="s1",
         **extra,
@@ -279,7 +279,7 @@ def test_host_state_and_document_cache_keys(ready):
     ready.execute("INSERT INTO bm_host_state(host) VALUES('a.example')")
     with pytest.raises(psycopg.errors.UniqueViolation), ready.transaction():
         ready.execute("INSERT INTO bm_host_state(host) VALUES('a.example')")
-    site = int(one(ready, "SELECT id FROM bm_sites LIMIT 1"))
+    site = int(one(ready, "SELECT id FROM midias_ia_trusted_sources LIMIT 1"))
     cache = (
         "INSERT INTO bm_document_cache(site_id,url_hash,revision,url,content_hash,document) "
         "VALUES(%s,'u1',%s,'https://a.example/feed','c1','\\x00')"

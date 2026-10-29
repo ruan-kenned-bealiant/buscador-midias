@@ -174,7 +174,7 @@ class ReportRepository(Repository):
         with self.connection() as db:
             article = db.execute(
                 "SELECT a.*,s.name source_name,l.url link_url FROM bm_articles a "
-                "JOIN bm_sites s ON s.id=a.site_id LEFT JOIN bm_links l ON l.id=a.link_id "
+                "JOIN midias_ia_trusted_sources s ON s.id=a.site_id LEFT JOIN bm_links l ON l.id=a.link_id "
                 "WHERE a.hash=%s",
                 (ident,),
             ).fetchone()
@@ -232,7 +232,7 @@ class ReportRepository(Repository):
                 return dict(run=None, sources=[], total=0, offset=offset, summary={})
             sites = db.execute(
                 "SELECT s.id,s.name,s.url,count(*) links,count(*) FILTER (WHERE rl.discovery_done) "
-                "links_done FROM bm_run_links rl JOIN bm_sites s ON s.id=rl.site_id "
+                "links_done FROM bm_run_links rl JOIN midias_ia_trusted_sources s ON s.id=rl.site_id "
                 "WHERE rl.run_id=%s GROUP BY s.id,s.name,s.url",
                 (resolved,),
             ).fetchall()
@@ -278,7 +278,7 @@ class ReportRepository(Repository):
             raise CatalogError("Fonte, rodada ou paginação inválida.")
         with self.connection() as db:
             site = db.execute(
-                "SELECT s.name FROM bm_run_links rl JOIN bm_sites s ON s.id=rl.site_id "
+                "SELECT s.name FROM bm_run_links rl JOIN midias_ia_trusted_sources s ON s.id=rl.site_id "
                 "WHERE rl.run_id=%s AND rl.site_id=%s LIMIT 1",
                 (run_id, source_id),
             ).fetchone()
@@ -456,7 +456,7 @@ class ReportRepository(Repository):
             f"{_STATE} state,a.outcome,a.attempts,a.passes,a.failed_stage,a.reason,"
             "a.reason_class,a.retryable,a.failed_at,a.detail,a.lane,a.history,"
             "a.payload->>'title' title,a.run_id,a.created_at,a.updated_at FROM bm_articles a "
-            "JOIN bm_sites s ON s.id=a.site_id"
+            "JOIN midias_ia_trusted_sources s ON s.id=a.site_id"
         )
 
     def _articles(
@@ -496,7 +496,7 @@ class ReportRepository(Repository):
             args = [*args, "done" if state == "succeeded" else state]
         base = (
             "FROM bm_discovery_tasks t JOIN bm_run_links rl ON rl.run_id=t.run_id "
-            "AND rl.link_id=t.link_id JOIN bm_sites s ON s.id=rl.site_id "
+            "AND rl.link_id=t.link_id JOIN midias_ia_trusted_sources s ON s.id=rl.site_id "
             f"WHERE {where}"  # noqa: S608
         )
         total = db.execute(f"SELECT count(*) n {base}", args).fetchone()  # noqa: S608

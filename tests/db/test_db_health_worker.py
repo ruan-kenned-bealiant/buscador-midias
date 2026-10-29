@@ -311,7 +311,7 @@ def test_automatic_exclusions_are_restored_with_their_automatic_parent(world):
     validation_exclude(world, other["id"])
     sql(
         health,
-        "UPDATE bm_sites SET active=0,deactivated_by='validation',version=version+1 WHERE id=1",
+        "UPDATE midias_ia_trusted_sources SET active=false,deactivated_by='validation',version=version+1 WHERE id=1",
     )
     run = health.create("recovery", options=RESTORE)
     assert run["total"] == 2
@@ -322,9 +322,9 @@ def test_automatic_exclusions_are_restored_with_their_automatic_parent(world):
     actions = [r["action"] for r in sql(health, "SELECT action FROM bm_events")]
     assert actions.count("health_restore_site") == 1
     assert actions.count("health_reactivate") == 2
-    assert sql(health, "SELECT count(*) n FROM bm_sites WHERE deactivated_by IS NOT NULL")[0] == {
-        "n": 0
-    }
+    assert sql(
+        health, "SELECT count(*) n FROM midias_ia_trusted_sources WHERE deactivated_by IS NOT NULL"
+    )[0] == {"n": 0}
 
 
 def test_a_restoration_that_fails_keeps_the_link_deleted(world):
@@ -358,12 +358,12 @@ def test_a_restored_site_by_another_run_is_not_accepted(world):
     validation_exclude(world)
     sql(
         health,
-        "UPDATE bm_sites SET active=0,deactivated_by='validation',version=version+1 WHERE id=1",
+        "UPDATE midias_ia_trusted_sources SET active=false,deactivated_by='validation',version=version+1 WHERE id=1",
     )
     run = health.create("recovery", options=RESTORE)
     sql(
         health,
-        "UPDATE bm_sites SET active=1,deactivated_by=NULL,version=version+1 WHERE id=1",
+        "UPDATE midias_ia_trusted_sources SET active=true,deactivated_by=NULL,version=version+1 WHERE id=1",
     )
     sql(
         health,

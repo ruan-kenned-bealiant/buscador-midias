@@ -54,7 +54,7 @@ _SNAPSHOT = (
     "SELECT l.id AS link_id,l.version AS link_version,l.url,l.kind,l.mechanism,"
     "l.access_transport,l.read_order,s.id AS site_id,s.name,s.url AS site_url,"
     "s.version AS site_version,s.country,s.language,m.version AS mechanism_version,"
-    "m.parameters FROM bm_links l JOIN bm_sites s ON s.id=l.site_id "
+    "m.parameters FROM bm_links l JOIN midias_ia_trusted_sources s ON s.id=l.site_id "
     "JOIN bm_mechanisms m ON m.model=l.mechanism WHERE l.id=ANY(%s)"
 )
 
@@ -283,7 +283,7 @@ class WorkStore(Repository):
         with self.connection() as db:
             row = db.execute(
                 "SELECT l.active,l.deleted_at,l.version,s.active AS sa,s.deleted_at AS sd,"
-                "s.version AS sv,m.version AS mv FROM bm_links l JOIN bm_sites s ON s.id=l.site_id "
+                "s.version AS sv,m.version AS mv FROM bm_links l JOIN midias_ia_trusted_sources s ON s.id=l.site_id "
                 "JOIN bm_mechanisms m ON m.model=l.mechanism WHERE l.id=%s",
                 (link_id,),
             ).fetchone()

@@ -243,10 +243,10 @@ def _now(
         else []
     )
     catalog = db.execute(
-        "SELECT count(*) FILTER (WHERE l.active=1 AND s.active=1) active_links,"
-        "count(*) FILTER (WHERE l.active=0 OR s.active=0) inactive_links,"
-        "count(DISTINCT l.site_id) FILTER (WHERE l.active=1 AND s.active=1) active_sites "
-        "FROM bm_links l JOIN bm_sites s ON s.id=l.site_id "
+        "SELECT count(*) FILTER (WHERE l.active=1 AND s.active) active_links,"
+        "count(*) FILTER (WHERE l.active=0 OR NOT s.active) inactive_links,"
+        "count(DISTINCT l.site_id) FILTER (WHERE l.active=1 AND s.active) active_sites "
+        "FROM bm_links l JOIN midias_ia_trusted_sources s ON s.id=l.site_id "
         "WHERE l.deleted_at IS NULL AND s.deleted_at IS NULL"
     ).fetchone()
     zone = config.get("timezone", "America/Sao_Paulo")

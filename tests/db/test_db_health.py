@@ -324,7 +324,9 @@ def test_only_automatic_access_exclusions_enter_the_restoration(world):
     validation_excluded(world)
     validation_excluded(world, other["id"])
     with world["health"].connection() as db:  # o site também foi inativado pela validação
-        db.execute("UPDATE bm_sites SET active=0,deactivated_by='validation',version=version+1")
+        db.execute(
+            "UPDATE midias_ia_trusted_sources SET active=false,deactivated_by='validation',version=version+1"
+        )
     run = world["health"].create("recovery", options=RESTORE)
     assert run["total"] == 2 and run["config"]["scope"] == "auto_excluded_access"
 
@@ -336,7 +338,7 @@ def test_manual_decisions_and_non_access_failures_stay_out_of_the_restoration(wo
         if manual == "link":
             db.execute("UPDATE bm_links SET deactivated_by='user' WHERE id=1")
         elif manual == "source":
-            db.execute("UPDATE bm_sites SET active=0,deactivated_by='user'")
+            db.execute("UPDATE midias_ia_trusted_sources SET active=false,deactivated_by='user'")
         else:
             set_state(world["health"], 1, last_test=dict(samples=[dict(accessed=True)]))
     assert world["health"].create("recovery", options=RESTORE)["total"] == 0

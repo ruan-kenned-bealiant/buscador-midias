@@ -110,7 +110,7 @@ def restoration_current(db: Any, snapshot: dict[str, Any]) -> bool:
     row = db.execute(
         "SELECT l.version,l.deleted_at,l.active,l.deactivated_by,s.version sv,s.active sa,"
         "s.deleted_at sd,s.deactivated_by sby,m.version mv FROM bm_links l "
-        "JOIN bm_sites s ON s.id=l.site_id JOIN bm_mechanisms m ON m.model=l.mechanism "
+        "JOIN midias_ia_trusted_sources s ON s.id=l.site_id JOIN bm_mechanisms m ON m.model=l.mechanism "
         "WHERE l.id=%s",
         (snapshot["link_id"],),
     ).fetchone()
@@ -147,11 +147,12 @@ def activate_recovered(db: Any, snapshot: dict[str, Any], result: dict[str, Any]
         if not restoration_current(db, snapshot):
             return False
         source = db.execute(
-            "SELECT * FROM bm_sites WHERE id=%s FOR UPDATE", (snapshot["source"]["id"],)
+            "SELECT * FROM midias_ia_trusted_sources WHERE id=%s FOR UPDATE",
+            (snapshot["source"]["id"],),
         ).fetchone()
         if not source["active"]:
             updated = db.execute(
-                "UPDATE bm_sites SET active=1,deactivated_by=NULL,deactivated_reason=NULL,"
+                "UPDATE midias_ia_trusted_sources SET active=true,deactivated_by=NULL,deactivated_reason=NULL,"
                 "deactivated_at=NULL,version=version+1,updated_at=now() WHERE id=%s RETURNING *",
                 (source["id"],),
             ).fetchone()
@@ -167,9 +168,9 @@ def activate_recovered(db: Any, snapshot: dict[str, Any], result: dict[str, Any]
             source = updated
         snapshot["source_version"] = source["version"]
     before = db.execute(
-        "SELECT l.* FROM bm_links l JOIN bm_sites s ON s.id=l.site_id "
+        "SELECT l.* FROM bm_links l JOIN midias_ia_trusted_sources s ON s.id=l.site_id "
         "WHERE l.id=%s AND l.active=0 AND (l.deleted_at IS NULL OR %s) AND s.deleted_at IS NULL "
-        "AND s.active=1 FOR UPDATE OF l",
+        "AND s.active FOR UPDATE OF l",
         (snapshot["link_id"], restore),
     ).fetchone()
     if not before:

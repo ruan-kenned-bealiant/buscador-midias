@@ -25,6 +25,7 @@ def test_defaults_are_complete_and_valid():
         {"desconhecida": 1},
         {"enabled": "sim"},
         {"schedule_mode": "aleatorio"},
+        {"schedule_mode": "link_interval"},  # a rodada é sempre por relógio
         {"schedule_hours": [1, 1]},
         {"schedule_hours": [24]},
         {"schedule_hours": []},

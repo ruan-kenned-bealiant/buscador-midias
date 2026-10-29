@@ -29,7 +29,7 @@ UNTIL = datetime(2026, 10, 29, 15, 0, tzinfo=UTC)
 def q(db: psycopg.Connection[Any]) -> psycopg.Connection[Any]:
     install(db)
     db.execute(
-        "INSERT INTO bm_sites(identity,name,url) VALUES('a.example','A','https://a.example')"
+        "INSERT INTO midias_ia_trusted_sources(identity,name,url) VALUES('a.example','A','https://a.example')"
     )
     db.execute(
         "INSERT INTO bm_runs(id,type,trigger,status,config,since,until) "
@@ -53,7 +53,7 @@ def article(db: psycopg.Connection[Any], name: str, host: str = "a.example", **c
         run_id="r1",
     )
     values.update(columns)
-    site = db.execute("SELECT id FROM bm_sites").fetchone()
+    site = db.execute("SELECT id FROM midias_ia_trusted_sources").fetchone()
     assert site
     values["site_id"] = site["id"]
     names = ",".join(values)

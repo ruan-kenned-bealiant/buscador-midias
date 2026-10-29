@@ -18,6 +18,7 @@ from buscador_midias.catalog.testing import ReaderFactory
 from buscador_midias.dashboard.catalog_api import CatalogAPI
 from buscador_midias.dashboard.guide import render_guide
 from buscador_midias.db.catalog import CatalogRepository
+from buscador_midias.db.serialize import jsonable
 from buscador_midias.ingestion.evidence_view import read_captured
 
 _CSP = (
@@ -131,7 +132,7 @@ def make_server(
 
         def _json(self, status: int, payload: dict[str, object]) -> None:
             """Responde com JSON."""
-            body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            body = json.dumps(jsonable(payload), ensure_ascii=False).encode("utf-8")
             self._send(status, "application/json; charset=utf-8", body)
 
         def _send(

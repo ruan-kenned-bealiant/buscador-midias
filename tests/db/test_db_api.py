@@ -193,3 +193,18 @@ def test_a_manual_round_is_created_for_the_chosen_links(client):
     status, run = client.call(BASE + "/busca/rodadas", "POST", dict(link_ids=[1]))
     assert status == 202 and run["links"] == 1 and run["status"] == "running"
     assert client.call(BASE + "/busca/rodadas", "POST", dict(link_ids=[1]), False)[0] == 403
+
+
+def test_the_links_of_a_site_list_even_when_one_was_deactivated(client):
+    """A data da inativação (``deactivated_at``) precisa virar texto na resposta."""
+    status, link = client.call(
+        BASE + "/fontes/1/mecanismos", "POST", dict(url="https://alfa.example/off", kind="feed")
+    )
+    assert status == 201
+    off = client.call(
+        f"{BASE}/mecanismos/{link['id']}", "PATCH", dict(version=link["version"], active=False)
+    )
+    assert off[0] == 200 and off[1]["deactivated_at"]
+    status, listing = client.call(BASE + "/fontes/1/mecanismos?status=inactive")
+    assert status == 200 and listing["items"][0]["deactivated_by"] == "user"
+    assert isinstance(listing["items"][0]["deactivated_at"], str)

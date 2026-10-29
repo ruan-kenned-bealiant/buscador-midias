@@ -1,4 +1,4 @@
-"""Comando ``python -m buscador_midias db``: instala, importa e confere o cadastro ``bm_*``."""
+"""Comando ``python -m buscador_midias db``: instala, migra e confere o cadastro."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ from typing import Any
 
 from buscador_midias.db.catalog import CatalogRepository
 from buscador_midias.db.connection import DatabaseConfigError, configured_schema, connect
-from buscador_midias.db.importer import LEGACY_SCHEMA, ImportMismatchError, import_legacy, verify
 from buscador_midias.db.schema import CATALOG_TABLES
 from buscador_midias.db.settings import SettingsRepository
+from buscador_midias.db.unify import unify_sites
 
 
 def _print(payload: dict[str, Any]) -> None:
@@ -33,7 +33,7 @@ def _status(schema: str) -> dict[str, Any]:
     with connect(schema) as db:
         return dict(
             schema=schema,
-            sites=_count(db, "bm_sites"),
+            sites=_count(db, "midias_ia_trusted_sources WHERE identity IS NOT NULL"),
             links=_count(db, "bm_links"),
             mechanisms=_count(db, "bm_mechanisms"),
             link_state=_count(db, "bm_link_state"),
@@ -55,31 +55,17 @@ def _install(schema: str) -> dict[str, Any]:
     return dict(schema=schema, tables=int(row[0]), settings=settings)
 
 
-def _import(schema: str, source: str, replace: bool) -> int:
-    if schema == source:
-        return _fail("Origem e destino são iguais.")
+def _unify(schema: str) -> int:
     with connect(schema) as db:
-        found = db.execute("SELECT 1 FROM pg_namespace WHERE nspname=%s", (source,)).fetchone()
-        if not found:
-            return _fail(f"Schema de origem não encontrado: {source}")
-        existing = _count(db, "bm_sites") + _count(db, "bm_links")
-        if existing and not replace:
-            return _fail("O destino já tem cadastro. Use --replace para recarregá-lo.")
-        import_legacy(db, source)
-        counts = verify(db, source)
-    _print(dict(schema=schema, source=source, imported={k: v[1] for k, v in counts.items()}))
+        _print(dict(schema=schema, **unify_sites(db)))
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Instala o DDL (idempotente), importa do legado (com conferência) e mostra contagens."""
+    """Instala o DDL (idempotente), migra os sites para a tabela do corpus e mostra contagens."""
     parser = argparse.ArgumentParser(prog="buscador_midias db", description=__doc__)
-    parser.add_argument("command", choices=("install", "import", "status"))
+    parser.add_argument("command", choices=("install", "unify-sites", "status"))
     parser.add_argument("--schema", help="Destino (padrão: BM_SCHEMA ou public)")
-    parser.add_argument("--from", dest="source", default=LEGACY_SCHEMA, help="Schema de origem")
-    parser.add_argument(
-        "--replace", action="store_true", help="Recarrega o cadastro mesmo se o destino tiver dados"
-    )
     args = parser.parse_args(argv)
     try:
         schema = args.schema or configured_schema()
@@ -89,6 +75,6 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "status":
             _print(_status(schema))
             return 0
-        return _import(schema, args.source, args.replace)
-    except (DatabaseConfigError, ImportMismatchError) as error:
+        return _unify(schema)
+    except DatabaseConfigError as error:
         return _fail(str(error))

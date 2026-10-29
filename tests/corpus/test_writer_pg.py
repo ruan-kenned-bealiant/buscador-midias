@@ -64,11 +64,13 @@ def schema():
             )
         connection.execute(
             f"CREATE TABLE {name}.midias_ia_trusted_sources "
-            "(url_without_https_www text, name text, active boolean, country_code text)"
+            "(url_without_https_www text, name text, active boolean, country_code text, "
+            "deleted_at timestamptz)"
         )
         connection.execute(
             f"INSERT INTO {name}.midias_ia_trusted_sources VALUES "
-            "('correio24horas.com.br', 'Correio', true, 'BR'), ('inativo.com', 'Inativo', false, 'US')"
+            "('correio24horas.com.br', 'Correio', true, 'BR', NULL), "
+            "('excluido.com', 'Excluído', true, 'US', now())"
         )
     except psycopg.Error as error:  # banco sem as tabelas: não há o que testar
         connection.close()
@@ -417,7 +419,7 @@ def test_existing_devolve_so_os_hashes_presentes(writer):
     assert writer.existing([]) == set()
 
 
-def test_nomes_das_fontes_confiaveis_ativas_por_dominio(writer):
+def test_nomes_das_fontes_cadastradas_por_dominio(writer):
     assert writer.source_names() == {"correio24horas.com.br": "Correio"}
 
 

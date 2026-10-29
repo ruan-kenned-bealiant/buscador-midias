@@ -200,7 +200,7 @@ class HealthRepository(Repository):
         """Links que a rotina deve testar, pelas mesmas regras da rotina anterior."""
         restore = configuration.get("scope") == "auto_excluded_access"
         condition = (
-            "l.active=1 AND s.active=1" if kind == "active" else "(l.active=0 OR s.active=0)"
+            "l.active=1 AND s.active" if kind == "active" else "(l.active=0 OR NOT s.active)"
         )
         last_test = "COALESCE(st.last_test,'{}'::jsonb)" if kind == "recovery" else "'{}'::jsonb"
         rows = db.execute(
@@ -208,7 +208,7 @@ class HealthRepository(Repository):
             f"l.deactivated_at,{last_test} last_test,s.version site_version,s.active site_active,"
             "l.access_transport,s.url site_url,s.deactivated_by site_deactivated_by,"
             "st.health_category,st.health_checked_at,st.health_config FROM bm_links l "
-            "JOIN bm_sites s ON s.id=l.site_id "
+            "JOIN midias_ia_trusted_sources s ON s.id=l.site_id "
             "LEFT JOIN bm_link_state st ON st.link_id=l.id WHERE "
             + ("l.deleted_at IS NOT NULL " if restore else "l.deleted_at IS NULL ")
             + f"AND s.deleted_at IS NULL AND {condition} ORDER BY l.id"
@@ -329,7 +329,7 @@ class HealthRepository(Repository):
                 "rl.attempts,rl.result,rl.detail,rl.activated,rl.started_at,rl.finished_at,"
                 "rl.link_version,rl.site_version,l.url,l.kind,l.mechanism model,s.name source_name,"
                 f"s.url source_url FROM bm_run_links rl JOIN bm_links l ON l.id=rl.link_id "  # noqa: S608
-                f"JOIN bm_sites s ON s.id=rl.site_id WHERE {where} "
+                f"JOIN midias_ia_trusted_sources s ON s.id=rl.site_id WHERE {where} "
                 "ORDER BY rl.link_id LIMIT 25 OFFSET %s",
                 (*args, offset),
             ).fetchall()
@@ -471,7 +471,7 @@ class HealthRepository(Repository):
             r["id"]: r
             for r in db.execute(
                 "SELECT l.id,l.url,l.kind,l.mechanism,l.access_transport,s.name,s.url site_url "
-                "FROM bm_links l JOIN bm_sites s ON s.id=l.site_id WHERE l.id=ANY(%s)",
+                "FROM bm_links l JOIN midias_ia_trusted_sources s ON s.id=l.site_id WHERE l.id=ANY(%s)",
                 ([r["link_id"] for r in rows],),
             )
         }
@@ -513,7 +513,7 @@ class HealthRepository(Repository):
                 return restoration_current(db, snapshot)
             row = db.execute(
                 "SELECT l.version,l.active,l.deleted_at,s.version sv,s.active sa,s.deleted_at sd,"
-                "m.version mv FROM bm_links l JOIN bm_sites s ON s.id=l.site_id "
+                "m.version mv FROM bm_links l JOIN midias_ia_trusted_sources s ON s.id=l.site_id "
                 "JOIN bm_mechanisms m ON m.model=l.mechanism WHERE l.id=%s",
                 (snapshot["link_id"],),
             ).fetchone()
@@ -655,7 +655,7 @@ class HealthRepository(Repository):
             return restoration_current(db, snapshot)
         current = db.execute(
             "SELECT l.version,s.version sv,m.version mv FROM bm_links l "
-            "JOIN bm_sites s ON s.id=l.site_id JOIN bm_mechanisms m ON m.model=l.mechanism "
+            "JOIN midias_ia_trusted_sources s ON s.id=l.site_id JOIN bm_mechanisms m ON m.model=l.mechanism "
             "WHERE l.id=%s AND l.deleted_at IS NULL AND s.deleted_at IS NULL",
             (snapshot["link_id"],),
         ).fetchone()
@@ -739,7 +739,7 @@ class HealthRepository(Repository):
             "health_config,health_failures) SELECT l.id,%(run)s,%(category)s,now(),"
             "jsonb_build_object('url',l.url,'kind',l.kind,'model',l.mechanism,"
             "'model_version',m.version,'source_url',s.url,'access_transport',l.access_transport),"
-            "COALESCE(%(failures)s,0) FROM bm_links l JOIN bm_sites s ON s.id=l.site_id "
+            "COALESCE(%(failures)s,0) FROM bm_links l JOIN midias_ia_trusted_sources s ON s.id=l.site_id "
             "JOIN bm_mechanisms m ON m.model=l.mechanism WHERE l.id=%(link)s "
             "ON CONFLICT (link_id) DO UPDATE SET health_run_id=EXCLUDED.health_run_id,"
             "health_category=EXCLUDED.health_category,health_checked_at=now(),"

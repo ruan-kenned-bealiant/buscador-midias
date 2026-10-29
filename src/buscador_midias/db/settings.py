@@ -100,7 +100,7 @@ def _check(key: str, value: Any) -> Any:
     """Valida uma chave da busca; devolve o valor aceito ou levanta ``CatalogError``."""
     if key in _BOOLEANS and type(value) is not bool:
         raise CatalogError("Informe opções booleanas válidas.")
-    if key == "schedule_mode" and value not in ("clock", "link_interval"):
+    if key == "schedule_mode" and value != "clock":
         raise CatalogError("Selecione o modo de agendamento válido.")
     if key == "schedule_hours":
         _hours(value, allow_empty=False)

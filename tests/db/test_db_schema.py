@@ -23,7 +23,7 @@ def _tables(db: psycopg.Connection) -> set[str]:
 
 def _site(db: psycopg.Connection, identity: str = "g1.globo.com") -> int:
     row = db.execute(
-        "INSERT INTO bm_sites(identity,name,url) VALUES(%s,'G1','https://g1.globo.com') "
+        "INSERT INTO midias_ia_trusted_sources(identity,name,url) VALUES(%s,'G1','https://g1.globo.com') "
         "RETURNING id",
         (identity,),
     ).fetchone()
@@ -54,15 +54,26 @@ def test_install_creates_only_prefixed_catalog_tables(db):
     install(db)
     tables = _tables(db)
     assert set(CATALOG_TABLES) <= tables
-    assert all(name.startswith("bm_") for name in tables)
-    assert {"bm_sites", "bm_links", "bm_link_state", "bm_mechanisms", "bm_settings"} <= tables
+    assert all(name.startswith("bm_") or name == "midias_ia_trusted_sources" for name in tables)
+    assert {
+        "midias_ia_trusted_sources",
+        "bm_links",
+        "bm_link_state",
+        "bm_mechanisms",
+        "bm_settings",
+    } <= tables
 
 
 def test_install_is_idempotent_and_keeps_data(db):
     install(db)
     site = _site(db)
     install(db)
-    assert db.execute("SELECT count(*) FROM bm_sites WHERE id=%s", (site,)).fetchone()[0] == 1
+    assert (
+        db.execute(
+            "SELECT count(*) FROM midias_ia_trusted_sources WHERE id=%s", (site,)
+        ).fetchone()[0]
+        == 1
+    )
 
 
 def test_link_is_unique_per_site_and_url_even_when_deleted(db):
@@ -165,7 +176,7 @@ def test_provenance_and_tested_configuration_columns_exist(db):
         ).fetchall()
     }
     provenance = ("deactivated_by", "deactivated_reason", "deactivated_at")
-    assert {("bm_sites", c) for c in provenance} <= columns
+    assert {("midias_ia_trusted_sources", c) for c in provenance} <= columns
     assert ("bm_link_state", "health_config") in columns
 
 
@@ -173,5 +184,5 @@ def test_a_site_deactivation_author_is_constrained(db):
     install(db)
     with pytest.raises(psycopg.errors.CheckViolation), db.transaction():
         db.execute(
-            "INSERT INTO bm_sites(identity,name,url,deactivated_by) VALUES('x','X','https://x','robot')"
+            "INSERT INTO midias_ia_trusted_sources(identity,name,url,deactivated_by) VALUES('x','X','https://x','robot')"
         )

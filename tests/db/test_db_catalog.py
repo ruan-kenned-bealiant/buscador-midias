@@ -292,7 +292,7 @@ def provenance(repo: CatalogRepository, table: str, ident: int) -> dict[str, Any
 def test_a_manual_inactivation_records_the_user_and_a_reactivation_clears_it(repo, entity):
     site = new_site(repo)
     saved = new_link(repo, site, "https://a.example/feed") if entity == "endpoint" else site
-    table = "bm_links" if entity == "endpoint" else "bm_sites"
+    table = "bm_links" if entity == "endpoint" else "midias_ia_trusted_sources"
     off = repo.save(entity, dict(version=saved["version"], active=False), saved["id"])
     assert provenance(repo, table, saved["id"]) == dict(
         deactivated_by="user", deactivated_reason="manual", has_at=True

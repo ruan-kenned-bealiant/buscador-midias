@@ -252,21 +252,22 @@ class PostgresCorpusWriter:
         return found
 
     def source_names(self) -> dict[str, str]:
-        """Nome das fontes confiáveis ativas, por domínio (``url_without_https_www``)."""
+        """Nome das fontes cadastradas, por domínio (``url_without_https_www``)."""
         with self._lock, self._connection.cursor() as cursor:
             cursor.execute(
-                "SELECT url_without_https_www, name FROM midias_ia_trusted_sources WHERE active"
+                "SELECT url_without_https_www, name FROM midias_ia_trusted_sources "
+                "WHERE deleted_at IS NULL"
             )
             names = {row[0]: row[1] for row in cursor.fetchall() if row[0] and row[1]}
         self._connection.rollback()
         return names
 
     def source_countries(self) -> dict[str, str]:
-        """Países do cadastro ativo; a resolução respeita domínio e seção da URL."""
+        """Países do cadastro; a resolução respeita domínio e seção da URL."""
         with self._lock, self._connection.cursor() as cursor:
             cursor.execute(
                 "SELECT url_without_https_www, country_code FROM midias_ia_trusted_sources "
-                "WHERE active AND country_code IS NOT NULL"
+                "WHERE deleted_at IS NULL AND country_code IS NOT NULL"
             )
             countries = {row[0]: row[1] for row in cursor.fetchall() if row[0] and row[1]}
         self._connection.rollback()
