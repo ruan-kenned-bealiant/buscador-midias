@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import sqlite3
 import threading
 import time
 import uuid
@@ -22,7 +21,8 @@ from buscador_midias.catalog.http_transport import make_reader, validate_transpo
 from buscador_midias.catalog.mechanisms import get_mechanism
 from buscador_midias.catalog.read_order import UNKNOWN, detect_read_order
 from buscador_midias.catalog.reader import TestLimitError, TestReader
-from buscador_midias.catalog.store import CatalogError, clean_url
+from buscador_midias.catalog.store_errors import CatalogError
+from buscador_midias.catalog.urls import clean_url
 from buscador_midias.domain.site import Site
 from buscador_midias.extraction.reliability import PageSnapshot
 from buscador_midias.extraction.sample_audit import audit_page
@@ -534,7 +534,7 @@ class TestJobs:
                     result["applied_version"] = self.store.record_test(
                         data["endpoint_id"], data["version"], result
                     )
-                except (CatalogError, OSError, sqlite3.Error, psycopg.Error) as error:
+                except (CatalogError, OSError, psycopg.Error) as error:
                     result["save_warning"] = (
                         str(error)
                         if isinstance(error, CatalogError)

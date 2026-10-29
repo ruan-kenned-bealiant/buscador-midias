@@ -5,9 +5,8 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Any
 
-from buscador_midias.catalog.store import CatalogError
+from buscador_midias.catalog.store_errors import CatalogError
 from buscador_midias.evidence.s3_storage import S3EvidenceStore
 from buscador_midias.evidence.storage import EvidenceTooLargeError, read_stored_evidence
 
@@ -51,18 +50,3 @@ def read_captured(path: str | None, status: str | None) -> tuple[str, bytes]:
             path, [ROOT / "var/ingestion/daily/evidence", ROOT / "var/ingestion/evidence"]
         )
     return TYPES[path.rsplit(".", 1)[-1]], data
-
-
-def read_evidence(repository: Any, article_hash: str) -> tuple[str, bytes]:
-    """Resolve o caminho pelo corpus; a URL não recebe caminhos locais nem chaves arbitrárias."""
-    if not re.fullmatch(r"[a-f0-9]{64}", article_hash):
-        raise CatalogError("Notícia inválida.", 404)
-    with repository.connection() as db:
-        row = db.execute(
-            "SELECT c.evidencia_path,c.evidencia_status FROM ingest_articles a "
-            "JOIN public.midias_ia_articles c ON c.id=a.article_id WHERE a.hash=%s",
-            (article_hash,),
-        ).fetchone()
-    if not row:
-        raise CatalogError("Esta notícia ainda não possui evidência capturada.", 404)
-    return read_captured(row["evidencia_path"], row["evidencia_status"])

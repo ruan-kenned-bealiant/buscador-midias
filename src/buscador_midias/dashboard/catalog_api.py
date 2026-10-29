@@ -6,7 +6,6 @@ import json
 import logging
 import re
 import secrets
-import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler
@@ -16,12 +15,8 @@ from urllib.parse import parse_qs, urlsplit
 
 import psycopg
 
-from buscador_midias.catalog.batch import status as validation_status
 from buscador_midias.catalog.bright_reader import bright_data_available
-from buscador_midias.catalog.health_store import HealthStore
-from buscador_midias.catalog.health_worker import HealthWorker
-from buscador_midias.catalog.postgres import PostgresCatalogStore
-from buscador_midias.catalog.store import CatalogError, CatalogStore
+from buscador_midias.catalog.store_errors import CatalogError
 from buscador_midias.catalog.testing import TestJobs
 from buscador_midias.db.catalog import CatalogRepository
 from buscador_midias.db.health import HealthRepository
@@ -29,7 +24,6 @@ from buscador_midias.db.reports import ReportRepository
 from buscador_midias.db.serialize import jsonable
 from buscador_midias.db.settings import SettingsRepository
 from buscador_midias.db.store import WorkStore
-from buscador_midias.ingestion.store import IngestStore
 
 _LOG = logging.getLogger(__name__)
 _BASE = "/api/gerenciador"
@@ -42,33 +36,26 @@ _MODEL = re.compile(r"/modelos/([a-z_]{1,40})$")
 class CatalogAPI:
     """Roteia cadastros com JSON limitado, proteção de origem e controle de concorrência."""
 
-    store: CatalogStore | CatalogRepository
+    store: CatalogRepository
     token: str = field(default_factory=lambda: secrets.token_urlsafe(32))
     #: Leitura da profundidade das filas (injetável em testes); ``None`` consulta o RabbitMQ.
     broker: Callable[[], list[dict[str, Any]]] | None = None
     corpus_schema: str = "public"
     jobs: TestJobs = field(init=False)
-    ingestion: IngestStore | None = field(init=False, default=None)
-    health: HealthStore | HealthRepository | None = field(init=False, default=None)
-    health_worker: HealthWorker | None = field(init=False, default=None)
-    reports: ReportRepository | None = field(init=False, default=None)
-    work: WorkStore | None = field(init=False, default=None)
-    settings: SettingsRepository | None = field(init=False, default=None)
+    health: HealthRepository = field(init=False)
+    reports: ReportRepository = field(init=False)
+    work: WorkStore = field(init=False)
+    settings: SettingsRepository = field(init=False)
 
     def __post_init__(self) -> None:
         """Inicia o executor limitado de testes sob demanda."""
         self.jobs = TestJobs(self.store)
-        if isinstance(self.store, CatalogRepository):
-            # Desenho novo: a saúde e as filas rodam em processos próprios; aqui só se consulta.
-            schema, env = self.store.schema, self.store.env
-            self.health = HealthRepository(schema, env)
-            self.reports = ReportRepository(schema, env, corpus_schema=self.corpus_schema)
-            self.work = WorkStore(schema, env)
-            self.settings = SettingsRepository(schema, env)
-        elif isinstance(self.store, PostgresCatalogStore):
-            self.ingestion = IngestStore(self.store)
-            self.health = HealthStore(self.store)
-            self.health_worker = HealthWorker(self.health)
+        # A saúde e as filas rodam em processos próprios; aqui só se consulta e se cria rodada.
+        schema, env = self.store.schema, self.store.env
+        self.health = HealthRepository(schema, env)
+        self.reports = ReportRepository(schema, env, corpus_schema=self.corpus_schema)
+        self.work = WorkStore(schema, env)
+        self.settings = SettingsRepository(schema, env)
 
     def handle(self, handler: BaseHTTPRequestHandler) -> tuple[int, dict[str, Any]]:
         """Produz uma resposta segura para uma requisição do gerenciador."""
@@ -78,11 +65,11 @@ class CatalogAPI:
             return error.status, dict(error=str(error))
         except (ValueError, UnicodeError, json.JSONDecodeError):
             return 400, dict(error="Requisição inválida.")
-        except (sqlite3.Error, psycopg.Error, OSError):
+        except (psycopg.Error, OSError):
             _LOG.exception("Falha no cadastro local")
             return 503, dict(error="Cadastro indisponível. Tente novamente.")
 
-    def _dispatch(self, handler: BaseHTTPRequestHandler) -> tuple[int, dict[str, Any]]:  # noqa: C901
+    def _dispatch(self, handler: BaseHTTPRequestHandler) -> tuple[int, dict[str, Any]]:
         parts = urlsplit(handler.path)
         path = parts.path.removeprefix(_BASE)
         method = handler.command
@@ -90,16 +77,10 @@ class CatalogAPI:
         source, link = _SOURCE.fullmatch(path), _LINK.fullmatch(path)
         model = _MODEL.fullmatch(path)
         if path.startswith("/busca"):
-            if self.reports is not None:
-                from buscador_midias.dashboard.busca_api import dispatch as dispatch_busca
+            from buscador_midias.dashboard.busca_api import dispatch as dispatch_busca
 
-                return dispatch_busca(self, handler, path, query)
-            from buscador_midias.ingestion.api import dispatch
-
-            return dispatch(self, handler, path, query)
+            return dispatch_busca(self, handler, path, query)
         if path.startswith("/saude"):
-            if self.health is None:
-                raise CatalogError("Saúde das fontes requer o catálogo PostgreSQL.", 503)
             offset = int(query.get("offset", "0"))
             if not 0 <= offset <= 1000000:
                 raise CatalogError("Paginação inválida.")
@@ -123,8 +104,6 @@ class CatalogAPI:
                 created = self.health.create(
                     data["kind"], options={k: v for k, v in data.items() if k != "kind"}
                 )
-                if self.health_worker:
-                    self.health_worker.wake.set()
                 return 202, jsonable(created)
             if method == "POST" and run_match and run_match[2] and not data:
                 return 200, jsonable(self.health.cancel(run_match[1]))
@@ -136,10 +115,6 @@ class CatalogAPI:
                     csrf_token=self.token,
                     bright_data_available=bright_data_available(),
                 )
-            if path == "/validacao":
-                if isinstance(self.store, CatalogRepository):
-                    return 200, dict(available=False)
-                return 200, validation_status(self.store)
             if path == "/modelos":
                 return 200, dict(items=self.store.models())
             if model:

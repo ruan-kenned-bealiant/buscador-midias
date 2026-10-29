@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from buscador_midias.evidence.capture import EvidenceCapturer, inject_base_href
 from buscador_midias.extraction.fetch import PageFetch, PageStatus
 from buscador_midias.net.fetcher import FetchResult
-from buscador_midias.state.store import FindingUrl
+from buscador_midias.domain.records import FindingUrl
 
 NOW = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
 URL = "https://g1.globo.com/politica/noticia/2026/10/15/pf-prende-empresario-por-fraude-em-licitacao.ghtml"

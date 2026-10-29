@@ -1,4 +1,5 @@
 import itertools
+import os
 
 import pytest
 from psycopg.types.json import Jsonb
@@ -9,7 +10,7 @@ from buscador_midias.criteria import (
     has_entities,
     meets_criteria,
 )
-from buscador_midias.state.store import StateStore
+from buscador_midias.db.connection import connect
 
 PERSON = {"name": "João Silva", "type": "PF", "role": "citado"}
 
@@ -36,13 +37,15 @@ def test_entidade_sem_nome_nao_conta():
     ("basis", "entities"),
     list(itertools.product(["text", "headline"], [[], [PERSON], [PERSON, PERSON]])),
 )
+@pytest.mark.skipif(
+    os.environ.get("BM_TEST_POSTGRES") != "1", reason="Requer PostgreSQL de teste explícito."
+)
 def test_a_regra_em_sql_concorda_com_a_regra_em_python(basis, entities):
-    store = StateStore()
-
-    row = store._one(
-        f"SELECT {MEETS_CRITERIA_SQL}, {HAS_ENTITIES_SQL}"
-        " FROM (SELECT %s::varchar AS basis, %s::jsonb AS entities) a",
-        (basis, Jsonb(entities)),
-    )
+    with connect() as db:
+        row = db.execute(
+            f"SELECT {MEETS_CRITERIA_SQL}, {HAS_ENTITIES_SQL}"
+            " FROM (SELECT %s::varchar AS basis, %s::jsonb AS entities) a",
+            (basis, Jsonb(entities)),
+        ).fetchone()
 
     assert row == (meets_criteria(basis=basis, entities=entities), has_entities(entities))

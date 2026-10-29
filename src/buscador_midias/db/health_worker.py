@@ -12,7 +12,11 @@ from typing import Any
 
 from buscador_midias.catalog.health_policy import classify
 from buscador_midias.catalog.health_rules import decide
-from buscador_midias.catalog.link_review import ALTERNATE_TRANSPORTS, review_with_transports
+from buscador_midias.catalog.link_review import (
+    ALTERNATE_TRANSPORTS,
+    real_reader,
+    review_with_transports,
+)
 from buscador_midias.catalog.testing import ReaderFactory, run_test
 from buscador_midias.db.health import KINDS, HealthRepository
 
@@ -157,9 +161,7 @@ class HealthWorker:
         )
         reader = self.probe_reader
         if reader is None:
-            from buscador_midias.catalog.review_cli import _real_reader
-
-            reader = _real_reader
+            reader = real_reader
         return review_with_transports(link, reader, datetime.now(UTC))
 
     def _probe(self, run: dict[str, Any], row: dict[str, Any]) -> None:

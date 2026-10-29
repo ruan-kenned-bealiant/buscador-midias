@@ -18,7 +18,8 @@ from buscador_midias.catalog.compression import MAX_BYTES as MAX_BYTES
 from buscador_midias.catalog.compression import unpack_gzip as unpack_gzip
 from buscador_midias.catalog.http_policy import retry_after
 from buscador_midias.catalog.http_session import SESSIONS, HttpSessions
-from buscador_midias.catalog.store import CatalogError, clean_url
+from buscador_midias.catalog.store_errors import CatalogError
+from buscador_midias.catalog.urls import clean_url
 from buscador_midias.discovery.robots import RobotsPolicy
 from buscador_midias.net.fetcher import USER_AGENT, FetchResult
 

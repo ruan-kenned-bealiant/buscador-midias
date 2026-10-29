@@ -30,8 +30,6 @@ def dispatch(
 ) -> tuple[int, dict[str, Any]]:
     """Consulta e opera a busca; não altera o cadastro de sites e links."""
     reports = api.reports
-    if reports is None:
-        raise CatalogError("A busca requer o banco novo (tabelas bm_*).", 503)
     if handler.command == "GET":
         return 200, jsonable(_read(api, path, query))
     api._authorize(handler)

@@ -357,3 +357,38 @@ def test_the_window_filter_closes_what_the_date_already_excludes(world):
 
 def test_the_stage_and_lane_names_are_stable():
     assert broker.queue_name("persist", "recovery").endswith("persist.recovery")
+
+
+def test_each_role_gets_a_small_pool_so_the_shared_database_keeps_room(monkeypatch):
+    from buscador_midias.pipeline.service import POOL_SIZES, pool_size
+
+    monkeypatch.delenv("BM_POOL_MAX", raising=False)
+    assert pool_size("worker", "fetch") == POOL_SIZES["fetch"] == 4
+    assert pool_size("worker", "context") == 8 and pool_size("publisher") == 4
+    # Sete processos de busca somados ficam longe do teto de 100 conexões do banco.
+    assert (
+        sum(
+            POOL_SIZES[s]
+            for s in (
+                "discovery",
+                "dedup",
+                "fetch",
+                "context",
+                "evidence",
+                "persist",
+                "publisher",
+                "scheduler",
+                "window",
+            )
+        )
+        <= 40
+    )
+
+
+def test_the_pool_size_can_be_overridden_and_ignores_garbage(monkeypatch):
+    from buscador_midias.pipeline.service import pool_size
+
+    monkeypatch.setenv("BM_POOL_MAX", "3")
+    assert pool_size("worker", "context") == 3
+    monkeypatch.setenv("BM_POOL_MAX", "muitas")
+    assert pool_size("worker", "context") == 8

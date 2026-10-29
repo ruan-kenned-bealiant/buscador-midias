@@ -87,7 +87,7 @@ class Repository:
             kwargs={**parameters(self.schema, self.env), "row_factory": dict_row},
             min_size=min_size,
             max_size=max_size,
-            max_idle=30,
+            max_idle=10,
             timeout=10,
             name=name,
             open=False,

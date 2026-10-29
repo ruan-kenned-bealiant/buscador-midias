@@ -12,10 +12,10 @@ from unidecode import unidecode
 from buscador_midias.analysis.classification import content_category
 from buscador_midias.analysis.entity_context import EntityContext
 from buscador_midias.corpus.country import registered_country, resolve_country
+from buscador_midias.domain.records import CorpusCandidate
 from buscador_midias.domain.roles import is_adverse_role, normalize_role
 from buscador_midias.domain.site import Site
 from buscador_midias.domain.url import url_domain
-from buscador_midias.state.store import CorpusCandidate
 
 SOURCE = "buscador-midias"
 ORIGIN = "crawler"

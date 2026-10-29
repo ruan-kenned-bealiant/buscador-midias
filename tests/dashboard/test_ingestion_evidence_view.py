@@ -2,7 +2,7 @@
 
 import pytest
 
-from buscador_midias.catalog.store import CatalogError
+from buscador_midias.catalog.store_errors import CatalogError
 from buscador_midias.ingestion.evidence_view import read_local
 
 KEY = "midias-ia/evidencias/test.html"

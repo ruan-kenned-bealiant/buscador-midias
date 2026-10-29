@@ -8,19 +8,17 @@ encerrado) ou ``review`` (a sonda não consegue decidir sozinha). Todo ``review`
 
 from __future__ import annotations
 
-from collections import Counter, defaultdict
-from collections.abc import Callable, Iterable
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Callable
 from datetime import datetime
 from time import sleep as wait_seconds
 from typing import Any, Protocol
 
 from buscador_midias.catalog.freshness import document_freshness, link_verdict
+from buscador_midias.catalog.http_transport import make_reader as transport_reader
 from buscador_midias.catalog.link_period import is_historical, url_period
 from buscador_midias.catalog.link_theme import REMOVE, link_theme
 from buscador_midias.catalog.mechanisms.parsing import parse_document
 from buscador_midias.catalog.reader import TestLimitError
-from buscador_midias.catalog.store import CatalogError, CatalogStore
 from buscador_midias.net.fetcher import FetchResult
 
 PROPOSALS = {"inactivate": "inactivate", "delete": "delete", "keep": "keep"}
@@ -39,8 +37,6 @@ MAX_WAIT = 60
 ALTERNATE_TRANSPORTS = ("curl_chrome_h1", "curl_chrome_h2", "curl_firefox_h2", "direct")
 TRANSPORT_STATUS = (401, 402, 403, 406)
 TRANSPORT_ERRORS = ("redirect_cycle", "SSL", "Remote end closed", "Connection reset")
-# Sites sondados ao mesmo tempo: mantém sites x links por vez abaixo dos 32 trabalhadores de DNS.
-MAX_SITES = 12
 
 
 class Reader(Protocol):
@@ -118,7 +114,7 @@ def review_link(link: dict[str, Any], reader: Reader, now: datetime) -> dict[str
         )
     found = document_freshness(document, now)
     verdict = link_verdict(found, now)
-    detail = dict(
+    detail: dict[str, Any] = dict(
         status=response.status,
         entries=len(document["entries"]) or len(document["children"]),
         newest=found.newest.isoformat() if found.newest else None,
@@ -195,95 +191,13 @@ def review_with_transports(
     return first
 
 
-def load_links(store: CatalogStore, site_ids: Iterable[int]) -> list[dict[str, Any]]:
-    """Links ativos e visíveis dos sites pedidos, com a versão que a sonda deve respeitar."""
-    ids = list(site_ids)
-    marks = ",".join("?" * len(ids))
-    with store.connection() as db:
-        rows = db.execute(
-            "SELECT l.id,l.version,l.source_id,l.url,l.label,l.kind,l.model,l.access_transport "
-            "FROM links l "
-            "JOIN sites s ON s.id=l.source_id WHERE l.source_id IN (" + marks + ") "
-            "AND l.deleted_at IS NULL AND l.active=1 AND s.deleted_at IS NULL "
-            "ORDER BY l.source_id,l.id",
-            ids,
-        ).fetchall()
-    return [dict(row) for row in rows]
-
-
-def review_batch(
-    links: Iterable[dict[str, Any]],
-    now: datetime,
-    make_reader: Callable[[dict[str, Any]], Reader],
-    *,
-    per_host: int = 3,
-    progress: Callable[[int, int], None] | None = None,
-) -> list[dict[str, Any]]:
-    """Sonda os links dados: sites em paralelo, ``per_host`` links por vez em cada um.
-
-    O resultado segue a ordem de entrada dentro de cada site; links ainda sem ``id`` (candidatos)
-    também são aceitos, pois a sonda só lê a URL.
-    """
-    by_site: dict[int, list[dict[str, Any]]] = defaultdict(list)
-    for link in links:
-        by_site[link["source_id"]].append(link)
-    total = sum(len(group) for group in by_site.values())
-    done = 0
-
-    def one(link: dict[str, Any]) -> dict[str, Any]:
-        nonlocal done
-        found = review_with_retry(link, make_reader, now)
-        done += 1
-        if progress:
-            progress(done, total)
-        return found
-
-    def site(group: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        with ThreadPoolExecutor(max_workers=per_host) as pool:
-            return list(pool.map(one, group))
-
-    if not by_site:
-        return []
-    with ThreadPoolExecutor(max_workers=min(len(by_site), MAX_SITES)) as sites:
-        batches = list(sites.map(site, by_site.values()))
-    return [item for batch in batches for item in batch]
-
-
-def review_sites(
-    store: CatalogStore,
-    site_ids: Iterable[int],
-    now: datetime,
-    make_reader: Callable[[dict[str, Any]], Reader],
-    *,
-    per_host: int = 3,
-    progress: Callable[[int, int], None] | None = None,
-) -> list[dict[str, Any]]:
-    """Sonda todos os links ativos dos sites pedidos, ordenados pelo id do link."""
-    found = review_batch(
-        load_links(store, site_ids), now, make_reader, per_host=per_host, progress=progress
+def real_reader(link: dict[str, Any]) -> Reader:
+    """Leitor com o transporte que o cadastro já descobriu ser necessário para o link."""
+    reader: Reader = transport_reader(
+        [link["url"]],
+        lambda step: None,
+        transport=link.get("access_transport", "direct"),
+        seconds=25,
+        requests=4,
     )
-    return sorted(found, key=lambda i: i["link_id"])
-
-
-def apply_proposals(store: CatalogStore, results: Iterable[dict[str, Any]]) -> Counter[str]:
-    """Aplica inativação e exclusão pelo cadastro, na versão sondada; link editado é pulado.
-
-    ``review`` e ``keep`` não mudam nada. A exclusão é lógica (``deleted_at``), como a da tela.
-    """
-    done: Counter[str] = Counter()
-    for item in results:
-        proposal = item["proposal"]
-        try:
-            if proposal == "inactivate":
-                store.save(
-                    "endpoint", dict(version=item["link_version"], active=False), item["link_id"]
-                )
-            elif proposal in ("delete", "remove_theme", "remove_historical"):
-                store.delete("endpoint", item["link_id"], item["link_version"])
-        except CatalogError as error:
-            if error.status != 409:
-                raise
-            done["conflict"] += 1
-            continue
-        done[proposal] += 1
-    return done
+    return reader

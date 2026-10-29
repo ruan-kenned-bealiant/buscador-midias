@@ -8,6 +8,7 @@ import time
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import replace
+from typing import Any
 
 from buscador_midias.net.fetcher import FetchResult
 
@@ -19,12 +20,12 @@ class DocumentMemo:
         """Limita corpo comprimido, número de entradas e tempo de validade."""
         self.max_bytes, self.ttl = max_bytes, ttl
         self.lock = threading.Lock()
-        self.entries: OrderedDict[tuple[str, ...], tuple[float, FetchResult, bytes]] = OrderedDict()
-        self.inflight: dict[tuple[str, ...], threading.Event] = {}
+        self.entries: OrderedDict[tuple[Any, ...], tuple[float, FetchResult, bytes]] = OrderedDict()
+        self.inflight: dict[tuple[Any, ...], threading.Event] = {}
         self.size = 0
 
     def get(
-        self, key: tuple[str, ...], fetch: Callable[[], FetchResult]
+        self, key: tuple[Any, ...], fetch: Callable[[], FetchResult]
     ) -> tuple[FetchResult, bool]:
         """Não memoriza falhas/304; o chamador mantém validações e budgets de parsing."""
         while True:

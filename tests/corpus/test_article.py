@@ -10,7 +10,7 @@ from buscador_midias.corpus.article import (
     normalize_entity_name,
 )
 from buscador_midias.domain.site import Site
-from buscador_midias.state.store import CorpusCandidate
+from buscador_midias.domain.records import CorpusCandidate
 
 PUBLISHED = datetime(2026, 10, 14, 10, 0, tzinfo=UTC)
 

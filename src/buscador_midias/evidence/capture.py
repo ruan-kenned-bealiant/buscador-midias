@@ -24,11 +24,11 @@ import re
 from collections.abc import Callable
 from datetime import datetime
 
+from buscador_midias.domain.records import EvidenceRecord, FindingUrl
 from buscador_midias.evidence.storage import EvidenceStore
 from buscador_midias.extraction.fetch import PageFetch, PageStatus
 from buscador_midias.extraction.reliability import PageSnapshot, assess_evidence
 from buscador_midias.net.fetcher import Fetcher
-from buscador_midias.state.store import EvidenceRecord, FindingUrl
 
 _HEAD = re.compile(rb"<head[^>]*>", re.IGNORECASE)
 _NOT_PAID = "brightdata dispensado: matéria sem fato adverso (o serviço pago é só para adversos)"

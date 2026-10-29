@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import asdict
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
 import httpx
@@ -35,6 +35,8 @@ from buscador_midias.catalog.reader import EARLY_STOP_STEPS
 from buscador_midias.corpus.article import build_corpus_article
 from buscador_midias.corpus.writer import PostgresCorpusWriter
 from buscador_midias.criteria import meets_criteria
+from buscador_midias.db.settings import SEARCH_DEFAULTS
+from buscador_midias.domain.records import CorpusCandidate, FindingUrl
 from buscador_midias.domain.site import Site
 from buscador_midias.domain.url import url_hash_candidates
 from buscador_midias.evidence.capture import EvidenceCapturer
@@ -59,9 +61,9 @@ from buscador_midias.ingestion.flow import (
     url_outside,
 )
 from buscador_midias.ingestion.routes import Routes, partition
-from buscador_midias.ingestion.schema import DEFAULTS
-from buscador_midias.ingestion.store import IngestStore
-from buscador_midias.state.store import CorpusCandidate, FindingUrl
+
+if TYPE_CHECKING:
+    from buscador_midias.db.store import WorkStore
 
 
 class HostBusyError(Exception):
@@ -94,7 +96,7 @@ class Engine:
 
     def __init__(
         self,
-        repository: IngestStore,
+        repository: WorkStore,
         *,
         artifacts: Artifacts | None = None,
         reader_factory: Any = None,
@@ -799,7 +801,7 @@ class Engine:
                     metrics=usage,
                 )
             blocked = config.get(
-                "blocked_content_categories", DEFAULTS["blocked_content_categories"]
+                "blocked_content_categories", SEARCH_DEFAULTS["blocked_content_categories"]
             )
             found = category_exclusion(
                 verdict.get("content_category"), bool(verdict["finding"]), blocked

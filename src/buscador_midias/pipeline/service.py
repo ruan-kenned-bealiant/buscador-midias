@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import signal
 import threading
 import time
@@ -55,7 +56,7 @@ class Pipeline:
     ) -> None:
         """Uma instância não interfere nos workers nem nas filas das outras instâncias."""
         self.store = store
-        self.engine = engine or Engine(store, host_slots=self.host_slot_ceiling)  # type: ignore[arg-type]
+        self.engine = engine or Engine(store, host_slots=self.host_slot_ceiling)
         self.stop = threading.Event()
         self.instance = uuid.uuid4().hex[:12]
         self.threads: list[threading.Thread] = []
@@ -359,7 +360,7 @@ class Pipeline:
 
     def serve(self, role: str = "all", stage: str | None = None) -> None:
         """Permite separar os processos no supervisor ou executá-los juntos."""
-        self.store.start_pool(max_size=24)
+        self.store.start_pool(min_size=1, max_size=pool_size(role, stage))
         targets: list[tuple[Any, tuple[Any, ...]]] = []
         if role in ("all", "scheduler"):
             targets.append((self.scheduler, ()))
@@ -390,6 +391,34 @@ class Pipeline:
         self.store.close_pool()
         if failed:
             raise RuntimeError("Uma thread encerrou; o supervisor deve reiniciar o serviço")
+
+
+# O banco é compartilhado e aceita 100 conexões. Descoberta e extração ainda seguram uma
+# conexão própria por leitura em andamento (o lock de host), então o pool de cada processo só
+# atende checkpoints curtos: pequeno, e maior apenas onde muitas threads gravam ao mesmo tempo.
+POOL_SIZES = dict(
+    discovery=4,
+    dedup=4,
+    fetch=4,
+    context=8,
+    evidence=4,
+    persist=4,
+    publisher=4,
+    scheduler=3,
+    window=2,
+    all=24,
+)
+
+
+def pool_size(role: str, stage: str | None = None) -> int:
+    """Conexões máximas do pool: ``BM_POOL_MAX`` manda; senão, o padrão do papel ou etapa."""
+    try:
+        configured = int(os.environ.get("BM_POOL_MAX", ""))
+    except ValueError:
+        configured = 0
+    if configured > 0:
+        return configured
+    return POOL_SIZES.get(stage or role, 4)
 
 
 def _serve_health() -> int:

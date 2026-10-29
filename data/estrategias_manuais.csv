@@ -1,8 +1,0 @@
-dominio,endereco,acao,motivo
-delo.si,https://www.delo.si/media/sitemaps/poc_sitemap.xml,excluir,"não abre (conferido à mão em 2026-10-17)"
-dr.dk,https://www.dr.dk/sitemapindex.xml,excluir,"índice só de drtv e guia de TV"
-is.fi,https://www.is.fi/supersaa/*,excluir,"previsão do tempo"
-sankei.com,https://www.sankei.com/common/feed/sitemap/pressrelease/*,excluir,"press releases (PR Times), não são matérias do jornal"
-nature.com,https://www.nature.com/subjects/*,excluir,"listagem de assuntos"
-samoaobserver.ws,https://samoaobserver.ws/sitemap.xml.gz,excluir,"lista as seções do site, não matérias"
-seudinheiro.com,https://www.seudinheiro.com/cotacoes-sitemap.xml,excluir,"páginas de cotação de ações, não matérias"
