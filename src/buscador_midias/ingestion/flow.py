@@ -131,6 +131,17 @@ def clock_slot(now: datetime, timezone: str, hours: list[int]) -> datetime | Non
     return slot if slot and now - slot < timedelta(minutes=15) else None
 
 
+def next_slot(now: datetime, timezone: str, hours: list[int]) -> datetime | None:
+    """Próximo horário fixo estritamente depois de ``now`` (hoje ou amanhã), no fuso dado."""
+    if not hours:
+        return None
+    midnight = today_start(now, timezone)
+    candidates = [
+        midnight + timedelta(days=day, hours=hour) for day in (0, 1) for hour in sorted(hours)
+    ]
+    return next(slot for slot in candidates if slot > now)
+
+
 def is_last_slot(slot: datetime, now: datetime, timezone: str, hours: list[int]) -> bool:
     """Se ``slot`` é o último horário fixo do dia, aquele cuja janela contém todas as outras."""
     return bool(hours) and slot == today_start(now, timezone) + timedelta(hours=max(hours))

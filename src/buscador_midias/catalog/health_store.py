@@ -363,9 +363,12 @@ class HealthStore:
                 "(CASE WHEN state='completed' THEN category ELSE state END) k,count(*) n FROM "
                 "health_results WHERE run_id=r.id "
                 "GROUP BY (CASE WHEN state='completed' THEN category ELSE state END)) x) c ON true "
+                # Só uma rodada com Bright Data habilitado pode ter gasto; somar as tentativas das
+                # demais lê milhares de linhas largas para chegar sempre a zero.
                 "LEFT JOIN LATERAL (SELECT "
                 "sum(COALESCE((result->>'bright_data_requests')::int,0)) n "
-                "FROM health_attempts WHERE run_id=r.id) paid ON true "
+                "FROM health_attempts WHERE run_id=r.id "
+                "AND r.configuration->>'bright_data'='true') paid ON true "
                 "LEFT JOIN LATERAL (SELECT count(*) n FROM health_results "
                 "WHERE run_id=r.id AND activated) activation ON true "
                 "ORDER BY created_at DESC LIMIT 20 OFFSET %s",

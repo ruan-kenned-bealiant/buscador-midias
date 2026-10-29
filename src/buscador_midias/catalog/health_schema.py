@@ -41,6 +41,9 @@ CREATE TABLE IF NOT EXISTS health_results (
 );
 ALTER TABLE health_results ADD COLUMN IF NOT EXISTS activated BOOLEAN NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS health_queue ON health_results(run_id,state,host,link_id);
+-- Cobre as contagens do histórico sem ler as linhas largas (snapshot em JSON).
+CREATE INDEX IF NOT EXISTS health_results_summary ON health_results(run_id,state,category)
+ INCLUDE (activated);
 CREATE TABLE IF NOT EXISTS health_attempts (
  run_id TEXT NOT NULL,link_id BIGINT NOT NULL,attempt INTEGER NOT NULL,
  category TEXT NOT NULL,result JSONB NOT NULL,observed_at TIMESTAMPTZ NOT NULL DEFAULT now(),

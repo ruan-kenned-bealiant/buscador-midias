@@ -40,6 +40,7 @@ def dispatch(
                     query.get("run_id", ""),
                     int(query.get("offset", "0")),
                     query.get("search", ""),
+                    cache_seconds=15,
                 )
             )
         if path == "/busca":
@@ -53,6 +54,14 @@ def dispatch(
                     with_metrics=False,
                 )
             )
+        if path == "/busca/painel":
+            from buscador_midias.ingestion.panel import build_panel
+
+            try:
+                days = int(query.get("days", "7"))
+            except ValueError:
+                raise CatalogError("Informe a janela de 1 a 30 dias.") from None
+            return 200, repository.jsonable(build_panel(repository, days=days))
         if path == "/busca/custos":
             return 200, repository.jsonable(
                 dict(

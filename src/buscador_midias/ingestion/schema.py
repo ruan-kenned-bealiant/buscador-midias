@@ -196,3 +196,13 @@ DDL += "".join(
     f"CREATE INDEX IF NOT EXISTS {name} ON {table}({','.join(columns)});\n"
     for name, table, columns in REPORT_INDEXES
 )
+
+# Uma linha por rodada com os números que o painel mostra. Em bases já existentes é criada por
+# ``IngestStore.ensure_report_indexes`` (mesmo motivo: não reaplicar o DDL com o serviço no ar).
+STATS_TABLE = "ingest_run_stats"
+STATS_DDL = (
+    "CREATE TABLE IF NOT EXISTS ingest_run_stats ("
+    "run_id TEXT PRIMARY KEY REFERENCES ingest_runs(id),final BOOLEAN NOT NULL,"
+    "computed_at TIMESTAMPTZ NOT NULL DEFAULT now(),payload JSONB NOT NULL)"
+)
+DDL += STATS_DDL + ";\n"

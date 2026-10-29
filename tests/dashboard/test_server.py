@@ -262,11 +262,13 @@ def test_todas_as_telas_usam_a_mesma_folha_e_o_mesmo_script(base: str, path: str
     assert b'src="/assets/app.js"' in body
 
 
-def test_folha_cobre_tema_escuro_movimento_reduzido_e_carregamento(base: str):
+def test_folha_e_sempre_clara_e_cobre_movimento_reduzido_e_carregamento(base: str):
     _, _, body = get(base + "/assets/app.css")
     css = body.decode()
 
-    assert "prefers-color-scheme:dark" in css.replace(" ", "")
+    # O tema do sistema não muda o painel: o escuro só existe sob data-theme="dark".
+    assert "prefers-color-scheme" not in css
+    assert "color-scheme: light" in css and ':root[data-theme="dark"]' in css
     assert "prefers-reduced-motion" in css
     assert ".skeleton" in css
     assert "button.is-busy" in css
@@ -280,3 +282,25 @@ def test_script_compartilhado_expoe_ajudantes_de_carregamento(base: str):
     for name in ("busy", "skeleton", "track"):
         assert f"{name}(" in script
     assert "window.UI" in script
+
+
+def test_a_pagina_inicial_e_o_painel_e_o_gerenciador_de_sites_fica_em_gerenciador(base: str):
+    _, _, home = get(base + "/")
+    _, _, sites = get(base + "/gerenciador")
+
+    assert b'id="panel"' in home and b'id="sites-view"' not in home
+    assert b'id="sites-view"' in sites and b'id="panel"' not in sites
+    status, headers, script = get(base + "/assets/panel.js")
+    assert status == 200 and headers["Content-Type"].startswith("application/javascript")
+    assert b"/api/gerenciador/busca/painel" in script
+
+
+@pytest.mark.parametrize(
+    "path", ["/", "/gerenciador", "/saude", "/mecanismos", "/buscador", "/guia"]
+)
+def test_o_menu_de_todas_as_telas_leva_ao_painel_e_ao_gerenciador(base: str, path: str):
+    _, _, body = get(base + path)
+
+    assert b'<a href="/"' in body or b'href="/" ' in body or b'href="/"' in body
+    assert b'href="/gerenciador"' in body
+    assert body.count(b">Painel<") + body.count(b"Painel</a>") >= 1

@@ -126,6 +126,8 @@ def make_server(
     manager_page = (
         resources.files("buscador_midias.dashboard").joinpath("manager.html").read_bytes()
     )
+    panel_page = resources.files("buscador_midias.dashboard").joinpath("panel.html").read_bytes()
+    panel_script = resources.files("buscador_midias.dashboard").joinpath("panel.js").read_bytes()
     guide_page = render_guide()
     search_page = resources.files("buscador_midias.dashboard").joinpath("search.html").read_bytes()
     search_script = resources.files("buscador_midias.dashboard").joinpath("search.js").read_bytes()
@@ -180,7 +182,11 @@ def make_server(
         def do_GET(self) -> None:  # noqa: N802 - nome exigido pelo http.server
             """Roteia as requisições GET."""
             parts = urlsplit(self.path)
-            if parts.path in ("/", "/gerenciador", "/mecanismos", "/saude"):
+            if parts.path == "/":
+                self._send(200, "text/html; charset=utf-8", panel_page)
+            elif parts.path == "/assets/panel.js":
+                self._send(200, "application/javascript; charset=utf-8", panel_script)
+            elif parts.path in ("/gerenciador", "/mecanismos", "/saude"):
                 self._send(200, "text/html; charset=utf-8", manager_page)
             elif parts.path in shared_assets:
                 self._send(200, *shared_assets[parts.path])

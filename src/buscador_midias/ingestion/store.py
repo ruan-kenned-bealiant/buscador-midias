@@ -44,6 +44,8 @@ from buscador_midias.ingestion.schema import (
     REPORT_INDEXES,
     SCHEMA_VERSION,
     STAGES,
+    STATS_DDL,
+    STATS_TABLE,
     URL_FILTER_MODES,
 )
 
@@ -289,6 +291,10 @@ class IngestStore:
             db.execute(sql.SQL("SET search_path TO {}, pg_catalog").format(sql.Identifier(schema)))
             # A construção lê a tabela inteira: o limite de 2 min das sessões do painel não vale.
             db.execute("SET statement_timeout=0")
+            exists = db.execute("SELECT to_regclass(%s) IS NOT NULL ok", (STATS_TABLE,)).fetchone()
+            if not exists[0]:
+                db.execute(STATS_DDL)
+                created.append(STATS_TABLE)
             for name, table, columns in REPORT_INDEXES:
                 state = db.execute(
                     "SELECT i.indisvalid FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid "
@@ -592,7 +598,10 @@ class IngestStore:
                 )
             ):
                 skipped = cold_link_ids(db)
-                rows = [row for row in rows if row["id"] not in skipped]
+                kept = [row for row in rows if row["id"] not in skipped]
+                # O painel mostra quantos links a rodada deixou para a última do dia.
+                config = {**config, "adaptive_skipped": len(rows) - len(kept)}
+                rows = kept
             if not rows:
                 if scheduled:
                     return None
@@ -1171,6 +1180,72 @@ class IngestStore:
             )
             return dict(id=ident, state="retry")
 
+    # Totais que não mudam depois que a rodada termina (links, ocorrências, artigos únicos),
+    # por (esquema, rodada, término): recontá-los a cada abertura da tela custava segundos.
+    _run_totals: dict[tuple[str, str, Any], dict[str, int]] = {}
+
+    def _runs_panel(self, db: Any) -> list[dict[str, Any]]:
+        """As 20 rodadas mais recentes com pendências (vivas) e totais (em cache se terminadas)."""
+        latest = db.execute(
+            "SELECT * FROM ingest_runs ORDER BY created_at DESC LIMIT 20"
+        ).fetchall()
+        ids = [run["id"] for run in latest]
+        schema = self.store.schema
+        pending = {
+            row["run_id"]: row
+            for row in db.execute(
+                "SELECT j.run_id,"
+                "count(*) FILTER (WHERE NOT (j.failures>0 OR j.payload @> '{\"recovery\":true}')) "
+                "primary_pending,"
+                "count(*) FILTER (WHERE j.failures>0 OR j.payload @> '{\"recovery\":true}') "
+                "recovery_pending FROM ingest_jobs j WHERE j.run_id=ANY(%s) "
+                "AND j.state IN ('pending','queued','retry','running') GROUP BY j.run_id",
+                (ids,),
+            ).fetchall()
+        }
+        totals: dict[str, dict[str, int]] = {}
+        todo = []
+        for run in latest:
+            cached = self._run_totals.get((schema, run["id"], run["finished_at"]))
+            if cached is not None and run["finished_at"] is not None:
+                totals[run["id"]] = cached
+            else:
+                todo.append(run["id"])
+        if todo:
+            for row in db.execute(
+                "SELECT run_id,count(*) links,count(*) FILTER (WHERE discovery_done) links_done "
+                "FROM ingest_polls WHERE run_id=ANY(%s) GROUP BY run_id",
+                (todo,),
+            ).fetchall():
+                totals.setdefault(row["run_id"], {}).update(
+                    links=row["links"], links_done=row["links_done"]
+                )
+            for row in db.execute(
+                "SELECT o.run_id,count(*) occurrences,count(DISTINCT o.hash) unique_articles "
+                "FROM ingest_occurrences o WHERE o.run_id=ANY(%s) GROUP BY o.run_id",
+                (todo,),
+            ).fetchall():
+                totals.setdefault(row["run_id"], {}).update(
+                    occurrences=row["occurrences"], unique_articles=row["unique_articles"]
+                )
+            for run in latest:
+                if run["id"] in todo and run["finished_at"] is not None:
+                    if len(self._run_totals) >= 256:
+                        self._run_totals.clear()
+                    self._run_totals[(schema, run["id"], run["finished_at"])] = totals.get(
+                        run["id"], {}
+                    )
+        empty = dict(links=0, links_done=0, occurrences=0, unique_articles=0)
+        return [
+            {
+                **run,
+                "primary_pending": pending.get(run["id"], {}).get("primary_pending", 0),
+                "recovery_pending": pending.get(run["id"], {}).get("recovery_pending", 0),
+                **{**empty, **totals.get(run["id"], {})},
+            }
+            for run in latest
+        ]
+
     @staticmethod
     def _resolve_run(db: Any, run_id: str) -> str:
         """``latest`` vira o id da rodada mais recente (vazio se ainda não há rodadas)."""
@@ -1196,7 +1271,17 @@ class IngestStore:
             if value:
                 clauses.append(column + "=%s")
                 args.append(value)
-        if source_id:
+        if source_id and run_id:
+            # Dentro de uma rodada o site é um conjunto pequeno de leituras e de notícias: filtra
+            # por elas direto, sem juntar todas as tarefas da rodada com ``ingest_polls``.
+            clauses.append(
+                "(j.poll_id IN (SELECT sp.id FROM ingest_polls sp WHERE sp.run_id=%s "
+                "AND (sp.snapshot->'source'->>'id')::bigint=%s) OR j.hash IN "
+                "(SELECT o.hash FROM ingest_occurrences o JOIN ingest_polls sp ON "
+                "sp.id=o.poll_id WHERE o.run_id=%s AND (sp.snapshot->'source'->>'id')::bigint=%s))"
+            )
+            args += [run_id, source_id, run_id, source_id]
+        elif source_id:
             clauses.append(
                 "((p.snapshot->'source'->>'id')::bigint=%s OR EXISTS "
                 "(SELECT 1 FROM ingest_occurrences so JOIN ingest_polls sp ON sp.id=so.poll_id "
@@ -1209,7 +1294,7 @@ class IngestStore:
     def _metrics(self, db: Any, run_id: str, source_id: int) -> list[dict[str, Any]]:
         """Chamadas pagas, tokens e custo por etapa, somados das tentativas."""
         where, args = self._scope(run_id, source_id)
-        joins = "JOIN ingest_polls p ON p.id=j.poll_id " if source_id else ""
+        joins = "JOIN ingest_polls p ON p.id=j.poll_id " if source_id and not run_id else ""
         return db.execute(
             "SELECT j.stage,"
             "sum(COALESCE((a.metrics->>'bright_data_requests')::int,0)) bright_data_requests,"
@@ -1265,7 +1350,7 @@ class IngestStore:
         with self.connection() as db:
             run_id = self._resolve_run(db, run_id)
             with_polls = "ingest_jobs j JOIN ingest_polls p ON p.id=j.poll_id"
-            source_from = with_polls if source_id else "ingest_jobs j"
+            source_from = with_polls if source_id and not run_id else "ingest_jobs j"
             queue_where, queue_args = self._scope(run_id, source_id)
             queues = db.execute(
                 "SELECT j.stage,j.state,count(*) n,min(j.created_at) oldest FROM "
@@ -1279,29 +1364,7 @@ class IngestStore:
                 "SELECT * FROM ingest_workers WHERE heartbeat_at>now()-interval '1 "
                 "day' ORDER BY role"
             ).fetchall()
-            runs = db.execute(
-                "WITH latest AS (SELECT * FROM ingest_runs ORDER BY created_at DESC LIMIT 20), "
-                "pending AS (SELECT j.run_id,"
-                "count(*) FILTER (WHERE NOT (j.failures>0 OR j.payload @> '{\"recovery\":true}')) "
-                "primary_pending,"
-                "count(*) FILTER (WHERE j.failures>0 OR j.payload @> '{\"recovery\":true}') "
-                "recovery_pending FROM ingest_jobs j WHERE j.run_id IN (SELECT id FROM latest) "
-                "AND j.state IN ('pending','queued','retry','running') GROUP BY j.run_id), "
-                "polls AS (SELECT p.run_id,count(*) links,"
-                "count(*) FILTER (WHERE p.discovery_done) links_done FROM ingest_polls p "
-                "WHERE p.run_id IN (SELECT id FROM latest) GROUP BY p.run_id), "
-                "seen AS (SELECT o.run_id,count(*) occurrences,count(DISTINCT o.hash) "
-                "unique_articles FROM ingest_occurrences o "
-                "WHERE o.run_id IN (SELECT id FROM latest) GROUP BY o.run_id) "
-                "SELECT r.*,COALESCE(pending.primary_pending,0) primary_pending,"
-                "COALESCE(pending.recovery_pending,0) recovery_pending,"
-                "COALESCE(polls.links,0) links,COALESCE(polls.links_done,0) links_done,"
-                "COALESCE(seen.occurrences,0) occurrences,"
-                "COALESCE(seen.unique_articles,0) unique_articles "
-                "FROM latest r LEFT JOIN pending ON pending.run_id=r.id "
-                "LEFT JOIN polls ON polls.run_id=r.id LEFT JOIN seen ON seen.run_id=r.id "
-                "ORDER BY r.created_at DESC"
-            ).fetchall()
+            runs = self._runs_panel(db)
             where, args = self._scope(run_id, source_id, stage, state)
             count = db.execute(
                 "SELECT count(*) n FROM " + source_from + " WHERE " + where, args

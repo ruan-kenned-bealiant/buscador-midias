@@ -217,3 +217,61 @@ def test_busca_route_omits_costs_and_custos_route_serves_them(ingest):
     assert status == costs_status == 200
     assert "metrics" not in screen and screen["run_id"] == run["id"]
     assert "dedup" in {m["stage"] for m in costs["metrics"]}
+
+
+@pytest.fixture
+def statements(ingest, monkeypatch):
+    """Registra os SQLs executados pelo ``overview``; zera o cache de totais das rodadas."""
+    from contextlib import contextmanager
+
+    ingest._run_totals.clear()
+    seen: list[str] = []
+    original = ingest.connection
+
+    class Spy:
+        def __init__(self, db):
+            self.db = db
+
+        def execute(self, query, *args, **kwargs):
+            seen.append(query)
+            return self.db.execute(query, *args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(self.db, name)
+
+    @contextmanager
+    def connection():
+        with original() as db:
+            yield Spy(db)
+
+    monkeypatch.setattr(ingest, "connection", connection)
+    return seen
+
+
+def totals_reads(seen):
+    return [q for q in seen if "unique_articles" in q or "count(DISTINCT o.hash)" in q]
+
+
+def test_finished_runs_keep_their_totals_instead_of_recounting_them_every_time(ingest, statements):
+    first, _ = prepare(ingest, 2)
+    ingest.maintain()
+    with ingest.connection() as db:
+        db.execute("UPDATE ingest_runs SET finished_at=now(),state='completed'")
+        db.execute("UPDATE ingest_polls SET discovery_done=true")
+    statements.clear()
+
+    one = ingest.overview(with_metrics=False)["runs"]
+    counted_once = len(totals_reads(statements))
+    two = ingest.overview(with_metrics=False)["runs"]
+
+    assert counted_once >= 1
+    assert len(totals_reads(statements)) == counted_once  # a segunda vez não recontou
+    assert one == two and one[0]["occurrences"] == 2 and one[0]["id"] == first["id"]
+
+
+def test_an_open_run_is_always_recounted(ingest, statements):
+    prepare(ingest, 2)
+    ingest.overview(with_metrics=False)
+    reads = len(totals_reads(statements))
+    ingest.overview(with_metrics=False)
+    assert len(totals_reads(statements)) > reads

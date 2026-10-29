@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 from collections import Counter, defaultdict
 from typing import Any
 
@@ -105,13 +106,58 @@ def summarize(
     )
 
 
+# Linhas já calculadas por (esquema, rodada): a tela repete a consulta a cada página e a cada
+# busca, e agregar todas as fontes da rodada custa segundos. Só quem pede ``cache_seconds`` usa.
+_ROWS: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
+_ROWS_LIMIT = 8
+
+
 def source_progress(
-    repository: Any, run_id: str = "", offset: int = 0, search: str = ""
+    repository: Any,
+    run_id: str = "",
+    offset: int = 0,
+    search: str = "",
+    *,
+    cache_seconds: float = 0,
 ) -> dict[str, Any]:
-    """Agrega uma rodada: fases compartilhadas aparecem para todas as fontes de origem."""
+    """Agrega uma rodada: fases compartilhadas aparecem para todas as fontes de origem.
+
+    Com ``cache_seconds`` as linhas calculadas ficam em memória por esse tempo: paginar e buscar
+    só reaplicam o filtro. Sem ele (padrão) cada chamada lê o banco.
+    """
     if (run_id and not re.fullmatch(r"[a-f0-9]{32}", run_id)) or not 0 <= offset <= 1000000:
         raise CatalogError("Rodada ou paginação inválida.")
     repository.initialize()
+    key = (repository.store.schema, run_id)
+    now = time.monotonic()
+    cached = _ROWS.get(key) if cache_seconds else None
+    computed = cached[1] if cached and cached[0] > now else _compute(repository, run_id)
+    run = computed["run"]
+    if run is None:
+        return dict(run=None, sources=[], total=0, offset=offset, summary={})
+    if cache_seconds and not (cached and cached[0] > now):
+        for stale in [k for k, (expires, _) in _ROWS.items() if expires <= now]:
+            del _ROWS[stale]
+        while len(_ROWS) >= _ROWS_LIMIT:
+            del _ROWS[next(iter(_ROWS))]
+        _ROWS[key] = (now + cache_seconds, computed)
+    rows = computed["rows"]
+    filtered = sorted(
+        (r for r in rows if search.casefold() in r["name"].casefold()),
+        key=lambda r: (r["state"] == "completed", r["name"].casefold()),
+    )
+    return dict(
+        run=run,
+        sources=filtered[offset : offset + 25],
+        total=len(filtered),
+        offset=offset,
+        summary=computed["summary"],
+        stage_names=list(STAGES),
+    )
+
+
+def _compute(repository: Any, run_id: str) -> dict[str, Any]:
+    """Consulta o banco e resume todas as fontes da rodada (a parte cara)."""
     with repository.connection() as db:
         run = db.execute(
             "SELECT * FROM ingest_runs WHERE %s='' OR id=%s ORDER BY created_at DESC LIMIT 1",
@@ -120,8 +166,17 @@ def source_progress(
         if not run:
             if run_id:
                 raise CatalogError("Rodada não encontrada.", 404)
-            return dict(run=None, sources=[], total=0, offset=offset, summary={})
+            return dict(run=None, rows=[], summary={})
         ident = run["id"]
+        # De onde veio cada notícia da rodada: calculado uma vez e usado pelas três consultas
+        # seguintes (antes cada uma refazia a deduplicação das 50 mil ocorrências).
+        db.execute(
+            "CREATE TEMP TABLE bm_origins ON COMMIT DROP AS SELECT DISTINCT "
+            "(p.snapshot->'source'->>'id')::bigint source_id,o.hash FROM ingest_occurrences o "
+            "JOIN ingest_polls p ON p.id=o.poll_id WHERE o.run_id=%s",
+            (ident,),
+        )
+        db.execute("CREATE INDEX ON bm_origins(hash)")
         sources = db.execute(
             "SELECT (snapshot->'source'->>'id')::bigint id,"
             "max(snapshot->'source'->>'name') name,max(snapshot->'source'->>'url') url,"
@@ -132,9 +187,7 @@ def source_progress(
         # Resultado da última geração desta rodada conserva o histórico mesmo se outra
         # rodada reabrir a notícia. Sem job local, acompanha o trabalho já compartilhado.
         statuses = db.execute(
-            "WITH origins AS (SELECT DISTINCT (p.snapshot->'source'->>'id')::bigint source_id,"
-            "o.hash FROM ingest_occurrences o JOIN ingest_polls p ON p.id=o.poll_id "
-            "WHERE o.run_id=%s), latest AS (SELECT DISTINCT ON(hash) hash,stage,state,result "
+            "WITH latest AS (SELECT DISTINCT ON(hash) hash,stage,state,result "
             "FROM ingest_jobs WHERE run_id=%s AND hash IS NOT NULL ORDER BY hash,generation "
             "DESC,CASE stage WHEN 'persist' THEN 6 WHEN 'evidence' THEN 5 WHEN 'context' THEN 4 "
             "WHEN 'fetch' THEN 3 ELSE 2 END DESC,created_at DESC) "
@@ -144,35 +197,32 @@ def source_progress(
             "WHEN j.state='succeeded' THEN "
             "COALESCE(j.result->>'status',j.result->>'next',a.status) "
             "WHEN j.stage='dedup' THEN 'pending' ELSE COALESCE(j.stage,a.status) END status,"
-            "count(*) n FROM origins o JOIN ingest_articles a ON a.hash=o.hash "
+            "count(*) n FROM bm_origins o JOIN ingest_articles a ON a.hash=o.hash "
             "LEFT JOIN latest j ON j.hash=o.hash GROUP BY 1,2",
-            (ident, ident, ident),
+            (ident, ident),
         ).fetchall()
         queues = db.execute(
-            "WITH origins AS (SELECT DISTINCT (p.snapshot->'source'->>'id')::bigint source_id,"
-            "o.hash FROM ingest_occurrences o JOIN ingest_polls p ON p.id=o.poll_id "
-            "WHERE o.run_id=%s) SELECT COALESCE(o.source_id,"
-            "(p.snapshot->'source'->>'id')::bigint) source_id,j.stage,j.state,count(*) n "
-            "FROM ingest_jobs j JOIN ingest_polls p ON p.id=j.poll_id "
-            "LEFT JOIN origins o ON o.hash=j.hash WHERE j.run_id=%s "
-            "AND (j.hash IS NULL OR j.generation=(SELECT max(g.generation) FROM ingest_jobs g "
-            "WHERE g.run_id=j.run_id AND g.hash=j.hash)) "
+            "WITH newest AS (SELECT hash,max(generation) generation FROM ingest_jobs "
+            "WHERE run_id=%s AND hash IS NOT NULL GROUP BY hash) "
+            "SELECT COALESCE(o.source_id,(p.snapshot->'source'->>'id')::bigint) source_id,"
+            "j.stage,j.state,count(*) n FROM ingest_jobs j "
+            "JOIN ingest_polls p ON p.id=j.poll_id LEFT JOIN bm_origins o ON o.hash=j.hash "
+            "LEFT JOIN newest g ON g.hash=j.hash WHERE j.run_id=%s "
+            "AND (j.hash IS NULL OR j.generation=g.generation) "
             "GROUP BY 1,2,3 ORDER BY j.stage,j.state",
             (ident, ident),
         ).fetchall()
         inherited = db.execute(
-            "WITH origins AS (SELECT DISTINCT (p.snapshot->'source'->>'id')::bigint source_id,"
-            "o.hash FROM ingest_occurrences o JOIN ingest_polls p ON p.id=o.poll_id "
-            "WHERE o.run_id=%s), ranked AS (SELECT o.source_id,a.url,j.id job_id,j.stage,"
+            "WITH ranked AS (SELECT o.source_id,a.url,j.id job_id,j.stage,"
             "j.run_id,j.outcome,j.finished_at,r.created_at run_created_at,"
             "row_number() OVER(PARTITION BY o.source_id ORDER BY j.finished_at DESC,j.id) pos "
-            "FROM origins o JOIN ingest_articles a ON a.hash=o.hash JOIN LATERAL "
+            "FROM bm_origins o JOIN ingest_articles a ON a.hash=o.hash JOIN LATERAL "
             "(SELECT id,stage,run_id,outcome,finished_at FROM ingest_jobs WHERE hash=o.hash "
             "AND state='failed' ORDER BY generation DESC,finished_at DESC,id LIMIT 1) j "
             "ON true JOIN ingest_runs r ON r.id=j.run_id WHERE a.status='failed' "
             "AND a.run_id<>%s AND NOT EXISTS(SELECT 1 FROM ingest_jobs local "
             "WHERE local.hash=o.hash AND local.run_id=%s)) SELECT * FROM ranked WHERE pos<=5",
-            (ident, ident, ident),
+            (ident, ident),
         ).fetchall()
     by_source: dict[int, dict[str, int]] = defaultdict(dict)
     stage_rows: dict[int, list[Any]] = defaultdict(list)
@@ -194,15 +244,4 @@ def source_progress(
         for s in sources
     ]
     summary = dict(Counter(row["state"] for row in rows))
-    filtered = sorted(
-        (r for r in rows if search.casefold() in r["name"].casefold()),
-        key=lambda r: (r["state"] == "completed", r["name"].casefold()),
-    )
-    return dict(
-        run=run,
-        sources=filtered[offset : offset + 25],
-        total=len(filtered),
-        offset=offset,
-        summary=summary,
-        stage_names=list(STAGES),
-    )
+    return dict(run=run, rows=rows, summary=summary)

@@ -37,6 +37,7 @@ from buscador_midias.ingestion.flow import (
     publication_outside,
     recovery_workers,
 )
+from buscador_midias.ingestion.run_stats import finalize_pending
 from buscador_midias.ingestion.schema import STAGES
 from buscador_midias.ingestion.store import IngestStore
 
@@ -334,10 +335,15 @@ class Service:
     def scheduler(self) -> None:
         """Distribui apenas vencidos, com limite de lote que não descarta os demais links."""
         owner = self.instance + ":scheduler"
+        stats_at = 0.0
         while not self.stop.is_set():
             try:
                 self.repository.maintain()
                 self.repository.create_run({}, scheduled=True)
+                if time.monotonic() - stats_at >= 60:
+                    # Fecha os números do painel de uma rodada terminada, uma por volta.
+                    stats_at = time.monotonic()
+                    finalize_pending(self.repository)
                 self.heartbeat(owner, "scheduler", "online")
             except Exception as error:
                 _LOG.error("Agendador: %s", type(error).__name__)
@@ -527,6 +533,7 @@ def main(argv: list[str] | None = None) -> int:
             "backfill-context-themes",
             "stop-runs",
             "ensure-indexes",
+            "backfill-stats",
         ),
     )
     parser.add_argument(
@@ -535,6 +542,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--stage", choices=STAGES)
     parser.add_argument("--mode", choices=("live", "archive"), default="live")
     parser.add_argument("--day", help="Dia civil em Brasília (AAAA-MM-DD)")
+    parser.add_argument("--days", type=int, help="Janela em dias do backfill-stats (padrão 30)")
+    parser.add_argument("--force", action="store_true", help="backfill-stats recalcula tudo")
     parser.add_argument("--samples", type=int, default=3)
     parser.add_argument("--link-ids", type=int, nargs="+")
     parser.add_argument("--run-id", help="Rodada do backfill; padrão: a mais recente em execução")
@@ -581,6 +590,14 @@ def main(argv: list[str] | None = None) -> int:
             print("Cancela o trabalho não analisado das rodadas abertas; confirme com --apply.")
             return 1
         print(json.dumps(repository.stop_runs(), ensure_ascii=False))
+    elif args.command == "backfill-stats":
+        from buscador_midias.ingestion.run_stats import backfill_stats
+
+        print(
+            json.dumps(
+                dict(computed=backfill_stats(repository, days=args.days or 30, force=args.force))
+            )
+        )
     elif args.command == "ensure-indexes":
         print(json.dumps(dict(created=repository.ensure_report_indexes()), ensure_ascii=False))
     elif args.command == "status":

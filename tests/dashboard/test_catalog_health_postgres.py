@@ -172,6 +172,42 @@ def test_recovery_skips_old_failures_checked_this_week(
     assert health.create("recovery")["total"] == included
 
 
+def test_history_counts_are_served_from_a_covering_index(health):
+    run = health.create("active")
+    execute(health)
+    with health.connection() as db:
+        db.execute("SET LOCAL enable_seqscan=off")
+        plan = "\n".join(
+            r["QUERY PLAN"]
+            for r in db.execute(
+                "EXPLAIN SELECT (CASE WHEN state='completed' THEN category ELSE state END) k,"
+                "count(*) n,count(*) FILTER (WHERE activated) a FROM health_results "
+                "WHERE run_id=%s GROUP BY 1",
+                (run["id"],),
+            )
+        )
+    assert "Index Only Scan using health_results_summary" in plan
+
+
+def test_history_reports_paid_requests_only_for_runs_that_may_spend(health):
+    run = health.create("active")
+    execute(health)
+    with health.connection() as db:
+        db.execute(
+            "UPDATE health_attempts SET result=result||'{\"bright_data_requests\":3}'::jsonb "
+            "WHERE run_id=%s",
+            (run["id"],),
+        )
+    assert health.overview()["runs"][0]["bright_data_requests"] == 0
+    with health.connection() as db:
+        db.execute(
+            "UPDATE health_runs SET configuration=jsonb_set(configuration,'{bright_data}',"
+            "'true') WHERE id=%s",
+            (run["id"],),
+        )
+    assert health.overview()["runs"][0]["bright_data_requests"] == 3
+
+
 def test_resume_cancel_and_catalog_edit_conflicts(health):
     run = health.create("active")
     worker = HealthWorker(health, old_news)

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Painel · Buscador de mídias</title>
+<link rel="stylesheet" href="/assets/app.css">
+<style>
+:root{--series-1:#2a78d6;--series-2:#eb6834;--series-3:#1baf7a;--mark:var(--green);--grid:var(--line);--track:var(--soft)}
+.range{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.segmented{display:inline-flex;border:1px solid var(--line-strong);border-radius:var(--radius-sm);overflow:hidden;background:var(--paper)}
+.segmented button{border:0;border-radius:0;padding:8px 14px;background:transparent;font-weight:550}
+.segmented button+button{border-left:1px solid var(--line)}
+.segmented button[aria-pressed=true]{background:var(--selected);color:var(--green)}
+section.block{margin-top:30px}
+section.block>h2{margin-bottom:4px}
+section.block>p.lead{margin:0 0 14px;color:var(--muted);max-width:70ch}
+#panel.is-refreshing .block,#panel.is-refreshing .last-card{opacity:.6;transition:opacity .15s}
+.last-card{display:grid;grid-template-columns:minmax(260px,.9fr) minmax(0,1.4fr);gap:0;padding:0}
+.last-hero{padding:24px 26px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:10px;min-width:0}
+.last-hero h2{font-size:18px}
+.hero-figure{font-size:clamp(44px,6vw,64px);font-weight:700;letter-spacing:-2px;line-height:1;margin:6px 0 0}
+.hero-label{color:var(--muted);font-size:13px}
+.delta{font-size:13px;font-weight:600}
+.delta.up{color:var(--ok-fg)}.delta.down{color:var(--err-fg)}.delta.flat{color:var(--muted)}
+.last-meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.funnel{padding:24px 26px;display:grid;gap:14px;align-content:center;min-width:0}
+.funnel h3{font-size:14px;color:var(--muted);font-weight:600}
+.step{display:grid;grid-template-columns:128px minmax(0,1fr) auto;gap:12px;align-items:center;font-size:13px}
+.step .track{height:16px;background:var(--track);border-radius:4px;overflow:hidden}
+.step .fill{height:100%;background:var(--mark);border-radius:0 4px 4px 0;min-width:2px}
+.step .num{font-variant-numeric:tabular-nums;text-align:right;min-width:92px}
+.step .num small{color:var(--muted);margin-left:6px}
+.tile-note{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.stat .status{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;margin-top:4px}
+.status.good{color:var(--ok-fg)}.status.warn{color:var(--warn-fg)}.status.bad{color:var(--err-fg)}
+.meter{height:6px;background:var(--track);border-radius:3px;margin-top:8px;overflow:hidden}
+.meter span{display:block;height:100%;background:var(--mark)}
+.meter.warn span{background:#fab219}.meter.bad span{background:#d03b3b}
+.charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.chart-card{padding:18px 20px 14px;position:relative;min-width:0}
+.chart-card.wide{grid-column:1/-1}
+.chart-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:6px}
+.chart-head h3{font-size:15px}
+.chart-head p{margin:2px 0 0;color:var(--muted);font-size:12px}
+.chart-head button{font-size:12px;padding:5px 10px;white-space:nowrap}
+.chart-body{min-height:220px;position:relative}
+.chart-body svg{display:block;width:100%;height:auto;overflow:visible}
+.chart-body text{font:11px system-ui,sans-serif;fill:var(--muted)}
+.chart-body .end{fill:var(--ink);font-weight:600}
+.chart-body .grid{stroke:var(--grid);stroke-width:1}
+.chart-body .hit{fill:transparent;cursor:default}
+.chart-body .hit:focus-visible{outline:2px solid var(--green);outline-offset:-2px}
+.chart-body rect.bar{transition:filter .1s}
+.chart-body g.mark:hover rect.bar,.chart-body g.mark:focus-within rect.bar{filter:brightness(1.12)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--ink)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{display:inline-block;width:14px;height:0;border-top:2px solid;border-radius:2px}
+.legend i.box{height:10px;width:10px;border:0;border-radius:2px}
+.chart-table{display:none;overflow-x:auto;max-height:260px;overflow-y:auto}
+.chart-card.as-table .chart-body,.chart-card.as-table .legend{display:none}
+.chart-card.as-table .chart-table{display:block}
+.chart-table td:first-child,.chart-table th:first-child{white-space:nowrap}
+.chart-table td{font-variant-numeric:tabular-nums}
+.tip{position:fixed;z-index:30;pointer-events:none;background:var(--paper);border:1px solid var(--line-strong);border-radius:8px;box-shadow:0 6px 24px #10221a26;padding:8px 10px;font-size:12px;min-width:140px;max-width:260px}
+.tip b{font-variant-numeric:tabular-nums}
+.tip .tip-title{color:var(--muted);margin-bottom:4px}
+.tip .row{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.tip .row span{display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
+.tip .row i{display:inline-block;width:10px;border-top:2px solid}
+.fail-table td.reason{overflow-wrap:anywhere;min-width:180px}
+.fail-bar{display:block;height:6px;background:var(--mark);border-radius:0 3px 3px 0;min-width:2px}
+.split{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:18px;align-items:start}
+.health-last{display:grid;gap:12px}
+.health-last .panel{padding:16px 18px}
+.health-last h3{font-size:14px;margin-bottom:8px}
+.cats{display:flex;flex-wrap:wrap;gap:6px}
+.audit-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+.sk{min-height:120px}
+@media(max-width:1100px){.last-card{grid-template-columns:1fr}.last-hero{border-right:0;border-bottom:1px solid var(--line)}.split{grid-template-columns:1fr}}
+@media(max-width:900px){.charts{grid-template-columns:1fr}}
+@media(max-width:650px){.step{grid-template-columns:96px minmax(0,1fr) auto}.step .num{min-width:72px}.last-hero,.funnel{padding:18px}.segmented button{padding:8px 11px}}
+</style>
+</head>
+<body><div class="shell">
+<aside class="sidebar"><div class="brand"><span class="brand-mark" aria-hidden="true">≋</span><div>Buscador de mídias<br><small>CATÁLOGO EDITORIAL</small></div></div><nav aria-label="Navegação principal"><div class="nav-label">Catálogo</div><a href="/" class="current" aria-current="page">▦ &nbsp; Painel</a><a href="/gerenciador">◫ &nbsp; Gerenciador de sites</a><a href="/mecanismos">⚙ &nbsp; Mecanismos de busca</a><a href="/saude">♡ &nbsp; Saúde das fontes</a><a href="/buscador">⌕ &nbsp; Buscador de notícias</a><a href="/guia">? &nbsp; Guia e dicionário</a></nav><footer><span class="local-dot"></span>Ambiente local<br>Seu catálogo de fontes.</footer></aside>
+<main id="panel">
+<header><div><div class="eyebrow">Visão geral</div><h1>Painel</h1><p class="muted" id="updated">Carregando números…</p></div>
+<div class="range"><div class="segmented" role="group" aria-label="Período do histórico"><button type="button" data-days="3" aria-pressed="false">3 dias</button><button type="button" data-days="7" aria-pressed="true">7 dias</button><button type="button" data-days="14" aria-pressed="false">14 dias</button><button type="button" data-days="30" aria-pressed="false">30 dias</button></div><button id="refresh" type="button">Atualizar</button></div></header>
+<div id="error" class="error" role="alert" hidden></div>
+
+<section class="block" id="sec-last" aria-labelledby="t-last" style="margin-top:0"><h2 id="t-last">Última rodada</h2>
+<div id="last" class="panel last-card"><div class="sk skeleton-row" aria-hidden="true"><span class="skeleton big"></span><span class="skeleton line mid"></span></div></div>
+<div id="last-tiles" class="stats" style="margin-top:14px;margin-bottom:0"></div></section>
+
+<section class="block" id="sec-now" aria-labelledby="t-now"><h2 id="t-now">Agora</h2><p class="lead">O que está acontecendo neste momento e o que vem a seguir.</p><div id="now" class="stats" style="margin-bottom:0"></div></section>
+
+<section class="block" id="sec-hist" aria-labelledby="t-hist"><h2 id="t-hist">Histórico</h2><p class="lead" id="hist-lead">Cada ponto é uma rodada de busca.</p><div id="charts" class="charts"></div></section>
+
+<section class="block" id="sec-fail" aria-labelledby="t-fail"><h2 id="t-fail">Falhas</h2><p class="lead">Os motivos que mais se repetiram no período, somando todas as rodadas.</p><div id="failures" class="panel"></div></section>
+
+<section class="block" id="sec-health" aria-labelledby="t-health"><h2 id="t-health">Catálogo e saúde das fontes</h2><p class="lead">O que a rotina de saúde mudou no catálogo e o resultado das últimas verificações.</p><div class="split"><div id="health-chart" class="panel chart-card"></div><div id="health-last" class="health-last"></div></div></section>
+
+<section class="block" id="sec-audit" aria-labelledby="t-audit"><h2 id="t-audit">Corte pelo topo e leitura adaptativa</h2><p class="lead">Provas de que as otimizações de velocidade não perdem notícia.</p><div id="audit" class="audit-grid"></div></section>
+</main></div>
+<div id="tip" class="tip" role="tooltip" hidden></div>
+<script src="/assets/app.js"></script>
+<script src="/assets/panel.js"></script>
+</body></html>

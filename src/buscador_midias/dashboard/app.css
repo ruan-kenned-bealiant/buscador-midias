@@ -1,7 +1,8 @@
 /*
  * Folha compartilhada do painel: tokens, casca, componentes e estados de carregamento.
  * Cada tela guarda no próprio <style> apenas o que é só dela, sempre usando estes tokens
- * (nenhuma cor literal), para que o tema escuro funcione em todas.
+ * (nenhuma cor literal). O painel é sempre claro, qualquer que seja o tema do sistema; o escuro
+ * existe só sob :root[data-theme="dark"] e nada o liga hoje.
  */
 :root {
   color-scheme: light;
@@ -41,45 +42,6 @@
   --radius: 12px;
   --radius-sm: 8px;
   --gutter: clamp(16px, 3vw, 48px);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
-    --ink: #e3eee8;
-    --muted: #9bb0a6;
-    --green: #5cc59b;
-    --green-strong: #7ad6b1;
-    --on-green: #082219;
-    --line: #26372f;
-    --line-strong: #35493f;
-    --bg: #0e1814;
-    --paper: #15211c;
-    --side: #111c17;
-    --soft: #1a2a23;
-    --hover: #1c2c25;
-    --selected: #1d3328;
-    --red: #f08a82;
-    --ok-bg: #173226;
-    --ok-fg: #8fdcb9;
-    --off-bg: #222d28;
-    --off-fg: #a3b3ab;
-    --warn-bg: #3a2f14;
-    --warn-fg: #ecc678;
-    --info-bg: #17303d;
-    --info-fg: #94c6e2;
-    --err-bg: #3a1d1a;
-    --err-fg: #f2a59d;
-    --err-line: #6a3530;
-    --note-bg: #352c17;
-    --note-fg: #e3c47e;
-    --toast-bg: #e3eee8;
-    --toast-fg: #0e1814;
-    --scrim: #02070580;
-    --shadow: 0 18px 70px #00000099;
-    --skeleton-a: #1c2b24;
-    --skeleton-b: #243630;
-  }
 }
 
 :root[data-theme="dark"] {
