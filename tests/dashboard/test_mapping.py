@@ -103,7 +103,8 @@ def test_fonte_sem_secoes_e_fonte_desconhecida_sao_distintas(map_base):
 
 
 def test_tela_mapa_e_painel_anterior_permanecem_acessiveis(map_base):
-    assert "Mapa de fontes" in get(map_base + "/")[2].decode()
+    status, _, body = get(map_base + "/")
+    assert status == 200 and "/assets/panel.js" in body.decode()
     assert get(map_base + "/mapa")[0] == 410
     assert get(map_base + "/fluxo")[0] == 410
     store = StateStore(read_only=True)

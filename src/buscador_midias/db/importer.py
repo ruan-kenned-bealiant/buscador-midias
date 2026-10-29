@@ -86,22 +86,22 @@ def import_legacy(db: psycopg.Connection[Any], source_schema: str = LEGACY_SCHEM
             source_schema,
         )
     )
-    db.execute(
-        _q(
-            "INSERT INTO bm_sites(id,identity,name,url,country,language,notes,active,deleted_at,"
-            "version,origin,created_at,updated_at) OVERRIDING SYSTEM VALUE "
-            "SELECT id,identity,name,url,country,language,notes,active,deleted_at,version,origin,"
-            "created_at,updated_at FROM {src}.sites",
-            source_schema,
-        )
-    )
+    db.execute(_sites_sql(source_schema))
     db.execute(_links_sql(source_schema))
     db.execute(
         _q(
             "INSERT INTO bm_link_state(link_id,last_test,evidence,health_category,"
-            "health_failures,health_checked_at) SELECT l.id,COALESCE(l.last_test,'{{}}'::jsonb),"
-            "COALESCE(l.evidence,'{{}}'::jsonb),h.category,COALESCE(h.failures,0),h.checked_at "
-            "FROM {src}.links l LEFT JOIN {src}.link_health h ON h.link_id=l.id "
+            "health_failures,health_checked_at,health_config) "
+            "SELECT l.id,COALESCE(l.last_test,'{{}}'::jsonb),"
+            "COALESCE(l.evidence,'{{}}'::jsonb),h.category,COALESCE(h.failures,0),h.checked_at,"
+            # A prova da saúde só vale se o cadastro não mudou desde a verificação.
+            "CASE WHEN (h.link_version,h.source_version,h.model_version)="
+            "(l.version,s.version,m.version) THEN jsonb_build_object('url',l.url,'kind',l.kind,"
+            "'model',l.model,'model_version',m.version,'source_url',s.url,"
+            "'access_transport',l.access_transport) END "
+            "FROM {src}.links l JOIN {src}.sites s ON s.id=l.source_id "
+            "JOIN {src}.mechanisms m ON m.model=l.model "
+            "LEFT JOIN {src}.link_health h ON h.link_id=l.id "
             "WHERE h.link_id IS NOT NULL OR l.last_test<>'{{}}'::jsonb "
             "OR l.evidence<>'{{}}'::jsonb",
             source_schema,
@@ -116,6 +116,27 @@ def import_legacy(db: psycopg.Connection[Any], source_schema: str = LEGACY_SCHEM
             ).format(name=sql.Literal(table), table=sql.Identifier(table))
         )
     _assert_equal(db, source_schema)
+
+
+def _sites_sql(source: str) -> sql.Composed:
+    return _q(
+        "WITH last AS (SELECT DISTINCT ON (entity_id) entity_id,action,happened_at "
+        "FROM {src}.events WHERE entity='source' AND action IN "
+        "('validation_inactivate','delete') "
+        "ORDER BY entity_id,happened_at DESC,id DESC) "
+        "INSERT INTO bm_sites(id,identity,name,url,country,language,notes,active,deleted_at,"
+        "deactivated_by,deactivated_reason,deactivated_at,version,origin,created_at,updated_at) "
+        "OVERRIDING SYSTEM VALUE "
+        "SELECT s.id,s.identity,s.name,s.url,s.country,s.language,s.notes,s.active,s.deleted_at,"
+        "CASE WHEN s.active = 1 AND s.deleted_at IS NULL THEN NULL ELSE "
+        "CASE last.action WHEN 'validation_inactivate' THEN 'validation' WHEN 'delete' THEN 'user' "
+        "END END,"
+        "CASE WHEN s.active = 1 AND s.deleted_at IS NULL THEN NULL ELSE last.action END,"
+        "CASE WHEN s.active = 1 AND s.deleted_at IS NULL THEN NULL ELSE last.happened_at END,"
+        "s.version,s.origin,s.created_at,s.updated_at "
+        "FROM {src}.sites s LEFT JOIN last ON last.entity_id=s.id",
+        source,
+    )
 
 
 def _links_sql(source: str) -> sql.Composed:

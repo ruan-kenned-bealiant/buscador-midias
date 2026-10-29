@@ -275,3 +275,42 @@ def test_install_is_idempotent_and_keeps_customised_mechanisms(repo):
     repo.save_model("rss", dict(version=1, parameters=dict(max_requests=12)))
     repo.install()
     assert repo.model_settings("rss")["parameters"]["max_requests"] == 12
+
+
+def provenance(repo: CatalogRepository, table: str, ident: int) -> dict[str, Any]:
+    with repo.connection() as db:
+        return dict(
+            db.execute(
+                f"SELECT deactivated_by,deactivated_reason,deactivated_at IS NOT NULL AS has_at "
+                f"FROM {table} WHERE id=%s",
+                (ident,),
+            ).fetchone()
+        )
+
+
+@pytest.mark.parametrize("entity", ["endpoint", "source"])
+def test_a_manual_inactivation_records_the_user_and_a_reactivation_clears_it(repo, entity):
+    site = new_site(repo)
+    saved = new_link(repo, site, "https://a.example/feed") if entity == "endpoint" else site
+    table = "bm_links" if entity == "endpoint" else "bm_sites"
+    off = repo.save(entity, dict(version=saved["version"], active=False), saved["id"])
+    assert provenance(repo, table, saved["id"]) == dict(
+        deactivated_by="user", deactivated_reason="manual", has_at=True
+    )
+    repo.save(entity, dict(version=off["version"], active=True), saved["id"])
+    assert provenance(repo, table, saved["id"]) == dict(
+        deactivated_by=None, deactivated_reason=None, has_at=False
+    )
+
+
+def test_a_link_created_inactive_records_the_user(repo):
+    link = new_link(repo, new_site(repo), "https://a.example/off", active=False)
+    assert provenance(repo, "bm_links", link["id"])["deactivated_by"] == "user"
+
+
+def test_an_edit_of_an_inactive_link_keeps_the_original_provenance(repo):
+    link = new_link(repo, new_site(repo), "https://a.example/off", active=False)
+    with repo.connection() as db:
+        db.execute("UPDATE bm_links SET deactivated_by='health' WHERE id=%s", (link["id"],))
+    repo.save("endpoint", dict(version=link["version"], label="novo"), link["id"])
+    assert provenance(repo, "bm_links", link["id"])["deactivated_by"] == "health"

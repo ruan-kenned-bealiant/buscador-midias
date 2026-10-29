@@ -152,3 +152,26 @@ def test_fold_function_ignores_accents_and_case(db):
     value = db.execute("SELECT bm_fold('São José – Ñandú ÇÀ')").fetchone()[0]
     assert value == "sao jose – nandu ca"
     assert db.execute("SELECT strpos(bm_fold('Folha de S.Paulo'),bm_fold('PAULO'))>0").fetchone()[0]
+
+
+def test_provenance_and_tested_configuration_columns_exist(db):
+    install(db)
+    install(db)  # aditivo e repetível sobre um banco já instalado
+    columns = {
+        (r[0], r[1])
+        for r in db.execute(
+            "SELECT table_name,column_name FROM information_schema.columns "
+            "WHERE table_schema=current_schema()"
+        ).fetchall()
+    }
+    provenance = ("deactivated_by", "deactivated_reason", "deactivated_at")
+    assert {("bm_sites", c) for c in provenance} <= columns
+    assert ("bm_link_state", "health_config") in columns
+
+
+def test_a_site_deactivation_author_is_constrained(db):
+    install(db)
+    with pytest.raises(psycopg.errors.CheckViolation), db.transaction():
+        db.execute(
+            "INSERT INTO bm_sites(identity,name,url,deactivated_by) VALUES('x','X','https://x','robot')"
+        )

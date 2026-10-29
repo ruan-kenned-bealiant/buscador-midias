@@ -141,3 +141,27 @@ def test_a_message_for_an_article_that_is_not_waiting_is_acknowledged_and_ignore
         thread.join(timeout=30)
         connection.close()
         store.close_pool()
+
+
+def test_the_snapshot_lists_every_queue_with_messages_and_consumers(prefix):
+    connection = broker.connect()
+    try:
+        channel = connection.channel()
+        broker.declare(channel)
+        broker.publish(channel, "dedup", "a" * 64)
+    finally:
+        connection.close()
+    rows = {(r["stage"], r["lane"]): r for r in broker.snapshot()}
+    assert len(rows) == 12 and rows[("dedup", "primary")]["messages"] == 1
+    assert rows[("fetch", "recovery")] == dict(
+        stage="fetch",
+        lane="recovery",
+        queue=f"{prefix}.fetch.recovery",
+        messages=0,
+        consumers=0,
+    )
+
+
+def test_a_missing_queue_is_reported_as_unknown_instead_of_failing(prefix):
+    rows = broker.snapshot()
+    assert all(r["messages"] is None and r["consumers"] is None for r in rows)

@@ -326,15 +326,18 @@ def test_parser_do_painel_escuta_so_na_maquina_local_por_padrao():
     assert args.schedule.name == "schedule.json"
 
 
-def test_painel_sem_conexao_com_o_estado_aborta_com_mensagem(
+def test_painel_sobe_sem_o_estado_e_so_as_rotas_que_precisam_dele_ficam_indisponiveis(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setenv("DB_MIDIAS_IA_PORT", "1")  # nada escuta nessa porta
+    started: list[tuple[str, int]] = []
 
-    code = main(["dashboard", "--port", "0"], serve=lambda server: None)
+    code = main(
+        ["dashboard", "--port", "0"], serve=lambda server: started.append(server.server_address[:2])
+    )
 
-    assert code == 2
-    assert "estado" in capsys.readouterr().err
+    assert code == 0 and started
+    assert "painel em http://" in capsys.readouterr().out
 
 
 def test_painel_sobe_o_servidor_e_mostra_o_endereco(

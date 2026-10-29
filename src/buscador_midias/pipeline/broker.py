@@ -92,3 +92,33 @@ def delete_all(channel: Any) -> None:
     for stage in STAGES:
         for lane in LANES:
             channel.queue_delete(queue=queue_name(stage, lane))
+
+
+def snapshot() -> list[dict[str, Any]]:
+    """Profundidade e consumidores de cada fila, para o painel; fila inexistente vem sem números.
+
+    Cada consulta usa o próprio canal: declarar passivamente uma fila que não existe fecha o canal.
+    """
+    connection = connect()
+    try:
+        rows = []
+        for stage in STAGES:
+            for lane in LANES:
+                channel = connection.channel()
+                try:
+                    messages, consumers = depth(channel, stage, lane)
+                    channel.close()
+                except pika.exceptions.ChannelClosedByBroker:
+                    messages = consumers = None  # type: ignore[assignment]
+                rows.append(
+                    dict(
+                        stage=stage,
+                        lane=lane,
+                        queue=queue_name(stage, lane),
+                        messages=messages,
+                        consumers=consumers,
+                    )
+                )
+        return rows
+    finally:
+        connection.close()

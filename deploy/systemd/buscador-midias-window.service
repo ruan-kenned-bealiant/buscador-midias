@@ -1,0 +1,15 @@
+[Unit]
+Description=Buscador de mídias - filtro de janela (fecha sem HTTP o que a data já exclui)
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ruan-aliant/Documentos/Projetos/buscador-midias
+ExecStart=/home/ruan-aliant/Documentos/Projetos/buscador-midias/scripts/bm.sh pipeline serve --role window
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=150
+KillMode=control-group
+
+[Install]
+WantedBy=default.target

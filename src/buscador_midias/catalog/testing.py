@@ -14,13 +14,15 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 from urllib.parse import urljoin
 
+import psycopg
+
 from buscador_midias.catalog.bright_reader import BrightTestReader, bright_data_available
 from buscador_midias.catalog.cadence import estimate_cadence
 from buscador_midias.catalog.http_transport import make_reader, validate_transport
 from buscador_midias.catalog.mechanisms import get_mechanism
 from buscador_midias.catalog.read_order import UNKNOWN, detect_read_order
 from buscador_midias.catalog.reader import TestLimitError, TestReader
-from buscador_midias.catalog.store import CatalogError, CatalogStore, clean_url
+from buscador_midias.catalog.store import CatalogError, clean_url
 from buscador_midias.domain.site import Site
 from buscador_midias.extraction.reliability import PageSnapshot
 from buscador_midias.extraction.sample_audit import audit_page
@@ -438,7 +440,7 @@ class TestJobs:
 
     __test__ = False
 
-    def __init__(self, store: CatalogStore, factory: ReaderFactory | None = None) -> None:
+    def __init__(self, store: Any, factory: ReaderFactory | None = None) -> None:
         """Define repositório e porta de rede, injetável para testes sem internet."""
         self.store, self.factory = store, factory
         self.lock = threading.Lock()
@@ -532,7 +534,7 @@ class TestJobs:
                     result["applied_version"] = self.store.record_test(
                         data["endpoint_id"], data["version"], result
                     )
-                except (CatalogError, OSError, sqlite3.Error) as error:
+                except (CatalogError, OSError, sqlite3.Error, psycopg.Error) as error:
                     result["save_warning"] = (
                         str(error)
                         if isinstance(error, CatalogError)

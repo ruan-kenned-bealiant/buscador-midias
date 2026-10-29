@@ -1,0 +1,15 @@
+[Unit]
+Description=Buscador de mídias - painel e API (tabelas bm_*)
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ruan-aliant/Documentos/Projetos/buscador-midias
+Environment=BM_BACKEND=bm
+ExecStart=/home/ruan-aliant/Documentos/Projetos/buscador-midias/scripts/bm.sh dashboard
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

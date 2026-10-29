@@ -91,6 +91,27 @@ def _diff(before: Mapping[str, Any] | None, after: Mapping[str, Any]) -> dict[st
     }
 
 
+def evidence_from_test(result: dict[str, Any]) -> dict[str, Any]:
+    """O que fica no estado do link quando um teste prova o documento."""
+    return dict(
+        evidence="xml",
+        listed=result["root_entries"],
+        children=result["root_children"],
+        index=result["root_index"],
+        observed_at=result["observed_at"],
+        texts=result["text_samples"],
+        round_news=None,
+        example=next(
+            (s["url"] for s in result["samples"] if s.get("text") and s.get("eligible", True)),
+            "",
+        ),
+        audio=result["outcome"] == "audio_only",
+        access_method=result.get("access_method", "direct"),
+        bright_data_requests=result.get("bright_data_requests", 0),
+        test_id=result["test_id"],
+    )
+
+
 class CatalogRepository(Repository):
     """Cadastro editável: uma transação por operação e escrita serializada por advisory lock."""
 
@@ -405,6 +426,29 @@ class CatalogRepository(Repository):
         return _plain(row)
 
     @staticmethod
+    def _provenance(
+        db: psycopg.Connection[dict[str, Any]],
+        table: str,
+        ident: int,
+        active: int,
+        before: dict[str, Any] | None,
+    ) -> None:
+        """Quem inativou: o usuário, ao desligar; limpo ao religar. Edição não muda a autoria."""
+        if active:
+            db.execute(
+                f"UPDATE {table} SET deactivated_by=NULL,deactivated_reason=NULL,"  # noqa: S608
+                "deactivated_at=NULL WHERE id=%s AND deleted_at IS NULL "
+                "AND deactivated_by IS NOT NULL",
+                (ident,),
+            )
+        elif before is None or before["active"]:
+            db.execute(
+                f"UPDATE {table} SET deactivated_by='user',deactivated_reason='manual',"  # noqa: S608
+                "deactivated_at=now() WHERE id=%s",
+                (ident,),
+            )
+
+    @staticmethod
     def _stored(row: dict[str, Any] | None) -> dict[str, Any]:
         """Valores já gravados, com ``active`` como booleano para passar pela mesma validação."""
         return {**row, "active": bool(row["active"])} if row else {}
@@ -464,6 +508,7 @@ class CatalogRepository(Repository):
             ).fetchone()
             assert row
             ident = row["id"]
+        self._provenance(db, "bm_sites", int(ident or 0), values["active"], before)
         return self._site(db, int(ident or 0))
 
     def _write_link(
@@ -535,6 +580,7 @@ class CatalogRepository(Repository):
             ).fetchone()
             assert row
             ident = row["id"]
+        self._provenance(db, "bm_links", int(ident or 0), values["active"], before)
         if proof_is_stale:
             db.execute(
                 "UPDATE bm_link_state SET last_test='{}',evidence='{}',updated_at=now() "
@@ -589,23 +635,7 @@ class CatalogRepository(Repository):
 
     @staticmethod
     def _evidence(result: dict[str, Any]) -> dict[str, Any]:
-        return dict(
-            evidence="xml",
-            listed=result["root_entries"],
-            children=result["root_children"],
-            index=result["root_index"],
-            observed_at=result["observed_at"],
-            texts=result["text_samples"],
-            round_news=None,
-            example=next(
-                (s["url"] for s in result["samples"] if s.get("text") and s.get("eligible", True)),
-                "",
-            ),
-            audio=result["outcome"] == "audio_only",
-            access_method=result.get("access_method", "direct"),
-            bright_data_requests=result.get("bright_data_requests", 0),
-            test_id=result["test_id"],
-        )
+        return evidence_from_test(result)
 
     @staticmethod
     def _event(

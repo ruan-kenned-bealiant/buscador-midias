@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import logging
+import os
 import re
 import threading
 from collections.abc import Callable
@@ -14,6 +15,7 @@ from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 import psycopg
@@ -29,6 +31,7 @@ from buscador_midias.dashboard.mapping import mapping_catalog, mapping_mechanism
 from buscador_midias.dashboard.round_view import round_links, round_summary
 from buscador_midias.dashboard.selection import CATEGORIES, DOWNLOADS, SelectionView
 from buscador_midias.dashboard.snapshot import DEFAULT_HOURS, DEFAULT_RECENT, build_snapshot
+from buscador_midias.db.catalog import CatalogRepository
 from buscador_midias.sites.loader import load_sites
 from buscador_midias.state.store import StateConfigError, StateSchemaError, StateStore
 from buscador_midias.strategy.manual import load_manual_rules
@@ -63,6 +66,9 @@ def make_server(
     feeder_mapping_directory: Path | None = None,
     feeder_pending_directory: Path | None = None,
     coverage_directory: Path | None = None,
+    backend: str | None = None,
+    bm_schema: str | None = None,
+    broker: Callable[[], list[dict[str, Any]]] | None = None,
 ) -> ThreadingHTTPServer:
     """Cria o servidor do painel (sem iniciá-lo).
 
@@ -88,6 +94,10 @@ def make_server(
         feeder_mapping_directory: Artefatos da descoberta complementar via Feeder.
         feeder_pending_directory: Artefatos da conclusão dos candidatos RSS pendentes.
         coverage_directory: Referências e comparação da cobertura dos veículos prioritários.
+        backend: ``"bm"`` usa as tabelas novas (``bm_*``); ``"legacy"`` o cadastro anterior.
+            Sem valor, vale ``BM_BACKEND`` (padrão ``legacy`` até o corte).
+        bm_schema: Schema das tabelas ``bm_*`` (padrão: ``BM_SCHEMA`` ou ``public``).
+        broker: Leitor da profundidade das filas, substituível em testes sem RabbitMQ.
 
     Returns:
         O servidor, pronto para ``serve_forever``.
@@ -146,15 +156,18 @@ def make_server(
             resources.files("buscador_midias.dashboard").joinpath("app.js").read_bytes(),
         ),
     }
-    manager = CatalogAPI(
-        open_catalog(
-            manager_db_path
-            or Path(__file__).resolve().parents[3] / "var/gerenciador/catalogo.sqlite",
-            functional.directory / "retrato.json",
-            sites_path or Path(__file__).resolve().parents[3] / "data/sites.csv",
-            explicit_sqlite=manager_db_path is not None,
+    if (backend or os.environ.get("BM_BACKEND", "legacy")) == "bm":
+        manager = CatalogAPI(CatalogRepository(bm_schema), broker=broker)
+    else:
+        manager = CatalogAPI(
+            open_catalog(
+                manager_db_path
+                or Path(__file__).resolve().parents[3] / "var/gerenciador/catalogo.sqlite",
+                functional.directory / "retrato.json",
+                sites_path or Path(__file__).resolve().parents[3] / "data/sites.csv",
+                explicit_sqlite=manager_db_path is not None,
+            )
         )
-    )
     if test_reader_factory is not None:
         manager.jobs.factory = test_reader_factory
         if manager.health_worker:
@@ -219,13 +232,19 @@ def make_server(
                     "/evidencias/feeder-pendentes/",
                 )
             ):
-                from buscador_midias.ingestion.evidence_view import read_evidence, read_local
+                from buscador_midias.ingestion.evidence_view import (
+                    read_captured,
+                    read_evidence,
+                    read_local,
+                )
 
                 match = re.fullmatch(
                     r"/evidencias/(corpus|teste-prioritarios|feeder|feeder-pendentes)/([a-f0-9]{64})",
                     parts.path,
                 )
-                if not match or (match[1] == "corpus" and manager.ingestion is None):
+                if not match or (
+                    match[1] == "corpus" and manager.ingestion is None and manager.reports is None
+                ):
                     self._json(404, {"error": "Evidência não encontrada."})
                     return
                 try:
@@ -235,6 +254,9 @@ def make_server(
                             f"midias-ia/evidencias/{match[2]}.html",
                             [audit_evidence[match[1]] / "evidence"],
                         )
+                    elif manager.reports is not None:
+                        stored = manager.reports.evidence(match[2]) or {}
+                        content_type, data = read_captured(stored.get("path"), stored.get("status"))
                     else:
                         content_type, data = read_evidence(manager.ingestion, match[2])
                     original = parse_qs(parts.query).get("original") == ["1"]

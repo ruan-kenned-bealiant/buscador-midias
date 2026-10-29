@@ -20,6 +20,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from buscador_midias.catalog.store_errors import CatalogError
+from buscador_midias.db import run_stats
 from buscador_midias.db.catalog import CatalogRepository
 from buscador_midias.db.connection import Repository
 from buscador_midias.db.discovery import (
@@ -182,6 +183,7 @@ class WorkStore(Repository):
             tasks = maintain(db, queue=DISCOVERY)
             reads = close_reads(db)
             runs = finish_runs(db)
+            run_stats.finalize_pending(db, 2)
         return dict(
             expired=articles.expired + tasks.expired,
             republished=articles.republished + tasks.republished,

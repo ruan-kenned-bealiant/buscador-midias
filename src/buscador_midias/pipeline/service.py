@@ -20,6 +20,8 @@ from typing import Any
 
 from psycopg import InterfaceError, OperationalError
 
+from buscador_midias.db.health import HealthRepository
+from buscador_midias.db.health_worker import HealthWorker
 from buscador_midias.db.store import WorkStore
 from buscador_midias.ingestion.engine import (
     Engine,
@@ -390,15 +392,34 @@ class Pipeline:
             raise RuntimeError("Uma thread encerrou; o supervisor deve reiniciar o serviço")
 
 
-def main(argv: list[str] | None = None) -> int:
-    """CLI do serviço: ``serve`` com papel e etapa, ``init`` e ``queues``."""
-    parser = argparse.ArgumentParser(description="Buscador contínuo por filas RabbitMQ")
+def _serve_health() -> int:
+    """Rodadas de saúde das fontes: um líder por banco, outras instâncias esperam a vez."""
+    worker = HealthWorker(HealthRepository())
+    signal.signal(signal.SIGTERM, lambda *_: worker.close())
+    signal.signal(signal.SIGINT, lambda *_: worker.close())
+    worker.serve()
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Argumentos do serviço: ``serve`` com papel e etapa, ``init`` e ``queues``."""
+    parser = argparse.ArgumentParser(
+        prog="buscador_midias pipeline", description="Buscador contínuo por filas RabbitMQ"
+    )
     parser.add_argument("command", choices=("serve", "init", "queues"))
     parser.add_argument(
-        "--role", choices=("all", "scheduler", "publisher", "worker", "window"), default="all"
+        "--role",
+        choices=("all", "scheduler", "publisher", "worker", "window", "health"),
+        default="all",
+        help="'all' junta os papéis da busca; a saúde das fontes roda sempre em processo próprio",
     )
     parser.add_argument("--stage", choices=broker.STAGES)
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI do serviço: ``serve`` com papel e etapa, ``init`` e ``queues``."""
+    args = build_parser().parse_args(argv)
     store = WorkStore()
     if args.command == "init":
         store.install()
@@ -414,6 +435,8 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             connection.close()
         return 0
+    if args.role == "health":
+        return _serve_health()
     service = Pipeline(store)
     signal.signal(signal.SIGTERM, lambda *_: service.stop.set())
     signal.signal(signal.SIGINT, lambda *_: service.stop.set())

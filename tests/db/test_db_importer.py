@@ -90,8 +90,9 @@ def legacy() -> Iterator[str]:
         db.execute(
             "INSERT INTO events(entity,entity_id,action,happened_at) VALUES "
             "('endpoint',101,'health_inactivate',%s),('endpoint',102,'validation_exclude',%s),"
-            "('endpoint',100,'update',%s)",
-            (T1, T0, T1),
+            "('endpoint',100,'update',%s),('source',11,'validation_inactivate',%s),"
+            "('source',10,'update',%s)",
+            (T1, T0, T1, T0, T1),
         )
         db.execute("INSERT INTO link_health VALUES(100,'run-1','healthy',%s,4,3,2,1)", (T1,))
         db.execute(
@@ -164,6 +165,37 @@ def test_deactivation_provenance_comes_from_the_last_relevant_event(imported):
     assert rows[0] == (100, None, None)  # ativo: o evento 'update' não é desativação
     assert rows[1] == (101, "health", T1)
     assert rows[2] == (102, "validation", T0)
+
+
+def test_site_deactivation_provenance_comes_from_the_last_relevant_event(imported):
+    rows = imported.execute(
+        "SELECT id,deactivated_by,deactivated_at FROM bm_sites ORDER BY id"
+    ).fetchall()
+    assert rows[0] == (10, None, None)  # ativo: o evento 'update' não é desativação
+    assert rows[1] == (11, "validation", T0)
+
+
+def test_the_configuration_proved_by_the_health_routine_is_carried_over(imported):
+    row = imported.execute("SELECT health_config FROM bm_link_state WHERE link_id=100").fetchone()
+    assert row[0] == {
+        "url": "https://g1.globo.com/rss",
+        "kind": "feed",
+        "model": "rss",
+        "model_version": 2,
+        "source_url": "https://g1.globo.com",
+        "access_transport": "curl_chrome_h2",
+    }
+
+
+def test_a_health_check_of_an_outdated_revision_proves_nothing_after_the_import(legacy, db):
+    install(db)
+    with connect(legacy) as source:
+        source.execute("UPDATE links SET version=version+1 WHERE id=100")
+    import_legacy(db, legacy)
+    row = db.execute(
+        "SELECT health_category,health_config FROM bm_link_state WHERE link_id=100"
+    ).fetchone()
+    assert row == ("healthy", None)
 
 
 def test_link_health_is_carried_into_the_link_state(imported):

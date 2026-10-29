@@ -475,6 +475,7 @@ def retry_failed(
     reason: str | None = None,
     reason_class: str | None = None,
     run_id: str | None = None,
+    site_id: int | None = None,
     hashes: list[str] | None = None,
     limit: int | None = None,
 ) -> int:
@@ -485,6 +486,7 @@ def retry_failed(
         "AND (%(reason)s::text IS NULL OR reason=%(reason)s) "
         "AND (%(klass)s::text IS NULL OR reason_class=%(klass)s) "
         "AND (%(run)s::text IS NULL OR run_id=%(run)s) "
+        "AND (%(site)s::bigint IS NULL OR site_id=%(site)s) "
         "AND (%(hashes)s::text[] IS NULL OR hash=ANY(%(hashes)s)) "
         "ORDER BY failed_at, hash LIMIT %(limit)s FOR UPDATE SKIP LOCKED) "
         "UPDATE bm_articles a SET state='retry', stage=COALESCE(a.failed_stage,a.stage),"
@@ -495,6 +497,7 @@ def retry_failed(
             reason=reason,
             klass=reason_class,
             run=run_id,
+            site=site_id,
             hashes=hashes,
             limit=limit,
         ),

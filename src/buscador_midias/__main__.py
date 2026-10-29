@@ -9,6 +9,11 @@ if sys.argv[1:2] == ["ingest"]:
 
     raise SystemExit(ingest_main(sys.argv[2:]))
 
+if sys.argv[1:2] == ["pipeline"]:
+    from buscador_midias.pipeline.service import main as pipeline_main
+
+    raise SystemExit(pipeline_main(sys.argv[2:]))
+
 if sys.argv[1:2] == ["db"]:
     from buscador_midias.db.cli import main as db_main
 

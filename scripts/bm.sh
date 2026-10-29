@@ -18,17 +18,25 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KYX_ENV="${KYX_ENV:-$ROOT/../KyX-NovoDD-backend/.env}"
 PY="${PY:-$ROOT/.venv/bin/python}"
 
-# O serviço de ingestão usa seu broker exclusivo também quando iniciado pelo terminal.
-# Importa apenas as seis chaves conhecidas, sem executar conteúdo do arquivo.
-if [ "${1:-}" = ingest ] && [ -f "$ROOT/var/ingestion/rabbit.env" ]; then
-  while IFS= read -r line || [ -n "$line" ]; do
-    key="${line%%=*}"
-    case "$key" in
-      RABBITMQ_HOST|RABBITMQ_PORT|RABBITMQ_USER|RABBITMQ_PASSWORD|RABBITMQ_VHOST|BM_QUEUE_PREFIX|BM_INGEST_WORK_DIR)
-        [ -n "${!key+x}" ] || export "$key=${line#*=}"
-        ;;
-    esac
-  done < "$ROOT/var/ingestion/rabbit.env"
+# O serviço de ingestão e o pipeline usam o broker exclusivo do buscador também quando iniciados
+# pelo terminal. Importa apenas as chaves conhecidas, sem executar conteúdo do arquivo.
+# O pipeline e o painel nunca herdam o BM_QUEUE_PREFIX do serviço antigo: suas filas são as `bm.*`, e dividir
+# o prefixo com o serviço em produção misturaria as mensagens dos dois desenhos.
+if [ "${1:-}" = ingest ] || [ "${1:-}" = pipeline ] || [ "${1:-}" = dashboard ]; then
+  if [ -f "$ROOT/var/ingestion/rabbit.env" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      key="${line%%=*}"
+      case "$key" in
+        BM_QUEUE_PREFIX)
+          [ "$1" = ingest ] || continue
+          [ -n "${!key+x}" ] || export "$key=${line#*=}"
+          ;;
+        RABBITMQ_HOST|RABBITMQ_PORT|RABBITMQ_USER|RABBITMQ_PASSWORD|RABBITMQ_VHOST|BM_INGEST_WORK_DIR)
+          [ -n "${!key+x}" ] || export "$key=${line#*=}"
+          ;;
+      esac
+    done < "$ROOT/var/ingestion/rabbit.env"
+  fi
 fi
 
 if [ ! -f "$KYX_ENV" ]; then
