@@ -9,6 +9,11 @@ if sys.argv[1:2] == ["ingest"]:
 
     raise SystemExit(ingest_main(sys.argv[2:]))
 
+if sys.argv[1:2] == ["db"]:
+    from buscador_midias.db.cli import main as db_main
+
+    raise SystemExit(db_main(sys.argv[2:]))
+
 if sys.argv[1:2] == ["review-links"]:
     from buscador_midias.catalog.review_cli import main as review_main
 

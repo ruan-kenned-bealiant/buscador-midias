@@ -170,6 +170,48 @@ class IngestStore:
         )
         return int(snapshot["source"]["id"]), url_hash(job["payload"]["url"]), revision
 
+    def current_versions(self, link_id: int) -> dict[str, Any] | None:
+        """Estado atual do cadastro de um link, para detectar edição durante a rodada."""
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT l.active,l.deleted_at,l.version,s.active sa,s.deleted_at sd,"
+                "s.version sv,m.version mv FROM links l JOIN sites s ON s.id=l.source_id "
+                "JOIN mechanisms m ON m.model=l.model WHERE l.id=%s",
+                (link_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    @staticmethod
+    def host_cooldown_seconds(lock_db: Any, host: str) -> int | None:
+        """Segundos até o host poder ser lido de novo (``Retry-After``), se estiver em espera."""
+        row = lock_db.execute(
+            "SELECT ceil(extract(epoch FROM available_at-now()))::bigint seconds "
+            "FROM ingest_host_cooldowns WHERE host=%s AND available_at>now()",
+            (host,),
+        ).fetchone()
+        return int(row["seconds"]) if row else None
+
+    def route_observations(self, source_id: int) -> list[dict[str, Any]]:
+        """Amostras (documento, notícia, data) de que as rotas temporais de uma fonte aprendem."""
+        with self.connection() as db:
+            rows = db.execute(
+                "SELECT l.url,x.sample FROM links l CROSS JOIN LATERAL "
+                "jsonb_array_elements(CASE WHEN jsonb_typeof(l.last_test->'samples')='array' "
+                "THEN l.last_test->'samples' ELSE '[]'::jsonb END) x(sample) "
+                "WHERE l.source_id=%s AND l.deleted_at IS NULL AND "
+                "l.last_test->>'usable_for_news'='true'",
+                (source_id,),
+            ).fetchall()
+            observations = db.execute(
+                "SELECT o.document_url AS url,jsonb_build_object('url',a.url,'text',true,"
+                "'published_at',a.payload->>'published_at') AS sample FROM ingest_articles a "
+                "JOIN ingest_occurrences o ON o.hash=a.hash WHERE a.source_id=%s AND "
+                "a.payload->>'published_at_basis'='html' AND "
+                "a.payload->>'published_at' IS NOT NULL LIMIT 500",
+                (source_id,),
+            ).fetchall()
+        return [*rows, *observations]
+
     def demote_read_order(self, link_id: int, found: str) -> None:
         """Corrige ``newest_first`` que o próprio documento contrariou; nunca promove."""
         with self.connection() as db:

@@ -163,13 +163,9 @@ class Engine:
                 if host in acquired:
                     return
                 self.reserve_host(lock_db, host, max(1, int(self.host_slots())))
-                cooldown = lock_db.execute(
-                    "SELECT ceil(extract(epoch FROM available_at-now()))::bigint seconds "
-                    "FROM ingest_host_cooldowns WHERE host=%s AND available_at>now()",
-                    (host,),
-                ).fetchone()
-                if cooldown:
-                    raise HostBusyError("Host aguardando Retry-After", int(cooldown["seconds"]))
+                seconds = self.repository.host_cooldown_seconds(lock_db, host)
+                if seconds is not None:
+                    raise HostBusyError("Host aguardando Retry-After", seconds)
                 acquired.add(host)
 
             reader = make_reader(
@@ -243,13 +239,7 @@ class Engine:
         snapshot = job["snapshot"]
         site = self.site(job)
         daily = job["run"]["config"].get("window_mode", "today") == "today"
-        with self.repository.connection() as db:
-            current = db.execute(
-                "SELECT l.active,l.deleted_at,l.version,s.active sa,s.deleted_at sd,"
-                "s.version sv,m.version mv FROM links l JOIN sites s ON s.id=l.source_id "
-                "JOIN mechanisms m ON m.model=l.model WHERE l.id=%s",
-                (snapshot["link_id"],),
-            ).fetchone()
+        current = self.repository.current_versions(snapshot["link_id"])
         if (
             not current
             or not current["active"]

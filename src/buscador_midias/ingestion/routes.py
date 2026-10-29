@@ -9,8 +9,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit
 
-from psycopg.types.json import Jsonb
-
 _DATE = re.compile(r"^(https://[^?#]+?)/(20\d{2})/(\d{2})/(\d{2})(/.*|(?:_\d+)?\.xml(?:\.gz)?)$")
 
 
@@ -92,30 +90,7 @@ class Routes:
         cached = self.cache.get(source_id)
         if cached and cached[0] > time.monotonic():
             return cached[1]
-        with self.repository.connection() as db:
-            rows = db.execute(
-                "SELECT l.url,x.sample FROM links l CROSS JOIN LATERAL "
-                "jsonb_array_elements(CASE WHEN jsonb_typeof(l.last_test->'samples')='array' "
-                "THEN l.last_test->'samples' ELSE '[]'::jsonb END) x(sample) "
-                "WHERE l.source_id=%s AND l.deleted_at IS NULL AND "
-                "l.last_test->>'usable_for_news'='true'",
-                (source_id,),
-            ).fetchall()
-            observations = db.execute(
-                "SELECT o.document_url AS url,jsonb_build_object('url',a.url,'text',true,"
-                "'published_at',a.payload->>'published_at') AS sample FROM ingest_articles a "
-                "JOIN ingest_occurrences o ON o.hash=a.hash WHERE a.source_id=%s AND "
-                "a.payload->>'published_at_basis'='html' AND "
-                "a.payload->>'published_at' IS NOT NULL LIMIT 500",
-                (source_id,),
-            ).fetchall()
-            rows.extend(observations)
-            rules = learn(rows)
-            db.execute(
-                "INSERT INTO ingest_route_profiles(source_id,rules) VALUES(%s,%s) "
-                "ON CONFLICT(source_id) DO UPDATE SET rules=excluded.rules,learned_at=now()",
-                (source_id, Jsonb(rules)),
-            )
+        rules = learn(self.repository.route_observations(source_id))
         self.cache[source_id] = (time.monotonic() + 300, rules)
         return rules
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ipaddress
 import json
 import sqlite3
 import threading
@@ -11,7 +10,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 from unidecode import unidecode
 
@@ -27,6 +26,7 @@ from buscador_midias.catalog.schema import (
     rename_legacy_tables,
 )
 from buscador_midias.catalog.store_errors import CatalogError as CatalogError
+from buscador_midias.catalog.urls import clean_url as clean_url
 from buscador_midias.sites.loader import load_sites
 
 _SCHEMA = """
@@ -58,49 +58,6 @@ CREATE TABLE IF NOT EXISTS mechanisms (
     version INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL
 );
 """
-
-
-def clean_url(value: object, *, source: bool = False) -> str:
-    """Valida URL pública HTTP(S) sem buscar conteúdo nem resolver DNS."""
-    if not isinstance(value, str) or len(value) > 4096:
-        raise CatalogError("Informe uma URL válida com http:// ou https://.")
-    value = value.strip()
-    if any(c.isspace() or ord(c) < 32 for c in value) or "\\" in value:
-        raise CatalogError("A URL não pode conter espaços ou caracteres de controle.")
-    try:
-        parts = urlsplit(value)
-        host = (parts.hostname or "").encode("idna").decode("ascii").lower()
-        port = parts.port
-    except (ValueError, UnicodeError) as error:
-        raise CatalogError("URL inválida.") from error
-    if parts.scheme not in ("http", "https") or not host or parts.username or parts.password:
-        raise CatalogError("Use uma URL pública HTTP(S), sem usuário ou senha.")
-    try:
-        address = ipaddress.ip_address(host)
-    except ValueError:
-        address = None
-    if (
-        (address is not None and not address.is_global)
-        or host == "localhost"
-        or host.endswith((".localhost", ".local", ".internal"))
-        or "." not in host
-        or host.endswith(".")
-        or any(
-            not label
-            or label.startswith("-")
-            or label.endswith("-")
-            or not all(c.isalnum() or c == "-" for c in label)
-            for label in host.split(".")
-        )
-    ):
-        raise CatalogError("Informe um domínio público de notícias.")
-    if source and (parts.query or parts.fragment):
-        raise CatalogError("A URL do site deve ser o domínio ou seção, sem query ou fragmento.")
-    netloc = host
-    if port and port != (443 if parts.scheme == "https" else 80):
-        netloc += f":{port}"
-    path = parts.path.rstrip("/") if source else (parts.path or "/")
-    return urlunsplit((parts.scheme, netloc, path, parts.query, ""))
 
 
 def _text(data: dict[str, Any], field: str, maximum: int, required: bool = False) -> str:
