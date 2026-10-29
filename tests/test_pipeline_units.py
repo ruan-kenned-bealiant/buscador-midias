@@ -93,12 +93,15 @@ def test_a_timer_fires_its_own_category_every_day_and_catches_up(category: str):
     assert "Persistent=true" in text and "WantedBy=timers.target" in text
 
 
+def test_each_timer_fires_at_the_time_the_panel_announces():
+    """O horário mostrado na tela vem de ``Category.at``; o timer precisa marcar o mesmo."""
+    for category, timer in TIMERS.items():
+        match = re.search(r"^OnCalendar=\*-\*-\* (\d\d:\d\d):00$", timer.read_text(), re.M)
+        assert match and match[1] == CATEGORIES[category].at, category
+
+
 def test_the_cleanings_never_start_together_nor_during_a_search_round():
-    times = []
-    for timer in TIMERS.values():
-        match = re.search(r"^OnCalendar=\*-\*-\* (\d\d):(\d\d):00$", timer.read_text(), re.M)
-        assert match
-        times.append((int(match[1]), int(match[2])))
+    times = [c.at for c in CATEGORIES.values()]
     assert len(set(times)) == len(times)
     # As rodadas de busca saem às 01, 06, 12 e 16h e a de 01h dura cerca de uma hora.
-    assert all(hour in (3, 4) for hour, _ in times)
+    assert all(at.split(":")[0] in ("03", "04") for at in times)

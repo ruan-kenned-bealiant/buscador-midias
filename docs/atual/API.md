@@ -32,10 +32,12 @@ de `GET /resumo`). Datas em ISO 8601.
 | `GET /busca/pendencias?stage&reason&reason_class&source_id&run_id` | Pendências agrupadas, a página e `retries`: os 10 pedidos de reprocessamento mais recentes com o andamento (`requested`, `in_progress`, `persisted`, `done_other`, `failed`, `cancelled`, `superseded`, `finished`, `reasons`). |
 | `POST /busca/pendencias/reprocessar` | Reabre por filtro (`stage`, `reason`, `reason_class`, `source_id`, `run_id`, `hashes`) ou `{everything:true}`. Responde `{requeued, retry_id}`; `retry_id` é nulo se nada foi reaberto. |
 | `POST /busca/noticias/{hash}/reprocessar` | Reabre uma notícia (também gera `retry_id`). |
+| `GET /busca/artigos?q&field&site_id&alert&since&until&scope&offset&limit` | Artigos do corpus por data de entrada, cada um com as entidades e, em cada entidade, o contexto e as análises (alerta, confiança, justificativa, fato adverso). `field`: `all` (entidade, URL, título), `entity`, `url`, `title`, `alert` (texto da análise, mais lento). `scope`: `searcher` (o que o buscador trouxe) ou `all`. A contagem para em 10.000 (`capped`). |
+| `GET /busca/limpeza` | As categorias de limpeza periódica: horário, idade, quantas linhas esperam, últimas execuções e a próxima. |
 | `PATCH /busca/configuracao` | `{version, config}` das próximas rodadas. |
 | `POST /busca/rodadas` | Rodada manual (`{day?, link_ids?}`). |
 
 ## Evidência
 
-`GET /evidencias/corpus/{hash}` mostra no visualizador a evidência registrada no corpus
+`GET /evidencias/corpus/{hash}` mostra no visualizador a evidência registrada no corpus (o `{hash}` é o `url_hash` do artigo; a busca é direta no corpus, então o link continua valendo depois que a limpeza apaga a linha de `bm_articles`)
 (`?original=1` baixa o arquivo).

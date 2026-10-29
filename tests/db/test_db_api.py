@@ -11,7 +11,7 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from report_support import key, seed
+from report_support import ARTICLE_CORPUS_DDL, key, seed
 
 import buscador_midias.dashboard.server as server_module
 from buscador_midias.db.reports import ReportRepository
@@ -50,11 +50,7 @@ class Client:
 def client(schema_name: str) -> Iterator[Client]:
     world = seed(schema_name)
     with world["health"].connection() as db:
-        db.execute(
-            "CREATE TABLE midias_ia_articles (id BIGINT PRIMARY KEY, titulo TEXT, url TEXT, "
-            "published_at TIMESTAMPTZ, evidencia_status TEXT, evidencia_path TEXT, body TEXT, "
-            "origin TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())"
-        )
+        db.execute(ARTICLE_CORPUS_DDL)
     server = server_module.make_server(
         "127.0.0.1", 0, schema=schema_name, corpus_schema=schema_name, broker=lambda: QUEUES
     )
@@ -210,3 +206,27 @@ def test_the_links_of_a_site_list_even_when_one_was_deactivated(client):
     status, listing = client.call(BASE + "/fontes/1/mecanismos?status=inactive")
     assert status == 200 and listing["items"][0]["deactivated_by"] == "user"
     assert isinstance(listing["items"][0]["deactivated_at"], str)
+
+
+def test_the_cleanup_screen_lists_each_category_with_schedule_and_history(client):
+    status, data = client.call(BASE + "/busca/limpeza")
+
+    assert status == 200
+    assert [c["category"] for c in data["categories"]] == [
+        "concluidas",
+        "descartadas",
+        "corpo-descartadas",
+    ]
+    first = data["categories"][0]
+    assert first["at"] == "03:30" and first["days"] == 3 and first["last"] is None
+    assert first["next_run"] and first["eligible"] == 0
+
+
+def test_the_articles_screen_searches_the_corpus_and_validates_the_request(client):
+    with_corpus = BASE + "/busca/artigos?q=alfa&field=url&scope=all"
+    status, data = client.call(with_corpus)
+
+    assert status == 200 and {"items", "total", "capped", "offset"} <= set(data)
+    assert client.call(BASE + "/busca/artigos?field=outro")[0] == 422
+    assert client.call(BASE + "/busca/artigos?site_id=99999")[0] == 404
+    assert client.call(BASE + "/busca/artigos?offset=abc")[0] in (400, 422)

@@ -56,8 +56,9 @@ saíram. Reprocessar sem encontrar nada não cria pedido.
 ## Retenção
 
 A linha de `bm_articles` é a memória de que a URL já foi vista, e não precisa durar para sempre. As
-gravadas e conhecidas saem depois de 3 dias, as descartadas depois de 14 (o texto delas, depois de
-1) e os pedidos de reprocessamento depois de 7; falhas e trabalho em andamento ficam. Detalhes e
+gravadas e conhecidas saem depois de 3 dias e as descartadas depois de 14 (o texto delas, depois de
+1); falhas e trabalho em andamento ficam. Os artigos continuam consultáveis na tela **Artigos**, que
+lê o corpus. Detalhes e
 horários em [OPERACAO](OPERACAO.md#limpeza-periódica).
 
 ## Fila e concorrência

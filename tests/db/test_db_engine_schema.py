@@ -65,6 +65,7 @@ def test_install_creates_the_engine_tables_with_prefix(db):
         "bm_discovery_tasks",
         "bm_articles",
         "bm_retry_requests",
+        "bm_cleanup_runs",
         "bm_host_state",
         "bm_document_cache",
     } == set(ENGINE_TABLES)

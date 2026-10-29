@@ -1,0 +1,35 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Artigos · Buscador de mídias</title><link rel="stylesheet" href="/assets/app.css">
+<style>
+.panel{padding:20px;margin-top:20px;overflow:visible}
+h2{margin-bottom:12px}
+.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;align-items:end}
+.filters .wide{grid-column:span 2}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.article{border:1px solid var(--line);border-radius:9px;padding:16px;margin-top:12px}
+.article h3{margin:0 0 6px;font-size:16px;overflow-wrap:anywhere}
+.article .link{font-size:12px;overflow-wrap:anywhere;display:block;margin-bottom:8px}
+.meta{display:flex;gap:6px 16px;flex-wrap:wrap;font-size:12px;color:var(--muted);align-items:center}
+.article details{margin-top:12px}.article summary{font-weight:600;cursor:pointer}
+.entity{border-top:1px solid var(--line);padding:10px 0;display:grid;grid-template-columns:minmax(150px,1fr) 3fr;gap:6px 16px}
+.entity:first-of-type{border-top:0}
+.entity .who strong{overflow-wrap:anywhere}.entity .who small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.entity .what{display:grid;gap:8px;min-width:0;overflow-wrap:anywhere;font-size:13px}
+.entity .what p{margin:0}.entity .what .label{color:var(--muted);font-size:12px}
+.analysis{background:var(--soft);border-radius:8px;padding:10px}
+.pager{justify-content:flex-end;padding:0;margin-top:15px;gap:12px}
+.empty{padding:25px;text-align:center}
+@media(max-width:760px){.panel{padding:16px}.filters .wide{grid-column:auto}.entity{grid-template-columns:1fr}.pager{justify-content:space-between}}
+</style>
+</head><body><div class="shell"><aside class="sidebar"><div class="brand"><span class="brand-mark" aria-hidden="true">≋</span><div>Buscador de mídias<br><small>CATÁLOGO EDITORIAL</small></div></div><nav aria-label="Navegação principal"><div class="nav-label">Catálogo</div><a href="/">▦ &nbsp; Painel</a><a href="/gerenciador">◫ &nbsp; Gerenciador de sites</a><a href="/mecanismos">⚙ &nbsp; Mecanismos de busca</a><a href="/saude">♡ &nbsp; Saúde das fontes</a><a href="/buscador">⌕ &nbsp; Buscador de notícias</a><a href="/artigos" class="current" aria-current="page">▤ &nbsp; Artigos</a><a href="/guia">? &nbsp; Guia e dicionário</a></nav><footer>Ambiente local<br>Seu catálogo de fontes.</footer></aside><main>
+<header><div><div class="eyebrow">Corpus</div><h1>Artigos</h1><p class="muted">Os artigos gravados no corpus, com a entidade, o contexto e o alerta de cada uma. Mais novos primeiro, pela data de entrada.</p></div><button id="refresh" type="button">Atualizar</button></header><div id="error" class="error" role="alert" hidden></div>
+<form id="filters" class="panel" autocomplete="off"><div class="filters">
+<label class="field wide">Busca livre<input id="q" type="search" maxlength="100" placeholder="Entidade, URL, título ou texto do alerta"></label>
+<label class="field">Buscar em<select id="field"><option value="all">Tudo (entidade, URL, título)</option><option value="entity">Entidade</option><option value="url">URL</option><option value="title">Título</option><option value="alert">Texto do alerta (mais lento)</option></select></label>
+<label class="field">Site<input id="site" list="sites" placeholder="Todos os sites"><datalist id="sites"></datalist></label>
+<label class="field">Alerta<select id="alert"><option value="">Todos</option><option value="yes">Só com alerta</option><option value="no">Sem alerta</option></select></label>
+<label class="field">Entrada a partir de<input id="since" type="date"></label>
+<label class="field">Entrada até<input id="until" type="date"></label>
+<label class="field">Origem<select id="scope"><option value="searcher">Trazidos por este buscador</option><option value="all">Todo o corpus</option></select></label>
+</div><div class="actions"><button class="primary" type="submit">Buscar</button><button id="clear" type="button">Limpar filtros</button></div><p id="hint" class="muted" style="font-size:12px;margin-top:10px">A busca por texto do alerta percorre muitas análises e pode levar alguns segundos; use um período ou um site para acelerar.</p></form>
+<section class="panel" aria-live="polite"><div class="flex"><h2>Resultados</h2><span id="summary" class="muted"></span></div><div id="results"></div><div class="pager"><button id="prev" type="button" aria-label="Página anterior">←</button><span id="page"></span><button id="next" type="button" aria-label="Próxima página">→</button></div></section>
+</main></div><script src="/assets/app.js"></script><script src="/assets/artigos.js"></script></body></html>

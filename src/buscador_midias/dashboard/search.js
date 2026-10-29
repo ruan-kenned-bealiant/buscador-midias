@@ -200,6 +200,7 @@ async function load(initial = false) {
     $('updated').textContent = 'Atualizado ' + new Date().toLocaleTimeString('pt-BR');
     if (currentView === 'sources') await loadSources();
     if (currentView === 'pending') await loadPending();
+    if (currentView === 'cleanup') await loadCleanup();
     fail('');
   } catch (e) { fail(e.message); } finally { busy = false; }
 }
@@ -256,11 +257,13 @@ const captions = {
   stages: 'Visão geral das filas e notícias. O filtro de site restringe as etapas ao site selecionado.',
   sources: 'Acompanhamento de cada site na rodada selecionada. Sem seleção, usa a rodada mais recente.',
   pending: 'Notícias que falharam. Reabra por grupo, por site ou uma a uma.',
+  cleanup: 'Limpezas automáticas das linhas de controle que já não precisam ficar.',
 };
 function setView(view) {
   currentView = view;
   $('source-view').hidden = view !== 'sources'; $('stage-view').hidden = view !== 'stages'; $('pending-view').hidden = view !== 'pending';
-  for (const name of ['stages', 'sources', 'pending']) $('view-' + name).setAttribute('aria-selected', String(view === name));
+  $('cleanup-view').hidden = view !== 'cleanup';
+  for (const name of ['stages', 'sources', 'pending', 'cleanup']) $('view-' + name).setAttribute('aria-selected', String(view === name));
   $('view-caption').textContent = captions[view];
   load();
 }
@@ -300,7 +303,7 @@ function sourceCard(source, expanded) {
   }
   table.append(tbody); wrap.append(table); detail.append(wrap); card.append(detail);
   const actions = el('div', undefined, 'actions'), run = sourceRun;
-  actions.append(button('Ver notícias no corpus', () => showSourceCorpus(source, run)), button('Ver todos os itens deste site', () => chooseSource(source)), button('Ver pendências do site', () => choosePendingSource(source)));
+  actions.append(button('Ver notícias no corpus', () => showSourceCorpus(source, run)), button('Ver todos os itens deste site', () => chooseSource(source)), button('Ver pendências do site', () => choosePendingSource(source)), button('Ver artigos do site', () => { location.href = '/artigos?site_id=' + source.id; }));
   card.append(actions);
   return card;
 }
@@ -325,6 +328,38 @@ async function showSourceCorpus(source, run, from = 0) {
   } catch (error) { body.replaceChildren(el('p', error.message, 'error')); }
 }
 
+/* ---------- limpeza periódica ---------- */
+const cleanupNames = { concluidas: 'Notícias concluídas', descartadas: 'Notícias descartadas', 'corpo-descartadas': 'Texto das descartadas' };
+const cleanupStates = { running: ['Em andamento', 'blue'], done: ['Concluída', 'green'], error: ['Com erro', 'amber'], interrupted: ['Interrompida', 'amber'] };
+const cleanupDuration = (run) => {
+  if (!run.finished_at) return '—';
+  const seconds = Math.max(0, Math.round((new Date(run.finished_at) - new Date(run.started_at)) / 1000));
+  return seconds < 60 ? seconds + ' s' : Math.floor(seconds / 60) + ' min ' + (seconds % 60) + ' s';
+};
+function cleanupBadge(run) {
+  const [text, tone] = cleanupStates[run.state] || [run.state, ''];
+  return el('span', text, 'badge ' + tone);
+}
+async function loadCleanup() {
+  const d = await api('/busca/limpeza');
+  $('cleanup-rows').replaceChildren(); $('cleanup-runs').replaceChildren();
+  const all = [];
+  for (const c of d.categories) {
+    const row = el('tr'), name = el('td'), result = el('td');
+    name.append(el('strong', cleanupNames[c.category] || c.category), el('br'), el('small', c.description, 'muted'));
+    if (c.last) { result.append(cleanupBadge(c.last), document.createTextNode(' ' + fmt(c.last.removed) + ' linha(s)')); if (c.last.error) result.append(el('br'), el('small', 'Erro: ' + c.last.error, 'muted')); } else result.append(el('span', 'Ainda não rodou', 'muted'));
+    row.append(name, el('td', c.at + ' (Brasília)'), el('td', c.days + ' dia(s)'), el('td', fmt(c.eligible)), el('td', c.last ? date(c.last.started_at) : '—'), result, el('td', date(c.next_run)));
+    $('cleanup-rows').append(row);
+    for (const run of c.runs) all.push({ ...run, category: c.category });
+  }
+  all.sort((a, b) => b.started_at.localeCompare(a.started_at));
+  for (const run of all.slice(0, 15)) {
+    const row = el('tr'), state = el('td'); state.append(cleanupBadge(run));
+    row.append(el('td', cleanupNames[run.category] || run.category), el('td', date(run.started_at)), el('td', cleanupDuration(run)), el('td', fmt(run.removed)), state);
+    $('cleanup-runs').append(row);
+  }
+  if (!all.length) emptyRow('cleanup-runs', 'Nenhuma limpeza rodou ainda. A primeira acontece na próxima madrugada, nos horários da tabela acima.', 5);
+}
 /* ---------- pendências ---------- */
 function pendingParams(extra = {}) {
   const p = { offset: pendingOffset, stage: $('pending-stage').value, reason_class: $('pending-class').value, source_id: $('pending-source').value, run_id: $('run-filter').value, ...extra };
@@ -397,7 +432,7 @@ for (const [stage, title] of Object.entries(stages)) { if (stage !== 'discovery'
 for (const id of ['pending-stage', 'pending-class', 'pending-source']) $(id).onchange = () => { pendingOffset = 0; loadPending().catch((e) => fail(e.message)); };
 $('pending-prev').onclick = () => { pendingOffset = Math.max(0, pendingOffset - 25); loadPending(); };
 $('pending-next').onclick = () => { pendingOffset += 25; loadPending(); };
-$('view-stages').onclick = () => setView('stages'); $('view-sources').onclick = () => setView('sources'); $('view-pending').onclick = () => setView('pending');
+$('view-stages').onclick = () => setView('stages'); $('view-sources').onclick = () => setView('sources'); $('view-pending').onclick = () => setView('pending'); $('view-cleanup').onclick = () => setView('cleanup');
 $('source-search').oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { sourceOffset = 0; load(); }, 300); };
 $('source-prev').onclick = () => { sourceOffset = Math.max(0, sourceOffset - 25); load(); };
 $('source-next').onclick = () => { sourceOffset += 25; load(); };

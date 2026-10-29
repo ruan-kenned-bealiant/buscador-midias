@@ -1,9 +1,11 @@
-"""Limpeza periódica de ``bm_articles`` e dos pedidos de reprocessamento, uma categoria por vez."""
+"""Limpeza periódica de ``bm_articles``, uma categoria por vez, e o acompanhamento de cada uma."""
 
 from __future__ import annotations
 
 import json
 import os
+from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -12,7 +14,7 @@ from report_support import seed
 
 from buscador_midias.catalog.store_errors import CatalogError
 from buscador_midias.db import cli
-from buscador_midias.db.retention import CATEGORIES, RetentionRepository
+from buscador_midias.db.retention import CATEGORIES, RetentionRepository, next_run
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("BM_TEST_POSTGRES") != "1", reason="Requer PostgreSQL de teste explícito."
@@ -144,25 +146,6 @@ def test_the_text_of_old_discards_is_dropped_but_the_audit_stays(repo):
     assert repo.run("corpo-descartadas") == 0
 
 
-# --- pedidos de reprocessamento --------------------------------------------------------------------
-
-
-def test_old_reprocessing_requests_go_and_release_their_news(repo):
-    add(repo, "linked", outcome="no_entities", days=1)
-    with repo.connection() as db:
-        db.execute(
-            "INSERT INTO bm_retry_requests(id,created_at,requested) VALUES "
-            "('old',now()-interval '8 days',1),('recent',now()-interval '6 days',1)"
-        )
-        db.execute("UPDATE bm_articles SET retry_id='old'")
-
-    assert repo.run("pedidos") == 1
-
-    with repo.connection() as db:
-        assert [r["id"] for r in db.execute("SELECT id FROM bm_retry_requests")] == ["recent"]
-        assert db.execute("SELECT retry_id FROM bm_articles").fetchone()["retry_id"] is None
-
-
 # --- mecânica ------------------------------------------------------------------------------------
 
 
@@ -188,7 +171,7 @@ def test_the_age_can_be_changed_but_never_to_nothing(repo):
 
 
 def test_every_category_has_a_description_and_a_default_age():
-    assert set(CATEGORIES) == {"concluidas", "descartadas", "corpo-descartadas", "pedidos"}
+    assert set(CATEGORIES) == {"concluidas", "descartadas", "corpo-descartadas"}
     assert all(c.description and c.days >= 1 for c in CATEGORIES.values())
 
 
@@ -200,3 +183,89 @@ def test_the_command_cleans_one_category_and_reports_it(repo, schema_name, capsy
     report = json.loads(capsys.readouterr().out)
     assert report == dict(schema=schema_name, category="concluidas", days=3, removed=1)
     assert cli.main(["clean", "inexistente", "--schema", schema_name]) == 2
+
+
+# --- acompanhamento ------------------------------------------------------------------------------
+
+
+def history(repo: RetentionRepository) -> list[dict[str, Any]]:
+    with repo.connection() as db:
+        return db.execute("SELECT * FROM bm_cleanup_runs ORDER BY id").fetchall()
+
+
+def test_every_run_is_recorded_with_what_it_removed(repo):
+    add(repo, "old", outcome="persisted", days=5)
+
+    repo.run("concluidas")
+    repo.run("concluidas")
+
+    first, second = history(repo)
+    assert (first["category"], first["days"], first["removed"], first["error"]) == (
+        "concluidas",
+        3,
+        1,
+        None,
+    )
+    assert first["finished_at"] >= first["started_at"]
+    assert second["removed"] == 0
+
+
+def test_a_failed_run_is_recorded_with_its_error_and_still_raises(repo, monkeypatch):
+    broken = replace(CATEGORIES["concluidas"], where="state='done' AND nonexistent_column=1")
+    monkeypatch.setitem(CATEGORIES, "concluidas", broken)
+
+    with pytest.raises(Exception, match="nonexistent_column"):
+        repo.run("concluidas")
+
+    [run] = history(repo)
+    assert run["finished_at"] is not None and "UndefinedColumn" in run["error"]
+
+
+def test_the_status_shows_schedule_last_run_and_what_is_waiting(repo):
+    add(repo, "old", outcome="persisted", days=5)
+    add(repo, "young", outcome="persisted", days=1)
+    add(repo, "discard", outcome="no_entities", days=20, payload=dict(body="x"))
+    repo.run("corpo-descartadas")
+
+    status = {row["category"]: row for row in repo.status()}
+
+    assert list(status) == list(CATEGORIES)
+    assert status["concluidas"]["eligible"] == 1 and status["concluidas"]["last"] is None
+    assert status["descartadas"]["eligible"] == 1
+    assert status["corpo-descartadas"]["eligible"] == 0
+    assert status["corpo-descartadas"]["last"]["removed"] == 1
+    assert status["corpo-descartadas"]["last"]["state"] == "done"
+    assert status["concluidas"]["at"] == CATEGORIES["concluidas"].at
+    assert status["concluidas"]["next_run"] > datetime.now(UTC)
+
+
+def test_a_run_that_never_finished_is_shown_as_interrupted_when_old(repo):
+    with repo.connection() as db:
+        db.execute(
+            "INSERT INTO bm_cleanup_runs(category,days,started_at) VALUES "
+            "('concluidas',3,now()-interval '3 hours'),('descartadas',14,now()-interval '1 minute')"
+        )
+
+    status = {row["category"]: row["last"]["state"] for row in repo.status() if row["last"]}
+
+    assert status == dict(concluidas="interrupted", descartadas="running")
+
+
+def test_the_next_run_is_the_next_clock_time_in_the_configured_zone():
+    before = datetime(2026, 10, 30, 5, 0, tzinfo=UTC)  # 02:00 em Brasília
+    after = datetime(2026, 10, 30, 7, 0, tzinfo=UTC)  # 04:00 em Brasília
+
+    assert next_run("03:30", before) == datetime(2026, 10, 30, 6, 30, tzinfo=UTC)
+    assert next_run("03:30", after) == datetime(2026, 10, 31, 6, 30, tzinfo=UTC)
+
+
+def test_old_history_is_trimmed_so_the_log_does_not_grow_forever(repo):
+    with repo.connection() as db:
+        db.execute(
+            "INSERT INTO bm_cleanup_runs(category,days,started_at,finished_at) "
+            "VALUES('concluidas',3,now()-interval '120 days',now()-interval '120 days')"
+        )
+
+    repo.run("concluidas")
+
+    assert len(history(repo)) == 1

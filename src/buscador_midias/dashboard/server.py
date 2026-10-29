@@ -41,12 +41,14 @@ _PAGES = {
     "/mecanismos": "manager.html",
     "/saude": "manager.html",
     "/buscador": "search.html",
+    "/artigos": "artigos.html",
 }
 _SCRIPTS = {
     "/assets/app.js": "app.js",
     "/assets/panel.js": "panel.js",
     "/assets/health.js": "health.js",
     "/assets/search.js": "search.js",
+    "/assets/artigos.js": "artigos.js",
     "/assets/evidence.js": "evidence.js",
     "/assets/evidence_prepare.js": "evidence_prepare.js",
 }

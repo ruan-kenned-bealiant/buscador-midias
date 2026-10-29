@@ -18,9 +18,11 @@ import psycopg
 from buscador_midias.catalog.bright_reader import bright_data_available
 from buscador_midias.catalog.store_errors import CatalogError
 from buscador_midias.catalog.testing import TestJobs
+from buscador_midias.db.articles import ArticleRepository
 from buscador_midias.db.catalog import CatalogRepository
 from buscador_midias.db.health import HealthRepository
 from buscador_midias.db.reports import ReportRepository
+from buscador_midias.db.retention import RetentionRepository
 from buscador_midias.db.serialize import jsonable
 from buscador_midias.db.settings import SettingsRepository
 from buscador_midias.db.store import WorkStore
@@ -46,6 +48,8 @@ class CatalogAPI:
     reports: ReportRepository = field(init=False)
     work: WorkStore = field(init=False)
     settings: SettingsRepository = field(init=False)
+    retention: RetentionRepository = field(init=False)
+    articles: ArticleRepository = field(init=False)
 
     def __post_init__(self) -> None:
         """Inicia o executor limitado de testes sob demanda."""
@@ -56,6 +60,8 @@ class CatalogAPI:
         self.reports = ReportRepository(schema, env, corpus_schema=self.corpus_schema)
         self.work = WorkStore(schema, env)
         self.settings = SettingsRepository(schema, env)
+        self.retention = RetentionRepository(schema, env)
+        self.articles = ArticleRepository(schema, env, corpus_schema=self.corpus_schema)
 
     def handle(self, handler: BaseHTTPRequestHandler) -> tuple[int, dict[str, Any]]:
         """Produz uma resposta segura para uma requisição do gerenciador."""

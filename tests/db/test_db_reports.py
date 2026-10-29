@@ -16,7 +16,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 CORPUS = (
-    "CREATE TABLE midias_ia_articles (id BIGINT PRIMARY KEY, titulo TEXT, url TEXT, "
+    "CREATE TABLE midias_ia_articles (id BIGINT PRIMARY KEY, url_hash TEXT, titulo TEXT, url TEXT, "
     "published_at TIMESTAMPTZ, evidencia_status TEXT, evidencia_path TEXT, body TEXT, "
     "origin TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())"
 )
@@ -29,9 +29,10 @@ def world(schema_name: str) -> dict[str, Any]:
     with reports.connection() as db:
         db.execute(CORPUS)
         db.execute(
-            "INSERT INTO midias_ia_articles(id,titulo,url,published_at,evidencia_status,"
-            "evidencia_path,body) VALUES(7,'Gravada','https://alfa.example/persisted',now(),"
-            "'captured','a/b.html','corpo da notícia')"
+            "INSERT INTO midias_ia_articles(id,url_hash,titulo,url,published_at,evidencia_status,"
+            "evidencia_path,body) VALUES(7,%s,'Gravada','https://alfa.example/persisted',now(),"
+            "'captured','a/b.html','corpo da notícia')",
+            (key("persisted"),),
         )
         db.execute("UPDATE bm_articles SET corpus_article_id=7 WHERE hash=%s", (key("persisted"),))
     return dict(reports=reports, **data)
@@ -228,6 +229,15 @@ def test_retry_rejects_unknown_filters(world):
         world["reports"].retry(dict(reason_class="weird"))
     with pytest.raises(CatalogError):
         world["reports"].retry(dict(nope=1))
+
+
+def test_the_evidence_survives_the_removal_of_the_queue_row(world):
+    """A limpeza apaga a linha de ``bm_articles``; o link da evidência é do corpus e continua."""
+    reports = world["reports"]
+    with reports.connection() as db:
+        db.execute("DELETE FROM bm_articles WHERE hash=%s", (key("persisted"),))
+
+    assert reports.evidence(key("persisted")) == dict(path="a/b.html", status="captured")
 
 
 def test_the_evidence_of_a_news_item_is_the_one_registered_in_the_corpus(world):

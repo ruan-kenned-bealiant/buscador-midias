@@ -47,7 +47,9 @@ tem o seu timer do systemd (`buscador-midias-limpeza-<categoria>.timer`, que dis
 | `concluidas` | 03:30 | Apaga notícias gravadas (`persisted`) ou já conhecidas (`known`). | 3 dias |
 | `descartadas` | 03:40 | Apaga as descartadas: fora da janela, sem data, sem texto, conteúdo excluído, sem entidade. | 14 dias |
 | `corpo-descartadas` | 03:50 | Tira só o texto da página (`payload.body`) das descartadas; os motivos ficam. | 1 dia |
-| `pedidos` | 04:00 | Apaga pedidos de reprocessamento; as notícias só perdem o vínculo. | 7 dias |
+
+O acompanhamento está na aba **Limpeza** da tela Buscador de notícias: horário, idade, quantas linhas esperam,
+resultado e duração das últimas execuções e a próxima. Cada execução fica em `bm_cleanup_runs` (90 dias).
 
 A idade vale para quem ficou parado e não foi visto de novo (`updated_at` e `last_seen_at`). Nunca
 saem: falhas (esperam decisão), notícias em andamento, `evidence_pending`. Um timer perdido (máquina
@@ -64,7 +66,7 @@ Uma URL gravada que ainda esteja listada num feed depois de apagada volta a entr
 reconhecida pelo corpus; isso custa só uma consulta, não a IA. Se os números de "novas" por rodada
 parecerem inflados, aumente a idade de `concluidas`.
 
-Para ligar em outra máquina: `systemctl --user link` do service modelo e dos quatro timers e
+Para ligar em outra máquina: `systemctl --user link` do service modelo e dos três timers e
 `systemctl --user enable --now` dos timers.
 
 ## Configuração

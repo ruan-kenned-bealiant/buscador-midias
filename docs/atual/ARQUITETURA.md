@@ -49,7 +49,7 @@ mostra por etapa e avisa quando há trabalho esperando sem worker.
 | `ingestion/` | O motor das seis etapas (`engine.py`), regras puras (`flow.py`), filtro de conteúdo, rotas, memo de documentos. |
 | `catalog/` | Mecanismos (RSS, sitemap, G1…), transportes HTTP, regras de saúde, sonda de links. |
 | `analysis/`, `extraction/`, `evidence/`, `corpus/`, `net/`, `domain/` | Análise por IA, extração de texto, captura de evidência, escrita no corpus, rede e tipos. |
-| `dashboard/` | Servidor local, API e as telas (Painel, Gerenciador, Mecanismos, Saúde, Buscador, Guia). |
+| `dashboard/` | Servidor local, API e as telas (Painel, Gerenciador, Mecanismos, Saúde, Buscador, Artigos, Guia). |
 
 ## Limites de conexão
 

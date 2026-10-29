@@ -63,6 +63,20 @@ def _read(api: Any, path: str, query: dict[str, str]) -> Any:
             source_id=_int(query, "source_id"),
         )
         return dict(result, broker=broker_status(api.broker or _snapshot))
+    if path == "/busca/artigos":
+        return api.articles.search(
+            q=query.get("q", ""),
+            field=query.get("field", "all"),
+            site_id=_int(query, "site_id"),
+            alert=query.get("alert", ""),
+            since=query.get("since", ""),
+            until=query.get("until", ""),
+            scope=query.get("scope", "searcher"),
+            offset=_int(query, "offset"),
+            limit=_int(query, "limit", 25),
+        )
+    if path == "/busca/limpeza":
+        return dict(categories=api.retention.status())
     if path == "/busca/painel":
         return reports.panel(_int(query, "days", 7), broker=api.broker or _snapshot)
     if path == "/busca/custos":

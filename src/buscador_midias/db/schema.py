@@ -305,6 +305,16 @@ ALTER TABLE bm_articles
  ADD COLUMN IF NOT EXISTS retry_id TEXT REFERENCES bm_retry_requests(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS bm_articles_retry ON bm_articles (retry_id, state)
  WHERE retry_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS bm_cleanup_runs (
+ id BIGSERIAL PRIMARY KEY,
+ category TEXT NOT NULL,
+ days INTEGER NOT NULL,
+ started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ finished_at TIMESTAMPTZ,
+ removed INTEGER NOT NULL DEFAULT 0,
+ error TEXT
+);
+CREATE INDEX IF NOT EXISTS bm_cleanup_runs_category ON bm_cleanup_runs (category, started_at DESC);
 CREATE TABLE IF NOT EXISTS bm_host_state (
  host TEXT PRIMARY KEY,
  cooldown_until TIMESTAMPTZ,
@@ -330,6 +340,7 @@ ENGINE_TABLES = (
     "bm_discovery_tasks",
     "bm_articles",
     "bm_retry_requests",
+    "bm_cleanup_runs",
     "bm_host_state",
     "bm_document_cache",
 )

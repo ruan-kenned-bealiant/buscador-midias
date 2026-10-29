@@ -151,3 +151,18 @@ def seed(schema: str) -> dict[str, Any]:
                 ),
             )
     return dict(health=health, catalog=catalog, sites=sites, links=links)
+
+
+#: O corpus como a tela Artigos o lê: artigos, entidades e a análise de cada entidade.
+ARTICLE_CORPUS_DDL = """
+CREATE TABLE midias_ia_articles (id BIGINT PRIMARY KEY, url_hash TEXT, url TEXT, titulo TEXT,
+ domain TEXT, source_domain TEXT, source_name TEXT, origin TEXT, first_seen_by TEXT,
+ published_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), evidencia_status TEXT,
+ evidencia_path TEXT, ai_verdict TEXT, ai_score NUMERIC, language TEXT, body TEXT);
+CREATE TABLE midias_ia_article_entities (id BIGSERIAL PRIMARY KEY, article_id BIGINT, name TEXT,
+ name_norm TEXT, entity_type TEXT, role TEXT, salience NUMERIC, mention_count INTEGER,
+ context TEXT);
+CREATE TABLE midias_ia_article_contexts (id BIGSERIAL PRIMARY KEY, article_id BIGINT,
+ entity_name TEXT, theme TEXT, alerta BOOLEAN, confianca NUMERIC, justificativa TEXT,
+ papel_entidade TEXT, fato_adverso TEXT, verification_status TEXT, ai_verdict TEXT);
+"""

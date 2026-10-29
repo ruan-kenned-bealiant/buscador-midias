@@ -201,14 +201,18 @@ class ReportRepository(Repository):
         return dict(article=article, origin=origin)
 
     def evidence(self, ident: str) -> dict[str, Any] | None:
-        """Caminho e situação da evidência do registro do corpus ligado à notícia."""
+        """Caminho e situação da evidência do registro do corpus com este ``url_hash``.
+
+        Vai direto ao corpus: a linha de ``bm_articles`` é apagada pela limpeza periódica e o
+        link da evidência não pode depender dela.
+        """
         if not re.fullmatch(r"[a-f0-9]{64}", ident):
             return None
         with self.connection() as db:
             return db.execute(
                 sql.SQL(
-                    "SELECT c.evidencia_path path,c.evidencia_status status FROM bm_articles a "
-                    "JOIN {}.midias_ia_articles c ON c.id=a.corpus_article_id WHERE a.hash=%s"
+                    "SELECT c.evidencia_path path,c.evidencia_status status "
+                    "FROM {}.midias_ia_articles c WHERE c.url_hash=%s"
                 ).format(sql.Identifier(self.corpus_schema)),
                 (ident,),
             ).fetchone()
