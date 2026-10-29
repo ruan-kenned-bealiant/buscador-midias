@@ -31,6 +31,7 @@ from buscador_midias.catalog.read_order import (
     detect_read_order,
     newest_stamp,
 )
+from buscador_midias.catalog.reader import EARLY_STOP_STEPS
 from buscador_midias.corpus.article import build_corpus_article
 from buscador_midias.corpus.writer import PostgresCorpusWriter
 from buscador_midias.criteria import meets_criteria
@@ -50,6 +51,7 @@ from buscador_midias.ingestion.content_filter import (
 )
 from buscador_midias.ingestion.document_memo import DocumentMemo
 from buscador_midias.ingestion.flow import (
+    audit_sampled,
     head_outside,
     is_last_attempt,
     lastmod_outside,
@@ -186,6 +188,22 @@ class Engine:
                     reader.close()
 
     @staticmethod
+    def early_stop_would_cut(
+        reader: Any, url: str, read_order: str, content: bytes, since: Any
+    ) -> bool:
+        """Se a parada antecipada teria interrompido este documento em algum degrau de leitura."""
+        return (
+            read_order == NEWEST_FIRST
+            and getattr(reader, "supports_early_stop", False)
+            and not urlsplit(url).path.endswith((".gz", ".zip"))
+            and any(
+                prefix_outside(content[:step], since)
+                for step in EARLY_STOP_STEPS
+                if step < len(content)
+            )
+        )
+
+    @staticmethod
     def metrics(reader: Any) -> dict[str, Any]:
         """Contadores do transporte, sem credenciais ou conteúdo das respostas de API."""
         result = dict(
@@ -296,6 +314,15 @@ class Engine:
             since = job["run"]["since"]
             read_order = snapshot.get("read_order", "unknown")
             head_mode = job["run"]["config"].get("head_filter", "shadow")
+            # Auditoria: parte dos links, com o corte ativo, lê tudo em modo sombra e registra o
+            # que o corte teria perdido; é a prova contínua de que ativá-lo não perde notícia.
+            audited = head_mode == "enforce" and audit_sampled(
+                job["run"]["id"],
+                snapshot["link_id"],
+                float(job["run"]["config"].get("head_audit_rate", 0)),
+            )
+            if audited:
+                head_mode = "shadow"
             # Só um leitor que sabe parar a leitura (direto e curl), com a ordem comprovada no link
             # e documento sem compressão própria: o prefixo é interpretado antes do resto chegar.
             stoppable = (
@@ -314,6 +341,8 @@ class Engine:
 
             response, shared = self.document_memo.get(memo_key + (stoppable,), fetch)
             metrics = self.metrics(reader)
+            if audited:
+                metrics["head_audit_sampled"] = 1
             if shared:
                 metrics["shared_xml_http_hits"] = 1
                 metrics["avoided_duplicate_xml_requests"] = 1
@@ -464,6 +493,13 @@ class Engine:
                     metrics=metrics,
                     coverage_partial=True,
                 )
+            if (
+                audited
+                and not head_cut
+                and self.early_stop_would_cut(reader, url, read_order, response.content, since)
+            ):
+                # O corte pelo topo teria vindo do download interrompido, não do documento.
+                head_cut = dict(rule="head_prefix_before_window")
             if head_cut:
                 metrics["head_shadow_would_skip"] = 1
                 metrics["head_shadow_missed"] = int(bool(entries or children))

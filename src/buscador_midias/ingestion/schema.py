@@ -32,7 +32,22 @@ DEFAULTS = dict(
     url_filter="shadow",
     head_filter="shadow",
     host_concurrency=1,
+    # Teto de vagas por host com fila longa (ver admission.host_limit); 1 desliga.
+    host_concurrency_max=1,
+    # Fração de links lidos por inteiro para auditar o corte pelo topo (ver flow.audit_sampled).
+    head_audit_rate=0.0,
+    # "enforce": rodadas agendadas pulam links frios (ver cold_links); "off" lê todos.
+    adaptive_polling="off",
     workers=dict(discovery=2, dedup=1, fetch=2, context=1, evidence=1, persist=1),
+)
+# Índices que as telas usam para contar por rodada. Em bases já existentes são criados por
+# ``IngestStore.ensure_report_indexes`` (CONCURRENTLY, sem bloquear a escrita); reaplicar o DDL
+# inteiro com o serviço rodando já causou deadlock, então ``SCHEMA_VERSION`` não é alterado.
+REPORT_INDEXES = (
+    ("ingest_job_run", "ingest_jobs", ("run_id", "stage", "state")),
+    # Página mais recente de tarefas de uma rodada: sai já ordenada, sem ordenar a rodada toda.
+    ("ingest_job_run_created", "ingest_jobs", ("run_id", "created_at")),
+    ("ingest_occurrence_run", "ingest_occurrences", ("run_id", "hash")),
 )
 DDL = """
 CREATE TABLE IF NOT EXISTS ingest_daily_routes (
@@ -177,3 +192,7 @@ CREATE TABLE IF NOT EXISTS ingest_schema (
  version INT PRIMARY KEY,applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """
+DDL += "".join(
+    f"CREATE INDEX IF NOT EXISTS {name} ON {table}({','.join(columns)});\n"
+    for name, table, columns in REPORT_INDEXES
+)

@@ -1538,3 +1538,22 @@ def test_evidence_backlog_does_not_pause_context(ingest):
             db.execute("SELECT count(*) n FROM ingest_jobs WHERE stage='evidence'").fetchone()["n"]
             == 205
         )
+
+
+def test_overview_latest_resolves_to_newest_run_and_scopes_data_to_it(ingest):
+    assert ingest.overview(run_id="latest")["run_id"] == ""
+    previous = ingest.create_run({})
+    old_job = next_job(ingest, "discovery")
+    ingest.finish(old_job, dict(candidates=[]))
+    ingest.maintain()
+    current = ingest.create_run({})
+
+    latest = ingest.overview(run_id="latest")
+
+    assert latest["run_id"] == current["id"]
+    assert latest["jobs"]
+    assert {job["run_id"] for job in latest["jobs"]} == {current["id"]}
+    assert old_job["id"] not in {job["id"] for job in latest["jobs"]}
+    assert latest["total"] == len(latest["jobs"])
+    assert ingest.overview(run_id=previous["id"])["run_id"] == previous["id"]
+    assert ingest.overview()["run_id"] == ""

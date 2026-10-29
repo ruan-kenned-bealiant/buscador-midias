@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from buscador_midias.catalog.health_rules import decide, next_run
+from buscador_midias.catalog.health_rules import decide, next_run, recovery_due
 
 
 def outcome(proposal, **extra):
@@ -86,3 +86,25 @@ def test_next_run_wraps_to_the_first_slot_of_the_next_day():
 def test_without_slots_the_interval_is_used():
     now = datetime(2026, 10, 28, 12, 0, tzinfo=UTC)
     assert next_run(now, [], 90) == datetime(2026, 10, 28, 13, 30, tzinfo=UTC)
+
+
+NOW = datetime(2026, 10, 29, 12, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("changed_days_ago", "checked_days_ago", "expected"),
+    [
+        (1, 1, True),  # caiu ontem: volta a ser testado a cada rodada, é onde há recuperação
+        (6.9, 1, True),
+        (30, 1, False),  # parado há semanas e testado ontem: não repete todo dia
+        (30, 6.9, False),
+        (30, 7.1, True),  # varredura semanal dos antigos
+        (30, None, True),  # nunca verificado pela saúde
+    ],
+)
+def test_recovery_retests_recent_failures_every_round_and_old_ones_weekly(
+    changed_days_ago, checked_days_ago, expected
+):
+    changed = NOW - timedelta(days=changed_days_ago)
+    checked = None if checked_days_ago is None else NOW - timedelta(days=checked_days_ago)
+    assert recovery_due(changed, checked, NOW) is expected

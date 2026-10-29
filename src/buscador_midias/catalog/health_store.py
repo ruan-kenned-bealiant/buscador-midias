@@ -17,7 +17,7 @@ from psycopg.types.json import Jsonb
 from buscador_midias.catalog.bright_reader import bright_data_available
 from buscador_midias.catalog.health_policy import classify
 from buscador_midias.catalog.health_restoration import automatic_event
-from buscador_midias.catalog.health_rules import next_run
+from buscador_midias.catalog.health_rules import next_run, recovery_due
 from buscador_midias.catalog.health_schema import DDL
 from buscador_midias.catalog.postgres import WRITE_LOCK, PostgresCatalogStore, connect_postgres
 from buscador_midias.catalog.store import CatalogError
@@ -218,7 +218,7 @@ class HealthStore:
             rows = db.execute(
                 "SELECT l.id,l.source_id,l.url,l.kind,l.model,l.version,l.last_test,"
                 "s.version source_version,s.active source_active,s.name source_name,"
-                "s.url source_url,h.category "
+                "s.url source_url,l.updated_at changed_at,h.category "
                 "health_category,"
                 "h.link_version health_link_version,h.source_version health_source_version,"
                 "h.model_version health_model_version,h.checked_at health_checked_at,"
@@ -293,7 +293,9 @@ class HealthStore:
                             if manual_current
                             else None
                         )
-                        if category != "access_error":
+                        if category != "access_error" or not recovery_due(
+                            row["changed_at"], row["health_checked_at"], datetime.now(UTC)
+                        ):
                             continue
                     parameters = dict(
                         model["parameters"],

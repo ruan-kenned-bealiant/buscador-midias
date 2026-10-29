@@ -73,6 +73,31 @@ def primary_hosts(db: Any) -> set[str]:
     }
 
 
+# Tarefas prontas de um mesmo host para cada vaga extra: a cauda de uma rodada costuma ser poucos
+# hosts grandes lidos um a um, e fila longa justifica ler mais de uma página por vez.
+EXTRA_SLOT_BACKLOG = 100
+
+
+def host_limit(backlog: int, base: int, cap: int) -> int:
+    """Quantas tarefas em trânsito um host pode ter, crescendo com a fila até ``cap``.
+
+    ``cap`` nunca reduz ``base`` (a configuração fixa de vagas por host); ``cap`` igual a
+    ``base`` desliga o recurso.
+    """
+    return max(base, min(cap, base + backlog // EXTRA_SLOT_BACKLOG))
+
+
+def host_backlogs(db: Any, stage: str) -> dict[str, int]:
+    """Tarefas de trabalho prontas e ainda não publicadas, por host, na etapa de rede."""
+    rows = db.execute(
+        "SELECT host,count(*) n FROM ingest_outbox WHERE stage=%s AND published_at IS NULL "
+        "AND discarded_at IS NULL AND kind='work' AND ready_at<=now() AND host IS NOT NULL "
+        "GROUP BY host",
+        (stage,),
+    ).fetchall()
+    return {row["host"]: row["n"] for row in rows}
+
+
 def network_candidates(
     db: Any,
     stage: str,
@@ -80,6 +105,7 @@ def network_candidates(
     occupied: Mapping[str, int],
     limit: int,
     per_host: int = 1,
+    host_limits: Mapping[str, int] | None = None,
 ) -> list[dict[str, Any]]:
     """Alterna hosts, preservando FIFO dentro de cada host e ``per_host`` tarefas em trânsito.
 
@@ -87,8 +113,10 @@ def network_candidates(
     ``occupied`` conta as tarefas já em trânsito por host; hosts que atingiram ``per_host``
     são excluídos antes do ranking/limite, e um prefixo com milhares de URLs do mesmo host
     não esconde outros sites elegíveis. Mensagens de falha (dead-letter) só seguem fora da
-    recuperação e não dependem do host.
+    recuperação e não dependem do host. ``host_limits`` dá um limite próprio a hosts com fila
+    longa; os demais seguem ``per_host``.
     """
+    limits = host_limits or {}
     rows: list[dict[str, Any]] = []
     if not recovery:
         rows += db.execute(_FAILED, dict(stage=stage, limit=limit)).fetchall()
@@ -98,8 +126,10 @@ def network_candidates(
             dict(
                 stage=stage,
                 recovery=recovery,
-                per_host=per_host,
-                full=[host for host, count in occupied.items() if count >= per_host],
+                per_host=max([per_host, *limits.values()]),
+                full=[
+                    host for host, count in occupied.items() if count >= limits.get(host, per_host)
+                ],
                 limit=limit - len(rows),
             ),
         ).fetchall()

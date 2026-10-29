@@ -16,12 +16,14 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from buscador_midias.catalog.health_store import HealthStore
-from buscador_midias.catalog.postgres import WRITE_LOCK
+from buscador_midias.catalog.postgres import WRITE_LOCK, connect_postgres
 from buscador_midias.catalog.store import CatalogError
 from buscador_midias.domain.url import url_hash
+from buscador_midias.ingestion.cold_links import cold_link_ids
 from buscador_midias.ingestion.connections import CHECKPOINT_POOL_SIZE, IngestConnections
 from buscador_midias.ingestion.flow import (
     BACKLOG_LIMITS,
@@ -29,6 +31,7 @@ from buscador_midias.ingestion.flow import (
     clock_slot,
     day_window,
     is_last_attempt,
+    is_last_slot,
     today_start,
 )
 from buscador_midias.ingestion.schema import (
@@ -38,6 +41,7 @@ from buscador_midias.ingestion.schema import (
     DEFAULTS,
     HEAD_FILTER_MODES,
     LASTMOD_FILTER_MODES,
+    REPORT_INDEXES,
     SCHEMA_VERSION,
     STAGES,
     URL_FILTER_MODES,
@@ -270,6 +274,43 @@ class IngestStore:
             )
         self.ready = True
 
+    def ensure_report_indexes(self) -> list[str]:
+        """Cria, sem bloquear a escrita, os índices por rodada que faltam; devolve os criados.
+
+        CREATE INDEX CONCURRENTLY não roda em transação, então usa uma conexão própria em
+        autocommit. Uma construção interrompida deixa o índice inválido no catálogo: ele é
+        descartado e refeito. É idempotente.
+        """
+        self.initialize()
+        schema = self.store.schema
+        created: list[str] = []
+        with connect_postgres(self.store.env) as db:
+            db.autocommit = True
+            db.execute(sql.SQL("SET search_path TO {}, pg_catalog").format(sql.Identifier(schema)))
+            # A construção lê a tabela inteira: o limite de 2 min das sessões do painel não vale.
+            db.execute("SET statement_timeout=0")
+            for name, table, columns in REPORT_INDEXES:
+                state = db.execute(
+                    "SELECT i.indisvalid FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid "
+                    "WHERE c.relname=%s AND c.relnamespace=%s::regnamespace",
+                    (name, schema),
+                ).fetchone()
+                if state and state[0]:
+                    continue
+                if state:
+                    db.execute(
+                        sql.SQL("DROP INDEX CONCURRENTLY IF EXISTS {}").format(sql.Identifier(name))
+                    )
+                db.execute(
+                    sql.SQL("CREATE INDEX CONCURRENTLY {} ON {} ({})").format(
+                        sql.Identifier(name),
+                        sql.Identifier(table),
+                        sql.SQL(",").join(sql.Identifier(c) for c in columns),
+                    )
+                )
+                created.append(name)
+        return created
+
     def settings(self) -> dict[str, Any]:
         """Lê configurações atuais sem credenciais."""
         self.initialize()
@@ -354,6 +395,16 @@ class IngestStore:
             elif key == "head_filter":
                 if value not in HEAD_FILTER_MODES:
                     raise CatalogError("Selecione o modo do corte pelo topo válido.")
+            elif key == "adaptive_polling":
+                if value not in ("off", "enforce"):
+                    raise CatalogError("Selecione o modo da leitura adaptativa válido.")
+            elif key == "head_audit_rate":
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not 0 <= value <= 1
+                ):
+                    raise CatalogError("Informe a fração da auditoria do corte entre 0 e 1.")
             elif key == "url_filter":
                 if value not in URL_FILTER_MODES:
                     raise CatalogError("Selecione o modo do filtro por forma da URL válido.")
@@ -376,6 +427,7 @@ class IngestStore:
                     "retry_minutes": (1, 1440),
                     "analysis_text_chars": (1000, 30000),
                     "host_concurrency": (1, 4),
+                    "host_concurrency_max": (1, 8),
                 }
                 low, high = bounds[key]
                 if type(value) is not int or not low <= value <= high:
@@ -528,6 +580,19 @@ class IngestStore:
                     config.get("daily_routes_only", True),
                 ),
             ).fetchall()
+            if (
+                fixed
+                and not ids
+                and config.get("adaptive_polling", "off") == "enforce"
+                and not is_last_slot(
+                    slot,
+                    now,
+                    config.get("timezone", "America/Sao_Paulo"),
+                    config.get("schedule_hours", [1, 6, 12, 16]),
+                )
+            ):
+                skipped = cold_link_ids(db)
+                rows = [row for row in rows if row["id"] not in skipped]
             if not rows:
                 if scheduled:
                     return None
@@ -1106,6 +1171,70 @@ class IngestStore:
             )
             return dict(id=ident, state="retry")
 
+    @staticmethod
+    def _resolve_run(db: Any, run_id: str) -> str:
+        """``latest`` vira o id da rodada mais recente (vazio se ainda não há rodadas)."""
+        if run_id != "latest":
+            return run_id
+        newest = db.execute(
+            "SELECT id FROM ingest_runs ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+        return newest["id"] if newest else ""
+
+    @staticmethod
+    def _scope(
+        run_id: str, source_id: int, stage: str = "", state: str = ""
+    ) -> tuple[str, list[Any]]:
+        """Condições sobre ``j`` apenas para os filtros ativos, com os argumentos na ordem.
+
+        Sem o padrão ``(%s='' OR ...)`` o planejador enxerga o filtro por rodada e usa os
+        índices. Com ``source_id`` a consulta também precisa de ``JOIN ingest_polls p``.
+        """
+        clauses: list[str] = []
+        args: list[Any] = []
+        for column, value in (("j.stage", stage), ("j.state", state), ("j.run_id", run_id)):
+            if value:
+                clauses.append(column + "=%s")
+                args.append(value)
+        if source_id:
+            clauses.append(
+                "((p.snapshot->'source'->>'id')::bigint=%s OR EXISTS "
+                "(SELECT 1 FROM ingest_occurrences so JOIN ingest_polls sp ON sp.id=so.poll_id "
+                "WHERE so.hash=j.hash AND so.run_id=j.run_id "
+                "AND (sp.snapshot->'source'->>'id')::bigint=%s))"
+            )
+            args += [source_id, source_id]
+        return " AND ".join(clauses) or "TRUE", args
+
+    def _metrics(self, db: Any, run_id: str, source_id: int) -> list[dict[str, Any]]:
+        """Chamadas pagas, tokens e custo por etapa, somados das tentativas."""
+        where, args = self._scope(run_id, source_id)
+        joins = "JOIN ingest_polls p ON p.id=j.poll_id " if source_id else ""
+        return db.execute(
+            "SELECT j.stage,"
+            "sum(COALESCE((a.metrics->>'bright_data_requests')::int,0)) bright_data_requests,"
+            "sum(COALESCE((a.metrics->>'prompt_tokens')::int,0)) prompt_tokens,"
+            "sum(COALESCE((a.metrics->>'completion_tokens')::int,0)) completion_tokens,"
+            "sum(COALESCE((a.metrics->>'avoided_article_requests')::int,0)) "
+            "avoided_article_requests,"
+            "sum(COALESCE((a.metrics->>'avoided_xml_requests')::int,0)) avoided_xml_requests,"
+            "sum((a.metrics->>'cost_usd')::numeric) cost_usd FROM ingest_attempts "
+            "a JOIN ingest_jobs j ON j.id=a.job_id "
+            + joins
+            + "WHERE "
+            + where
+            + " GROUP BY j.stage",
+            args,
+        ).fetchall()
+
+    def metrics(self, *, run_id: str = "", source_id: int = 0) -> list[dict[str, Any]]:
+        """Custos por etapa. Fica fora de ``overview`` porque soma todas as tentativas."""
+        self.initialize()
+        if source_id < 0:
+            raise CatalogError("Paginação inválida.")
+        with self.connection() as db:
+            return self._metrics(db, self._resolve_run(db, run_id), source_id)
+
     def overview(
         self,
         *,
@@ -1114,8 +1243,15 @@ class IngestStore:
         state: str = "",
         run_id: str = "",
         source_id: int = 0,
+        with_metrics: bool = True,
     ) -> dict[str, Any]:
-        """Funil por notícia, filas por tarefa e paginação com os motivos individuais."""
+        """Funil por notícia, filas por tarefa e paginação com os motivos individuais.
+
+        ``run_id="latest"`` resolve para a rodada mais recente (o id resolvido volta em
+        ``run_id``); vazio mantém o histórico inteiro, que é bem mais lento. Os custos são a
+        parte mais cara: a tela pede com ``with_metrics=False`` e os busca depois em
+        ``metrics``.
+        """
         self.initialize()
         if (
             stage
@@ -1126,53 +1262,53 @@ class IngestStore:
             raise CatalogError("Filtro de fila inválido.")
         if not 0 <= offset <= 1000000 or source_id < 0:
             raise CatalogError("Paginação inválida.")
-        source_clause = (
-            "(%s=0 OR (p.snapshot->'source'->>'id')::bigint=%s OR EXISTS "
-            "(SELECT 1 FROM ingest_occurrences so JOIN ingest_polls sp ON sp.id=so.poll_id "
-            "WHERE so.hash=j.hash AND so.run_id=j.run_id "
-            "AND (sp.snapshot->'source'->>'id')::bigint=%s))"
-        )
         with self.connection() as db:
+            run_id = self._resolve_run(db, run_id)
+            with_polls = "ingest_jobs j JOIN ingest_polls p ON p.id=j.poll_id"
+            source_from = with_polls if source_id else "ingest_jobs j"
+            queue_where, queue_args = self._scope(run_id, source_id)
             queues = db.execute(
-                "SELECT j.stage,j.state,count(*) n,min(j.created_at) oldest FROM ingest_jobs j "
-                "JOIN ingest_polls p ON p.id=j.poll_id WHERE (%s='' OR j.run_id=%s) "
-                "AND " + source_clause + " GROUP BY j.stage,j.state",
-                (run_id, run_id, source_id, source_id, source_id),
+                "SELECT j.stage,j.state,count(*) n,min(j.created_at) oldest FROM "
+                + source_from
+                + " WHERE "
+                + queue_where
+                + " GROUP BY j.stage,j.state",
+                queue_args,
             ).fetchall()
             workers = db.execute(
                 "SELECT * FROM ingest_workers WHERE heartbeat_at>now()-interval '1 "
                 "day' ORDER BY role"
             ).fetchall()
             runs = db.execute(
-                "SELECT r.*, "
-                "(SELECT count(*) FROM ingest_jobs j WHERE j.run_id=r.id AND "
-                "j.state IN ('pending','queued','retry','running') AND "
-                "NOT (j.failures>0 OR j.payload @> '{\"recovery\":true}')) primary_pending,"
-                "(SELECT count(*) FROM ingest_jobs j WHERE j.run_id=r.id AND "
-                "j.state IN ('pending','queued','retry','running') AND "
-                "(j.failures>0 OR j.payload @> '{\"recovery\":true}')) recovery_pending,"
-                "(SELECT count(*) FROM ingest_polls p WHERE p.run_id=r.id) links,"
-                "(SELECT count(*) FROM ingest_polls p WHERE p.run_id=r.id AND "
-                "p.discovery_done) links_done,"
-                "(SELECT count(*) FROM ingest_occurrences o WHERE o.run_id=r.id) occurrences,"
-                "(SELECT count(DISTINCT hash) FROM ingest_occurrences o WHERE "
-                "o.run_id=r.id) unique_articles "
-                "FROM ingest_runs r ORDER BY created_at DESC LIMIT 20"
+                "WITH latest AS (SELECT * FROM ingest_runs ORDER BY created_at DESC LIMIT 20), "
+                "pending AS (SELECT j.run_id,"
+                "count(*) FILTER (WHERE NOT (j.failures>0 OR j.payload @> '{\"recovery\":true}')) "
+                "primary_pending,"
+                "count(*) FILTER (WHERE j.failures>0 OR j.payload @> '{\"recovery\":true}') "
+                "recovery_pending FROM ingest_jobs j WHERE j.run_id IN (SELECT id FROM latest) "
+                "AND j.state IN ('pending','queued','retry','running') GROUP BY j.run_id), "
+                "polls AS (SELECT p.run_id,count(*) links,"
+                "count(*) FILTER (WHERE p.discovery_done) links_done FROM ingest_polls p "
+                "WHERE p.run_id IN (SELECT id FROM latest) GROUP BY p.run_id), "
+                "seen AS (SELECT o.run_id,count(*) occurrences,count(DISTINCT o.hash) "
+                "unique_articles FROM ingest_occurrences o "
+                "WHERE o.run_id IN (SELECT id FROM latest) GROUP BY o.run_id) "
+                "SELECT r.*,COALESCE(pending.primary_pending,0) primary_pending,"
+                "COALESCE(pending.recovery_pending,0) recovery_pending,"
+                "COALESCE(polls.links,0) links,COALESCE(polls.links_done,0) links_done,"
+                "COALESCE(seen.occurrences,0) occurrences,"
+                "COALESCE(seen.unique_articles,0) unique_articles "
+                "FROM latest r LEFT JOIN pending ON pending.run_id=r.id "
+                "LEFT JOIN polls ON polls.run_id=r.id LEFT JOIN seen ON seen.run_id=r.id "
+                "ORDER BY r.created_at DESC"
             ).fetchall()
-            where = (
-                "(%s='' OR j.stage=%s) AND (%s='' OR j.state=%s) AND (%s='' OR j.run_id=%s) "
-                "AND " + source_clause
-            )
-            args = (stage, stage, state, state, run_id, run_id, source_id, source_id, source_id)
+            where, args = self._scope(run_id, source_id, stage, state)
             count = db.execute(
-                "SELECT count(*) n FROM ingest_jobs j JOIN ingest_polls p ON p.id=j.poll_id "
-                "WHERE " + where,
-                args,
+                "SELECT count(*) n FROM " + source_from + " WHERE " + where, args
             ).fetchone()["n"]
             jobs = db.execute(
                 "SELECT j.*,p.link_id,p.snapshot->'source'->>'name' source,a.url article_url "
-                "FROM ingest_jobs j JOIN ingest_polls p ON p.id=j.poll_id LEFT JOIN "
-                "ingest_articles a ON a.hash=j.hash "
+                "FROM " + with_polls + " LEFT JOIN ingest_articles a ON a.hash=j.hash "
                 "WHERE " + where + " ORDER BY j.created_at DESC LIMIT 25 OFFSET %s",
                 (*args, offset),
             ).fetchall()
@@ -1180,29 +1316,28 @@ class IngestStore:
                 job["attempt_history"] = db.execute(
                     "SELECT * FROM ingest_attempts WHERE job_id=%s ORDER BY attempt", (job["id"],)
                 ).fetchall()
-            funnel = db.execute(
-                "SELECT a.status,count(DISTINCT a.hash) n FROM ingest_articles a "
-                "WHERE EXISTS(SELECT 1 FROM ingest_occurrences o JOIN ingest_polls p "
-                "ON p.id=o.poll_id WHERE o.hash=a.hash AND (%s='' OR o.run_id=%s) "
-                "AND (%s=0 OR (p.snapshot->'source'->>'id')::bigint=%s)) GROUP BY a.status",
-                (run_id, run_id, source_id, source_id),
-            ).fetchall()
-            metrics = db.execute(
-                "SELECT "
-                "j.stage,sum(COALESCE((a.metrics->>'bright_data_requests')::int,0)) "
-                "bright_data_requests,"
-                "sum(COALESCE((a.metrics->>'prompt_tokens')::int,0)) prompt_tokens,"
-                "sum(COALESCE((a.metrics->>'completion_tokens')::int,0)) completion_tokens,"
-                "sum(COALESCE((a.metrics->>'avoided_article_requests')::int,0)) "
-                "avoided_article_requests,"
-                "sum(COALESCE((a.metrics->>'avoided_xml_requests')::int,0)) avoided_xml_requests,"
-                "sum((a.metrics->>'cost_usd')::numeric) cost_usd FROM ingest_attempts "
-                "a JOIN ingest_jobs j ON j.id=a.job_id JOIN ingest_polls p ON p.id=j.poll_id "
-                "WHERE (%s='' OR j.run_id=%s) AND " + source_clause + " GROUP BY j.stage",
-                (run_id, run_id, source_id, source_id, source_id),
-            ).fetchall()
-            return dict(
+            run_filter = " AND o.run_id=%s" if run_id else ""
+            run_args = [run_id] if run_id else []
+            if source_id:
+                funnel = db.execute(
+                    "SELECT a.status,count(DISTINCT a.hash) n FROM ingest_articles a "
+                    "WHERE EXISTS(SELECT 1 FROM ingest_occurrences o JOIN ingest_polls p "
+                    "ON p.id=o.poll_id WHERE o.hash=a.hash"
+                    + run_filter
+                    + " AND (p.snapshot->'source'->>'id')::bigint=%s) GROUP BY a.status",
+                    [*run_args, source_id],
+                ).fetchall()
+            else:
+                funnel = db.execute(
+                    "SELECT a.status,count(*) n FROM ingest_articles a WHERE a.hash IN "
+                    "(SELECT o.hash FROM ingest_occurrences o WHERE TRUE"
+                    + run_filter
+                    + ") GROUP BY a.status",
+                    run_args,
+                ).fetchall()
+            result = dict(
                 settings=self.settings(),
+                run_id=run_id,
                 queues=queues,
                 workers=workers,
                 runs=runs,
@@ -1210,5 +1345,7 @@ class IngestStore:
                 total=count,
                 offset=offset,
                 funnel=funnel,
-                metrics=metrics,
             )
+            if with_metrics:
+                result["metrics"] = self._metrics(db, run_id, source_id)
+            return result

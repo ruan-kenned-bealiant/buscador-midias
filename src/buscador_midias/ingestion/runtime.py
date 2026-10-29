@@ -19,6 +19,8 @@ from buscador_midias.catalog.postgres import PostgresCatalogStore
 from buscador_midias.ingestion import broker
 from buscador_midias.ingestion.admission import (
     confirm_published,
+    host_backlogs,
+    host_limit,
     network_candidates,
     primary_hosts,
 )
@@ -47,9 +49,7 @@ class Service:
     def __init__(self, repository: IngestStore, engine: Engine | None = None) -> None:
         """Uma instância não interfere nos workers nem nas filas das outras instâncias."""
         self.repository = repository
-        self.engine = engine or Engine(
-            repository, host_slots=lambda: int(self.configuration().get("host_concurrency", 1))
-        )
+        self.engine = engine or Engine(repository, host_slots=self.host_slot_ceiling)
         self.stop = threading.Event()
         self.instance = uuid.uuid4().hex
         self.threads: list[threading.Thread] = []
@@ -126,8 +126,16 @@ class Service:
             return 0
         with self.repository.publication_connection() as db:
             network = stage in ("discovery", "fetch")
-            per_host = int(self.configuration().get("host_concurrency", 1))
+            config = self.configuration()
+            per_host = int(config.get("host_concurrency", 1))
+            cap = int(config.get("host_concurrency_max", 1))
             occupied: dict[str, int] = {}
+            limits: dict[str, int] = {}
+            if network and cap > per_host:
+                limits = {
+                    host: host_limit(backlog, per_host, cap)
+                    for host, backlog in host_backlogs(db, str(stage)).items()
+                }
             if network:
                 admitted = db.execute(
                     "SELECT pg_try_advisory_xact_lock(674931221) acquired"
@@ -144,7 +152,7 @@ class Service:
                 if recovery:
                     # Não reservar um host para retentativa se há trabalho novo pronto nele.
                     for host in primary_hosts(db):
-                        occupied[host] = per_host
+                        occupied[host] = limits.get(host, per_host)
             if self.cleanup_due(stage, recovery):
                 db.execute(
                     "WITH obsolete AS (SELECT o.id FROM ingest_outbox o JOIN ingest_jobs j "
@@ -158,7 +166,13 @@ class Service:
                 )
             if network:
                 rows = network_candidates(
-                    db, str(stage), recovery, occupied, allowance, per_host=per_host
+                    db,
+                    str(stage),
+                    recovery,
+                    occupied,
+                    allowance,
+                    per_host=per_host,
+                    host_limits=limits,
                 )
             else:
                 rows = db.execute(
@@ -183,7 +197,7 @@ class Service:
                     break
                 host = (urlsplit(row["url"] or "").hostname or "").rstrip(".")
                 if network and row["kind"] == "work":
-                    if occupied.get(host, 0) >= per_host:
+                    if occupied.get(host, 0) >= limits.get(host, per_host):
                         continue
                     occupied[host] = occupied.get(host, 0) + 1
                 broker.publish(
@@ -205,6 +219,13 @@ class Service:
                 # Só trava tarefas depois de receber todos os confirms do lote.
                 confirm_published(db, confirmed)
             return published
+
+    def host_slot_ceiling(self) -> int:
+        """Maior número de vagas que a admissão pode dar a um host; as travas do motor seguem."""
+        config = self.configuration()
+        return max(
+            int(config.get("host_concurrency", 1)), int(config.get("host_concurrency_max", 1))
+        )
 
     def filter_window_once(self, cursor: str = "") -> tuple[str, int]:
         """Finaliza somente exclusões comprovadas/configuradas; preserva demais tarefas."""
@@ -505,6 +526,7 @@ def main(argv: list[str] | None = None) -> int:
             "backfill-lastmod",
             "backfill-context-themes",
             "stop-runs",
+            "ensure-indexes",
         ),
     )
     parser.add_argument(
@@ -559,6 +581,8 @@ def main(argv: list[str] | None = None) -> int:
             print("Cancela o trabalho não analisado das rodadas abertas; confirme com --apply.")
             return 1
         print(json.dumps(repository.stop_runs(), ensure_ascii=False))
+    elif args.command == "ensure-indexes":
+        print(json.dumps(dict(created=repository.ensure_report_indexes()), ensure_ascii=False))
     elif args.command == "status":
         print(
             json.dumps(repository.jsonable(repository.overview()), ensure_ascii=False, default=str)

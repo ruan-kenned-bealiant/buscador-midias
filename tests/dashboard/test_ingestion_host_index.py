@@ -13,6 +13,7 @@ from test_ingestion_fast_batch import prepare
 
 from buscador_midias.catalog.store import CatalogError
 from buscador_midias.ingestion import broker
+from buscador_midias.ingestion.admission import host_limit
 from buscador_midias.ingestion.engine import Engine, HostBusyError
 from buscador_midias.ingestion.runtime import Service
 from buscador_midias.ingestion.store import IngestStore
@@ -153,3 +154,67 @@ def test_execution_lock_with_default_slots_is_exclusive(ingest):
         engine.reserve_host(first, "exclusive.example", 1)
         with pytest.raises(HostBusyError):
             engine.reserve_host(second, "exclusive.example", 1)
+
+
+@pytest.mark.parametrize(
+    ("backlog", "base", "cap", "expected"),
+    [
+        (0, 1, 3, 1),
+        (99, 1, 3, 1),  # fila curta: um por vez, como antes
+        (100, 1, 3, 2),
+        (200, 1, 3, 3),
+        (5000, 1, 3, 3),  # nunca passa do teto
+        (5000, 1, 1, 1),  # teto 1 = recurso desligado
+        (500, 3, 2, 3),  # o teto nunca reduz o valor-base
+        (150, 2, 4, 3),
+    ],
+)
+def test_host_limit_grows_with_the_backlog_up_to_the_cap(backlog, base, cap, expected):
+    assert host_limit(backlog, base, cap) == expected
+
+
+def test_adaptive_host_concurrency_is_off_by_default_and_validated(ingest):
+    assert ingest.settings()["config"]["host_concurrency_max"] == 1
+    for value in (1, 3, 8):
+        configure(ingest, host_concurrency_max=value)
+        assert ingest.settings()["config"]["host_concurrency_max"] == value
+    for value in (0, 9, "3", True, None, 2.5):
+        with pytest.raises(CatalogError):
+            configure(ingest, host_concurrency_max=value)
+
+
+def test_a_host_with_a_long_queue_gets_more_slots_when_the_cap_allows(ingest, monkeypatch):
+    seed_unbalanced(ingest)  # 1001 tarefas em jose.example e 1 em other.example
+    configure(ingest, host_concurrency_max=3)
+    assert publish(ingest, monkeypatch) == ["jose.example"] * 3 + ["other.example"]
+
+
+def test_a_short_queue_keeps_one_slot_even_with_a_high_cap(ingest, monkeypatch):
+    seed_unbalanced(ingest)
+    configure(ingest, host_concurrency_max=3)
+    with ingest.connection() as db:
+        db.execute(
+            "UPDATE ingest_outbox SET discarded_at=now() WHERE job_id IN (SELECT id FROM "
+            "ingest_jobs WHERE payload->>'url' LIKE '%%jose.example/map-%%' "
+            "AND substring(subject from 6)::int>50)"
+        )
+    assert publish(ingest, monkeypatch) == ["jose.example", "other.example"]
+
+
+def test_extra_slots_still_count_tasks_already_in_flight(ingest, monkeypatch):
+    seed_unbalanced(ingest)
+    configure(ingest, host_concurrency_max=3)
+    with ingest.connection() as db:
+        db.execute("UPDATE ingest_jobs SET state='queued' WHERE subject IN ('fair-1','fair-2')")
+    assert publish(ingest, monkeypatch) == ["jose.example", "other.example"]
+
+
+def test_engine_host_locks_follow_the_largest_slot_count_the_admission_may_grant(ingest):
+    service = Service(ingest)
+    assert service.engine.host_slots() == 1
+    configure(ingest, host_concurrency_max=3)
+    service.config_until = 0  # a configuração é guardada em cache por 2 s
+    assert service.engine.host_slots() == 3
+    configure(ingest, host_concurrency=4, host_concurrency_max=2)
+    service.config_until = 0
+    assert service.engine.host_slots() == 4

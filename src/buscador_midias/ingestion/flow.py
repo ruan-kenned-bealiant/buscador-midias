@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 import threading
 import time as monotonic_time
@@ -130,6 +131,11 @@ def clock_slot(now: datetime, timezone: str, hours: list[int]) -> datetime | Non
     return slot if slot and now - slot < timedelta(minutes=15) else None
 
 
+def is_last_slot(slot: datetime, now: datetime, timezone: str, hours: list[int]) -> bool:
+    """Se ``slot`` é o último horário fixo do dia, aquele cuja janela contém todas as outras."""
+    return bool(hours) and slot == today_start(now, timezone) + timedelta(hours=max(hours))
+
+
 # Folga contra fuso mal rotulado em ``lastmod``: o instante real pode ser até 12 h posterior.
 LASTMOD_MARGIN = timedelta(hours=12)
 
@@ -223,6 +229,20 @@ def publication_outside(job: dict[str, Any]) -> dict[str, Any] | None:
         article=dict(published_at=published.isoformat(), date_basis="xml_publication"),
         metrics=dict(avoided_article_requests=1),
     )
+
+
+def audit_sampled(run_id: str, link_id: int, rate: float) -> bool:
+    """Se este link entra na amostra de auditoria do corte pelo topo nesta rodada.
+
+    Determinística por rodada e link (um reinício ou retentativa não troca a amostra) e sem
+    estado: a fração de links sorteados é ``rate``.
+    """
+    if rate <= 0:
+        return False
+    if rate >= 1:
+        return True
+    digest = hashlib.sha256(f"{run_id}:{link_id}".encode()).digest()
+    return int.from_bytes(digest[:4], "big") / 2**32 < rate
 
 
 def head_outside(read_order: str, top: str | None, since: datetime) -> dict[str, Any] | None:

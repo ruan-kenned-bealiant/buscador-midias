@@ -50,6 +50,16 @@ def dispatch(
                     state=query.get("state", ""),
                     run_id=query.get("run_id", ""),
                     source_id=int(query.get("source_id", "0")),
+                    with_metrics=False,
+                )
+            )
+        if path == "/busca/custos":
+            return 200, repository.jsonable(
+                dict(
+                    metrics=repository.metrics(
+                        run_id=query.get("run_id", ""),
+                        source_id=int(query.get("source_id", "0")),
+                    )
                 )
             )
         match = re.fullmatch(r"/busca/noticias/([a-f0-9]{64})", path)

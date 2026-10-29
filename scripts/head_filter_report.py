@@ -1,6 +1,9 @@
 """Resume o corte pelo topo (``head_filter``) de uma rodada: o que mediu e se já dá para ativar.
 
-Lê as métricas das tentativas de descoberta. Em modo sombra, ``head_shadow_would_skip`` conta
+Lê as métricas das tentativas de descoberta. Com o corte ativo, ``head_audit_sampled`` conta os
+documentos da amostra de auditoria (lidos por inteiro): neles, ``head_shadow_would_skip`` é o que
+o corte teria dispensado e ``head_shadow_missed`` o que ele teria perdido; a perda estimada é
+``missed / would_skip``. Em modo sombra, ``head_shadow_would_skip`` conta
 documentos que o corte teria dispensado e ``head_shadow_missed`` os que, mesmo assim, trouxeram
 URLs da janela. A regra só deve ser ativada com ``missed == 0``. Sem argumento usa a rodada mais
 recente; ``--run-id`` escolhe outra.
@@ -14,6 +17,7 @@ import json
 from buscador_midias.catalog.postgres import PostgresCatalogStore
 
 KEYS = (
+    "head_audit_sampled",
     "head_shadow_would_skip",
     "head_shadow_missed",
     "head_cut",
@@ -47,6 +51,12 @@ def main() -> int:
         if not report["head_shadow_missed"]
         else "NÃO ativar: houve corte que teria perdido URL da janela"
     )
+    if report["head_audit_sampled"]:
+        verdict = (
+            f"auditoria: {report['head_audit_sampled']} documentos lidos por inteiro, "
+            f"{report['head_shadow_would_skip']} o corte teria dispensado, "
+            f"{report['head_shadow_missed']} teriam perdido URL da janela"
+        )
     print(json.dumps(dict(report, verdict=verdict), ensure_ascii=False, indent=1))
     return 0
 

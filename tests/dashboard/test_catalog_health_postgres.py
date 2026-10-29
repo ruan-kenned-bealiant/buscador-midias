@@ -138,6 +138,40 @@ def test_limited_retries_and_persisted_failures(health):
     assert health.create("recovery")["total"] == 1
 
 
+def age_failed_link(health, changed_days_ago, checked_days_ago):
+    """Deixa o link 1 inativo, com falha de acesso e as datas de alteração e de verificação."""
+    from unittest.mock import patch
+
+    def blocked(config, source, progress, factory):
+        return dict(endpoint_accessible=False, endpoint_status=403, outcome="blocked")
+
+    health.create("active")
+    with patch("buscador_midias.catalog.health_worker.run_test", blocked):
+        execute(health)
+    link = health.store.endpoint(1)
+    health.store.save("endpoint", dict(version=link["version"], active=False), 1)
+    with health.connection() as db:
+        db.execute(
+            "UPDATE links SET updated_at=now()-make_interval(days=>%s) WHERE id=1",
+            (changed_days_ago,),
+        )
+        db.execute(
+            "UPDATE link_health SET checked_at=now()-make_interval(days=>%s) WHERE link_id=1",
+            (checked_days_ago,),
+        )
+
+
+@pytest.mark.parametrize(
+    ("changed_days_ago", "checked_days_ago", "included"),
+    [(1, 1, 1), (30, 1, 0), (30, 8, 1)],
+)
+def test_recovery_skips_old_failures_checked_this_week(
+    health, changed_days_ago, checked_days_ago, included
+):
+    age_failed_link(health, changed_days_ago, checked_days_ago)
+    assert health.create("recovery")["total"] == included
+
+
 def test_resume_cancel_and_catalog_edit_conflicts(health):
     run = health.create("active")
     worker = HealthWorker(health, old_news)

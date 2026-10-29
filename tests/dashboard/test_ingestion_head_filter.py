@@ -4,16 +4,20 @@
 from __future__ import annotations
 
 import os
-from datetime import timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from test_catalog_postgres import local, schema  # noqa: F401
 from test_catalog_testing import FakeReader
 from test_ingestion import ingest, next_job  # noqa: F401
 
+from buscador_midias.catalog.head_probe import prefix_outside
 from buscador_midias.catalog.mechanisms import get_mechanism
 from buscador_midias.catalog.store import CatalogError
+from buscador_midias.ingestion import engine as engine_module
 from buscador_midias.ingestion.engine import Engine
+from buscador_midias.ingestion.flow import audit_sampled
 from buscador_midias.net.fetcher import FetchResult
 
 needs_postgres = pytest.mark.skipif(
@@ -52,12 +56,16 @@ class StoppableReader(FakeReader):
         return result
 
 
-def discover(ingest, mode, ages, *, order="newest_first", reader=FakeReader):
+def discover(ingest, mode, ages, *, order="newest_first", reader=FakeReader, **settings):
     ingest.configure(
         dict(
             version=ingest.settings()["version"],
             config=dict(
-                window_mode="today", head_filter=mode, lastmod_filter="off", url_filter="off"
+                window_mode="today",
+                head_filter=mode,
+                lastmod_filter="off",
+                url_filter="off",
+                **settings,
             ),
         )
     )
@@ -225,3 +233,60 @@ def test_an_undated_entry_in_a_labelled_document_blocks_the_cut_and_demotes_the_
     with ingest.connection() as db:
         found = db.execute("SELECT read_order FROM links WHERE id=%s", (link_id,)).fetchone()
     assert found["read_order"] == "unknown"
+
+
+def test_audit_sampling_is_deterministic_and_close_to_the_rate():
+    assert not audit_sampled("run", 1, 0) and audit_sampled("run", 1, 1)
+    assert audit_sampled("run-a", 7, 0.5) == audit_sampled("run-a", 7, 0.5)
+    hits = sum(audit_sampled("run-a", link, 0.02) for link in range(20000))
+    assert 300 <= hits <= 500  # 2% de 20.000, com folga estatística
+    assert {audit_sampled("run-a", link, 0.5) for link in range(50)} == {True, False}
+
+
+@needs_postgres
+def test_audit_reads_the_whole_document_and_reports_what_the_cut_would_have_done(ingest):
+    result, reader = discover(ingest, "enforce", OLD, reader=StoppableReader, head_audit_rate=1)
+    assert not reader.asked  # sem parada antecipada: o documento chegou inteiro
+    assert result["metrics"]["head_audit_sampled"] == 1
+    assert result["metrics"]["head_shadow_would_skip"] == 1
+    assert result["metrics"]["head_shadow_missed"] == 0
+    assert "head_cut" not in result["metrics"]
+
+
+@needs_postgres
+def test_a_link_outside_the_sample_is_cut_exactly_as_before(ingest):
+    result, reader = discover(ingest, "enforce", OLD, reader=StoppableReader, head_audit_rate=0)
+    assert reader.asked and result["metrics"]["head_stopped_download"] == 1
+    assert "head_audit_sampled" not in result["metrics"]
+
+
+@needs_postgres
+def test_audit_does_not_apply_when_the_cut_is_not_enforced(ingest):
+    result, _ = discover(ingest, "shadow", OLD, head_audit_rate=1)
+    assert "head_audit_sampled" not in result["metrics"]
+
+
+@needs_postgres
+def test_audit_catches_a_loss_the_early_stop_would_have_caused(ingest, monkeypatch):
+    # Três itens antigos e em ordem no começo e notícias da janela só depois: o prefixo parece
+    # morto, mas o documento tem o que importa. É exatamente a perda que a amostra procura.
+    ages = [30, 31, 32, 33, -3, -2, -1, 1, 2, 3]
+    since = datetime.now(ZoneInfo("America/Sao_Paulo")).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    body = feed(ages, since)
+    step = next(n for n in range(100, len(body)) if prefix_outside(body[:n], since))
+    assert step < len(body)
+    monkeypatch.setattr(engine_module, "EARLY_STOP_STEPS", (step,))
+    result, _ = discover(ingest, "enforce", ages, reader=StoppableReader, head_audit_rate=1)
+    assert result["metrics"]["head_audit_sampled"] == 1
+    assert result["metrics"]["head_shadow_would_skip"] == 1
+    assert result["metrics"]["head_shadow_missed"] == 1
+
+
+@pytest.mark.parametrize("value", [-0.1, 1.5, True, "0.02", None])
+def test_audit_rate_is_validated(ingest, value):
+    with pytest.raises(CatalogError):
+        ingest.configure(
+            dict(version=ingest.settings()["version"], config=dict(head_audit_rate=value))
+        )
