@@ -295,6 +295,16 @@ CREATE INDEX IF NOT EXISTS bm_articles_first_run ON bm_articles (first_run_id, s
 CREATE INDEX IF NOT EXISTS bm_articles_site ON bm_articles (site_id, first_run_id);
 CREATE INDEX IF NOT EXISTS bm_articles_proof ON bm_articles (site_id)
  WHERE payload->>'published_at_basis' = 'html';
+CREATE TABLE IF NOT EXISTS bm_retry_requests (
+ id TEXT PRIMARY KEY,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ filters JSONB NOT NULL DEFAULT '{}',
+ requested INTEGER NOT NULL DEFAULT 0
+);
+ALTER TABLE bm_articles
+ ADD COLUMN IF NOT EXISTS retry_id TEXT REFERENCES bm_retry_requests(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS bm_articles_retry ON bm_articles (retry_id, state)
+ WHERE retry_id IS NOT NULL;
 CREATE TABLE IF NOT EXISTS bm_host_state (
  host TEXT PRIMARY KEY,
  cooldown_until TIMESTAMPTZ,
@@ -319,6 +329,7 @@ ENGINE_TABLES = (
     "bm_run_links",
     "bm_discovery_tasks",
     "bm_articles",
+    "bm_retry_requests",
     "bm_host_state",
     "bm_document_cache",
 )

@@ -142,8 +142,10 @@ def test_pending_lists_failures_and_can_reopen_a_selection(client):
     status, done = client.call(
         BASE + "/busca/pendencias/reprocessar", "POST", dict(reason="http_503")
     )
-    assert status == 202 and done == dict(requeued=1)
-    assert client.call(BASE + "/busca/pendencias")[1]["total"] == 2
+    assert status == 202 and done["requeued"] == 1 and len(done["retry_id"]) == 32
+    pending = client.call(BASE + "/busca/pendencias")[1]
+    assert pending["total"] == 2
+    assert [r["id"] for r in pending["retries"]] == [done["retry_id"]]
     assert (
         client.call(BASE + "/busca/pendencias/reprocessar", "POST", dict(nothing=1))[0] == 400
         or True
@@ -152,7 +154,7 @@ def test_pending_lists_failures_and_can_reopen_a_selection(client):
 
 def test_one_news_item_can_be_reprocessed_by_its_hash(client):
     status, done = client.call(f"{BASE}/busca/noticias/{key('broken')}/reprocessar", "POST", {})
-    assert status == 202 and done == dict(requeued=1)
+    assert status == 202 and done["requeued"] == 1 and done["retry_id"]
 
 
 def test_the_search_settings_can_be_changed_with_a_revision(client):

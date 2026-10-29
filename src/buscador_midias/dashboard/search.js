@@ -332,12 +332,43 @@ function pendingParams(extra = {}) {
 }
 async function requeue(filter) {
   const d = await api('/busca/pendencias/reprocessar', 'POST', filter);
-  notify(fmt(d.requeued) + ' notícia(s) reenfileirada(s).');
+  notify(fmt(d.requeued) + ' notícia(s) reenfileirada(s). O andamento aparece em "Pedidos de reprocessamento".');
   await load();
+}
+/* ---------- pedidos de reprocessamento ---------- */
+function requestScope(r) {
+  const f = r.filters || {}, parts = [];
+  if (f.everything) parts.push('todas as pendências');
+  if (f.hashes) parts.push(fmt(f.hashes) + ' notícia(s) escolhida(s)');
+  if (f.stage) parts.push('etapa: ' + (stages[f.stage] || f.stage));
+  if (f.reason) parts.push('motivo: ' + f.reason);
+  if (f.reason_class) parts.push((classes[f.reason_class] || f.reason_class).toLowerCase());
+  if (f.source_id) parts.push('site: ' + (r.source_name || '#' + f.source_id));
+  if (f.run_id) parts.push('rodada ' + String(f.run_id).slice(0, 8));
+  return parts.join(' · ') || 'todas as pendências';
+}
+function requestState(r) {
+  if (!r.finished) return 'Em andamento';
+  return r.failed ? 'Terminou com ' + fmt(r.failed) + ' falha(s)' : 'Terminou sem falhas';
+}
+function drawRetryRequests(requests) {
+  $('retry-requests').replaceChildren();
+  for (const r of requests) {
+    const row = el('tr'), scope = el('td'), situation = el('td'), resolved = r.persisted + r.done_other + r.failed + r.cancelled;
+    scope.append(el('span', requestScope(r)));
+    if (r.reasons.length) scope.append(el('br'), el('small', 'Falhas: ' + r.reasons.map((x) => (x.reason || 'motivo não registrado') + ' (' + fmt(x.n) + ')').join(', '), 'muted'));
+    if (r.superseded) scope.append(el('br'), el('small', fmt(r.superseded) + ' reaberta(s) de novo por um pedido mais novo.', 'muted'));
+    const progress = el('progress'); progress.max = Math.max(r.requested - r.superseded, 1); progress.value = resolved; progress.setAttribute('aria-label', 'Andamento do pedido');
+    situation.append(el('span', requestState(r), 'badge ' + (!r.finished ? '' : r.failed ? 'amber' : 'green')), progress);
+    row.append(el('td', date(r.created_at)), scope, el('td', fmt(r.requested)), el('td', fmt(r.in_progress)), el('td', fmt(r.persisted)), el('td', fmt(r.done_other)), el('td', fmt(r.failed)), situation);
+    $('retry-requests').append(row);
+  }
+  if (!requests.length) emptyRow('retry-requests', 'Nenhum reprocessamento pedido ainda.', 8);
 }
 async function loadPending() {
   const d = await api('/busca/pendencias?' + pendingParams());
   pendingTotal = d.total;
+  drawRetryRequests(d.retries || []);
   $('pending-summary').textContent = fmt(d.total) + ' notícia(s) com pendência neste filtro.';
   $('pending-groups').replaceChildren(); $('pending-items').replaceChildren();
   for (const g of d.groups) {

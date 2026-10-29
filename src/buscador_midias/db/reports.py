@@ -18,6 +18,8 @@ from psycopg import sql
 from buscador_midias.catalog.store_errors import CatalogError
 from buscador_midias.db.connection import Repository
 from buscador_midias.db.queue import retry_failed
+from buscador_midias.db.retry_requests import close_request, open_request
+from buscador_midias.db.retry_requests import recent as recent_requests
 from buscador_midias.db.settings import STAGES, SettingsRepository
 
 PAGE = 25
@@ -364,14 +366,24 @@ class ReportRepository(Repository):
                 "ORDER BY a.failed_at DESC,a.hash LIMIT %s OFFSET %s",
                 (*args, PAGE, offset),
             ).fetchall()
+            retries = recent_requests(db)
         assert total
-        return dict(groups=groups, items=items, total=total["n"], offset=offset)
+        return dict(groups=groups, items=items, total=total["n"], offset=offset, retries=retries)
 
     def retry(self, filters: dict[str, Any]) -> int:
-        """Reabre as falhas escolhidas por uma pessoa; devolve quantas voltaram para a fila.
+        """Reabre as falhas escolhidas por uma pessoa; devolve quantas voltaram para a fila."""
+        return int(self.reopen(filters)["requeued"])
+
+    def retry_requests(self) -> list[dict[str, Any]]:
+        """Os pedidos de reprocessamento mais recentes e o andamento de cada um."""
+        with self.connection() as db:
+            return recent_requests(db)
+
+    def reopen(self, filters: dict[str, Any]) -> dict[str, Any]:
+        """Reabre as falhas escolhidas e registra o pedido: ``requeued`` e ``retry_id``.
 
         Sem nenhum filtro só com ``everything=True``, para que um clique sem querer não reabra
-        todas as pendências.
+        todas as pendências. Um pedido que não reabriu nada não deixa registro (``retry_id`` nulo).
         """
         if filters.keys() - _RETRY_KEYS:
             raise CatalogError("Filtro de reprocessamento inválido.")
@@ -394,7 +406,8 @@ class ReportRepository(Repository):
         if not chosen and filters.get("everything") is not True:
             raise CatalogError("Informe o que reprocessar ou confirme todas as pendências.")
         with self.connection() as db:
-            return retry_failed(
+            request_id = open_request(db, filters)
+            requeued = retry_failed(
                 db,
                 stage=stage,
                 reason=filters.get("reason") or None,
@@ -402,7 +415,9 @@ class ReportRepository(Repository):
                 run_id=filters.get("run_id") or None,
                 site_id=source,
                 hashes=hashes or None,
+                retry_id=request_id,
             )
+            return dict(requeued=requeued, retry_id=close_request(db, request_id, requeued))
 
     # --- painel --------------------------------------------------------------------------------
 

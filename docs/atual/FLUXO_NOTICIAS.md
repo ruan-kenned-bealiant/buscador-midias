@@ -46,6 +46,13 @@ A tela **Pendências** do Buscador agrupa por etapa, motivo e tipo e reabre por 
 uma a uma. Reabrir devolve a notícia à etapa em que falhou. A rodada que falhou não repete a
 própria falha.
 
+Cada reprocessamento manual vira um **pedido** (`bm_retry_requests`, com id) e marca as notícias
+que reabriu (`bm_articles.retry_id`). No topo da tela Pendências, "Pedidos de reprocessamento" mostra
+os 10 mais recentes: quantas foram reabertas, quantas ainda andam, quantas foram gravadas, quantas
+terminaram de outro jeito e quantas falharam (com os motivos). O resumo atualiza sozinho a cada 5 s.
+Se um pedido mais novo reabre a mesma notícia, ela passa para ele e o pedido antigo mostra quantas
+saíram. Reprocessar sem encontrar nada não cria pedido.
+
 ## Fila e concorrência
 
 - A notícia é reservada por compare-and-set (`state`, `stage`, `owner`, `attempts`); mensagem

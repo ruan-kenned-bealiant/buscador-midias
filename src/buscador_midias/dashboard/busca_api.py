@@ -39,10 +39,10 @@ def dispatch(
     if handler.command == "POST" and path == "/busca/rodadas":
         return 202, jsonable(api.work.create_run(data))
     if handler.command == "POST" and path == "/busca/pendencias/reprocessar":
-        return 202, dict(requeued=reports.retry(data))
+        return 202, reports.reopen(data)
     retry = re.fullmatch(r"/busca/noticias/([a-f0-9]{64})/reprocessar", path)
     if handler.command == "POST" and retry and not data:
-        return 202, dict(requeued=reports.retry(dict(hashes=[retry[1]])))
+        return 202, reports.reopen(dict(hashes=[retry[1]]))
     raise CatalogError("Endereço ou método não permitido.", 404)
 
 

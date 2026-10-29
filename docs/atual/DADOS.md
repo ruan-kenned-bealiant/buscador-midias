@@ -30,6 +30,7 @@ O DDL está em `db/schema.py` e é idempotente (`python -m buscador_midias db in
 - **Origem:** `site_id`, `link_id`, `document_url`, `first_run_id`, `run_id` (a rodada que a admitiu por último), `first_seen_at`, `last_seen_at`, `seen_count`.
 - **Fila:** `stage`, `state`, `outcome`, `attempts`, `passes`, `lane`, `next_attempt_at`, `locked_until`, `queued_at`, `owner`.
 - **Falha (a "pendência"):** `failed_stage`, `reason`, `reason_class`, `retryable`, `failed_at`, `detail`.
+- **Reprocessamento manual:** `retry_id` aponta para `bm_retry_requests` (`id`, `created_at`, `filters`, `requested`): um registro por pedido feito na tela Pendências, com o filtro usado (sem a lista de hashes). Serve só ao resumo da tela; apagar um pedido apenas solta o vínculo.
 - **Dados:** `payload`, `cost` (por etapa), `history` (últimas tentativas), `corpus_article_id`.
 
 Estados: `pending`, `queued`, `running`, `retry`, `done`, `failed`, `cancelled`.

@@ -493,8 +493,13 @@ def retry_failed(
     site_id: int | None = None,
     hashes: list[str] | None = None,
     limit: int | None = None,
+    retry_id: str | None = None,
 ) -> int:
-    """Reabre as falhas que o filtro escolhe, por decisão de uma pessoa (sem limite de passadas)."""
+    """Reabre as falhas que o filtro escolhe, por decisão de uma pessoa (sem limite de passadas).
+
+    ``retry_id`` marca as notícias com o pedido que as reabriu, para o resumo da tela de
+    Pendências; um pedido mais novo sobre a mesma notícia a leva para si.
+    """
     return db.execute(
         "WITH picked AS (SELECT hash FROM bm_articles WHERE state='failed' "
         "AND (%(stage)s::text IS NULL OR failed_stage=%(stage)s) "
@@ -506,8 +511,10 @@ def retry_failed(
         "ORDER BY failed_at, hash LIMIT %(limit)s FOR UPDATE SKIP LOCKED) "
         "UPDATE bm_articles a SET state='retry', stage=COALESCE(a.failed_stage,a.stage),"
         "attempts=0, passes=a.passes+1, lane='primary', next_attempt_at=now(), queued_at=NULL,"
-        "owner=NULL, locked_until=NULL, updated_at=now() FROM picked p WHERE a.hash=p.hash",
+        "owner=NULL, locked_until=NULL, updated_at=now(), "
+        "retry_id=COALESCE(%(retry)s::text, a.retry_id) FROM picked p WHERE a.hash=p.hash",
         dict(
+            retry=retry_id,
             stage=stage,
             reason=reason,
             klass=reason_class,

@@ -29,9 +29,9 @@ de `GET /resumo`). Datas em ISO 8601.
 | `GET /busca/fontes/{id}/corpus?run_id` | Notícias do site já no corpus. |
 | `GET /busca/noticias/{hash}` | A notícia, com a origem. |
 | `GET /busca/custos?run_id&source_id` | Chamadas pagas, tokens e custo por etapa. |
-| `GET /busca/pendencias?stage&reason&reason_class&source_id&run_id` | Pendências agrupadas e a página. |
-| `POST /busca/pendencias/reprocessar` | Reabre por filtro (`stage`, `reason`, `reason_class`, `source_id`, `run_id`, `hashes`) ou `{everything:true}`. |
-| `POST /busca/noticias/{hash}/reprocessar` | Reabre uma notícia. |
+| `GET /busca/pendencias?stage&reason&reason_class&source_id&run_id` | Pendências agrupadas, a página e `retries`: os 10 pedidos de reprocessamento mais recentes com o andamento (`requested`, `in_progress`, `persisted`, `done_other`, `failed`, `cancelled`, `superseded`, `finished`, `reasons`). |
+| `POST /busca/pendencias/reprocessar` | Reabre por filtro (`stage`, `reason`, `reason_class`, `source_id`, `run_id`, `hashes`) ou `{everything:true}`. Responde `{requeued, retry_id}`; `retry_id` é nulo se nada foi reaberto. |
+| `POST /busca/noticias/{hash}/reprocessar` | Reabre uma notícia (também gera `retry_id`). |
 | `PATCH /busca/configuracao` | `{version, config}` das próximas rodadas. |
 | `POST /busca/rodadas` | Rodada manual (`{day?, link_ids?}`). |
 
