@@ -1,0 +1,10 @@
+[Unit]
+Description=Buscador de mídias - agenda da limpeza: notícias gravadas ou já conhecidas
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+Unit=buscador-midias-limpeza@concluidas.service
+
+[Install]
+WantedBy=timers.target

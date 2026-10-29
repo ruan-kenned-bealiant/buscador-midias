@@ -1,0 +1,10 @@
+[Unit]
+Description=Buscador de mídias - agenda da limpeza: texto das descartadas
+
+[Timer]
+OnCalendar=*-*-* 03:50:00
+Persistent=true
+Unit=buscador-midias-limpeza@corpo-descartadas.service
+
+[Install]
+WantedBy=timers.target

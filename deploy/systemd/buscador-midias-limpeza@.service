@@ -1,0 +1,11 @@
+[Unit]
+Description=Buscador de mídias - limpeza (%i)
+After=default.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ruan-aliant/Documentos/Projetos/buscador-midias
+ExecStart=/home/ruan-aliant/Documentos/Projetos/buscador-midias/scripts/bm.sh db clean %i
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=1800

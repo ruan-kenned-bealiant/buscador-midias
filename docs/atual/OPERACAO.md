@@ -35,6 +35,38 @@ e o `maintain` recupera o que ficou reservado.
 O painel fica em `http://127.0.0.1:8765` (`/`, `/buscador`, `/gerenciador`, `/mecanismos`,
 `/saude`, `/guia`).
 
+## Limpeza periódica
+
+`bm_articles` não deve crescer sem limite: o corpus guarda o resultado das notícias gravadas e já
+conhecidas (o dedup consulta o corpus por `url_hash`), então a linha delas pode sair. Cada categoria
+tem o seu timer do systemd (`buscador-midias-limpeza-<categoria>.timer`, que dispara o service
+`buscador-midias-limpeza@<categoria>`), de madrugada, depois da rodada de 01h:
+
+| Categoria | Hora | O que faz | Idade |
+|---|---|---|---|
+| `concluidas` | 03:30 | Apaga notícias gravadas (`persisted`) ou já conhecidas (`known`). | 3 dias |
+| `descartadas` | 03:40 | Apaga as descartadas: fora da janela, sem data, sem texto, conteúdo excluído, sem entidade. | 14 dias |
+| `corpo-descartadas` | 03:50 | Tira só o texto da página (`payload.body`) das descartadas; os motivos ficam. | 1 dia |
+| `pedidos` | 04:00 | Apaga pedidos de reprocessamento; as notícias só perdem o vínculo. | 7 dias |
+
+A idade vale para quem ficou parado e não foi visto de novo (`updated_at` e `last_seen_at`). Nunca
+saem: falhas (esperam decisão), notícias em andamento, `evidence_pending`. Um timer perdido (máquina
+desligada) roda assim que ela volta (`Persistent=true`). A limpeza é feita em lotes de 2.000 linhas,
+cada um confirmado à parte, com pausa entre eles, porque o Postgres é compartilhado com o PowerDD.
+
+```bash
+systemctl --user list-timers 'buscador-midias-limpeza*'
+scripts/bm.sh db clean concluidas --dias 3     # roda uma categoria na hora (--lote N para o tamanho)
+journalctl --user -u 'buscador-midias-limpeza@*' -n 20
+```
+
+Uma URL gravada que ainda esteja listada num feed depois de apagada volta a entrar como nova e é
+reconhecida pelo corpus; isso custa só uma consulta, não a IA. Se os números de "novas" por rodada
+parecerem inflados, aumente a idade de `concluidas`.
+
+Para ligar em outra máquina: `systemctl --user link` do service modelo e dos quatro timers e
+`systemctl --user enable --now` dos timers.
+
 ## Configuração
 
 Tudo em `bm_settings` e editável no painel: horários, janela, tentativas, modelo de análise, filtros

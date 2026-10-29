@@ -53,6 +53,13 @@ terminaram de outro jeito e quantas falharam (com os motivos). O resumo atualiza
 Se um pedido mais novo reabre a mesma notícia, ela passa para ele e o pedido antigo mostra quantas
 saíram. Reprocessar sem encontrar nada não cria pedido.
 
+## Retenção
+
+A linha de `bm_articles` é a memória de que a URL já foi vista, e não precisa durar para sempre. As
+gravadas e conhecidas saem depois de 3 dias, as descartadas depois de 14 (o texto delas, depois de
+1) e os pedidos de reprocessamento depois de 7; falhas e trabalho em andamento ficam. Detalhes e
+horários em [OPERACAO](OPERACAO.md#limpeza-periódica).
+
 ## Fila e concorrência
 
 - A notícia é reservada por compare-and-set (`state`, `stage`, `owner`, `attempts`); mensagem

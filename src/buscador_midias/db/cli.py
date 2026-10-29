@@ -7,8 +7,10 @@ import json
 import sys
 from typing import Any
 
+from buscador_midias.catalog.store_errors import CatalogError
 from buscador_midias.db.catalog import CatalogRepository
 from buscador_midias.db.connection import DatabaseConfigError, configured_schema, connect
+from buscador_midias.db.retention import BATCH, CATEGORIES, RetentionRepository
 from buscador_midias.db.schema import CATALOG_TABLES
 from buscador_midias.db.settings import SettingsRepository
 from buscador_midias.db.unify import unify_sites
@@ -61,14 +63,32 @@ def _unify(schema: str) -> int:
     return 0
 
 
+def _clean(schema: str, category: str | None, days: int | None, batch: int | None) -> int:
+    """Roda uma categoria de limpeza e mostra quantas linhas saíram."""
+    spec = CATEGORIES.get(category or "")
+    if spec is None:
+        return _fail("Informe a categoria de limpeza: " + ", ".join(CATEGORIES))
+    age = days or spec.days
+    removed = RetentionRepository(schema).run(category or "", days=age, batch=batch or BATCH)
+    _print(dict(schema=schema, category=category, days=age, removed=removed))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    """Instala o DDL (idempotente), migra os sites para a tabela do corpus e mostra contagens."""
+    """Instala o DDL (idempotente), migra os sites, limpa dados antigos e mostra contagens."""
     parser = argparse.ArgumentParser(prog="buscador_midias db", description=__doc__)
-    parser.add_argument("command", choices=("install", "unify-sites", "status"))
+    parser.add_argument("command", choices=("install", "unify-sites", "status", "clean"))
+    parser.add_argument(
+        "category", nargs="?", help="Categoria de `clean`: " + ", ".join(CATEGORIES)
+    )
     parser.add_argument("--schema", help="Destino (padrão: BM_SCHEMA ou public)")
+    parser.add_argument("--dias", type=int, help="Idade mínima em dias (padrão: da categoria)")
+    parser.add_argument("--lote", type=int, help="Linhas por lote de limpeza")
     args = parser.parse_args(argv)
     try:
         schema = args.schema or configured_schema()
+        if args.command == "clean":
+            return _clean(schema, args.category, args.dias, args.lote)
         if args.command == "install":
             _print(_install(schema))
             return 0
@@ -76,5 +96,5 @@ def main(argv: list[str] | None = None) -> int:
             _print(_status(schema))
             return 0
         return _unify(schema)
-    except DatabaseConfigError as error:
+    except (DatabaseConfigError, CatalogError) as error:
         return _fail(str(error))
