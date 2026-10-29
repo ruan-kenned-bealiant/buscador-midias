@@ -21,7 +21,9 @@ export function prepareEvidenceHtml(html){
       }
     }
   }
-  doc.querySelectorAll('script').forEach(s=>s.remove());
+  // O iframe é sandbox sem scripts, então o navegador renderizaria o <noscript>; pixels de
+  // rastreio 1x1 viram um quadrado da largura da página e empurram a notícia para fora da tela.
+  doc.querySelectorAll('script,noscript').forEach(s=>s.remove());
   return {html:'<!doctype html>'+doc.documentElement.outerHTML,restored};
 }
 
