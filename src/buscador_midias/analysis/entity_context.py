@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
@@ -58,13 +59,35 @@ class EntityContext:
     themes: tuple[str, ...] = ()
 
 
+# Escritas sem espaço entre palavras (kana, han, hangul e formas de largura total): o nome vem
+# colado ao que o cerca ("NBC는", "Google財報"), então a fronteira de palavra não vale para elas.
+_UNSPACED = "\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef"
+_ONLY_UNSPACED = re.compile(f"[{_UNSPACED}]+")
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+|(?<=[。！？])")
+
+
+def _fold(text: str) -> str:
+    """Minúsculas, largura normalizada (NFKC) e espaços colapsados, sem transliterar."""
+    return " ".join(unicodedata.normalize("NFKC", text).casefold().split())
+
+
 def name_in_text(name: str, text: str) -> bool:
-    """Exige nome contíguo, com limites de palavra, sem inventar uma identidade civil."""
+    """Exige nome contíguo, com limites de palavra, sem inventar uma identidade civil.
+
+    Primeiro vale a regra por escrita com espaços (acentos ignorados). Para escritas sem espaço
+    entre palavras (chinês, japonês, coreano) o limite de palavra só se aplica contra letras de
+    escritas com espaços, e um nome de um único ideograma não ancora nada.
+    """
+    if not name.strip():
+        return False
+    if _ONLY_UNSPACED.fullmatch(_fold(name).replace(" ", "")) and len(_fold(name)) < 2:
+        return False
     folded_name = " ".join(unidecode(name).lower().split())
     folded_text = " ".join(unidecode(text).lower().split())
-    return bool(name.strip()) and bool(
-        re.search(r"(?<!\w)" + re.escape(folded_name) + r"(?!\w)", folded_text)
-    )
+    if re.search(r"(?<!\w)" + re.escape(folded_name) + r"(?!\w)", folded_text):
+        return True
+    edge = f"[^\\W{_UNSPACED}]"
+    return bool(re.search(f"(?<!{edge})" + re.escape(_fold(name)) + f"(?!{edge})", _fold(text)))
 
 
 def evidence_options(name: str, available: str) -> dict[int, str]:
@@ -72,7 +95,7 @@ def evidence_options(name: str, available: str) -> dict[int, str]:
     source = " ".join(available.split())
     candidates = [
         sentence
-        for sentence in re.split(r"(?<=[.!?])\s+", source)
+        for sentence in _SENTENCE_END.split(source)
         if len(sentence) <= 600 and name_in_text(name, sentence)
     ]
     if not candidates:

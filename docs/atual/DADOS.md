@@ -34,6 +34,10 @@ O DDL está em `db/schema.py` e é idempotente (`python -m buscador_midias db in
 - **Reprocessamento manual:** `retry_id` aponta para `bm_retry_requests` (`id`, `created_at`, `filters`, `requested`): um registro por pedido feito na tela Pendências, com o filtro usado (sem a lista de hashes). Serve só ao resumo da tela; apagar um pedido apenas solta o vínculo.
 - **Dados:** `payload`, `cost` (por etapa), `history` (últimas tentativas), `corpus_article_id`.
 
+Os pareceres por entidade (`midias_ia_article_contexts`) hoje têm uma linha por `theme_id` do KyX, o
+que duplica cada parecer. O plano para gravar por slug, com as mudanças no KyX e no PowerDD, está em
+[TEMA_POR_SLUG](TEMA_POR_SLUG.md).
+
 Estados: `pending`, `queued`, `running`, `retry`, `done`, `failed`, `cancelled`.
 Desfechos (`outcome`): `persisted`, `known`, `outside_window`, `date_unknown`, `no_text`,
 `excluded_content`, `no_entities`, `evidence_pending`.
@@ -55,3 +59,7 @@ perderia as colunas do buscador e falharia pelas chaves estrangeiras de `bm_link
 `bm_articles` não é o corpus: só ~13% das linhas viram artigo. Ao concluir como `persisted` ou
 `known`, a linha perde corpo, análise e evidência (já estão no corpus) e guarda o vínculo
 `corpus_article_id`.
+
+Os pareceres por entidade (`midias_ia_article_contexts`) têm hoje uma linha por `theme_id` do KyX, o
+que duplica cada parecer. O plano para gravar por slug, com o que muda no KyX e no PowerDD, está em
+[TEMA_POR_SLUG](TEMA_POR_SLUG.md).
