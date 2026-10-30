@@ -52,7 +52,3 @@ class HostPacing:
             slots = big_slots if host in big_hosts and throttled else 1
             held.extend([host] * slots)
         return held
-
-    def resting(self) -> bool:
-        """Se algum site ainda descansa (a rodada não pode se dar por encerrada)."""
-        return bool(self.held(set(), 1))

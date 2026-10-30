@@ -795,3 +795,26 @@ def test_a_site_that_answers_429_rests_before_its_next_link_and_the_run_still_fi
     assert reader.starts[3] - reader.starts[2] >= 0.75
     assert detail(health, run)["total"] == 6
     assert health.overview()["runs"][0]["status"] == "completed"
+
+
+def test_a_rest_that_ends_between_two_checks_never_closes_the_run_with_pending_links(world):
+    """O descanso do site pode terminar entre a reserva e a decisão de encerrar a rodada."""
+    many_links(world)
+    reader = Concurrent(rss(1))
+    health = world["health"]
+    run = health.create("active")
+    worker = HealthWorker(health, old_news, probe_reader=reader)
+    calls = []
+
+    def held(self, big_hosts, big_slots):
+        calls.append(1)
+        # Só a primeira consulta vê o site descansando; as seguintes já o veem livre.
+        return ["jose.example"] if len(calls) == 1 else []
+
+    worker.recover()
+    with patch("buscador_midias.db.health_worker.HostPacing.held", held):
+        worker.execute_run(worker.next_run())
+
+    assert len(reader.asked) == 6
+    assert detail(health, run)["total"] == 6
+    assert sql(health, "SELECT count(*) n FROM bm_run_links WHERE state='pending'")[0]["n"] == 0

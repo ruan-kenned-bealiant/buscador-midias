@@ -64,12 +64,3 @@ def test_the_wait_the_site_asks_for_is_capped_so_one_host_cannot_stall_the_round
 
     clock.now += 301
     assert held.held(set(), 3) == []
-
-
-def test_it_tells_whether_any_site_is_still_resting():
-    held, clock = pacing()
-    assert held.resting() is False
-    held.finished("a.example", big=False)
-    assert held.resting() is True
-    clock.now += 10
-    assert held.resting() is False

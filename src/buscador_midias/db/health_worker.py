@@ -113,10 +113,14 @@ class HealthWorker:
             while not self.stop.is_set():
                 if leader is not None:
                     leader.execute("SELECT 1")
+                # Uma consulta só por volta: reservar e decidir encerrar usam a mesma lista de sites
+                # em descanso, senão o descanso pode acabar entre as duas e fechar a rodada com
+                # links pendentes.
+                held = pacing.held(big_hosts, self.big_host_slots)
                 status, reserved = self.repository.reserve(
                     run,
                     self.owner,
-                    [*tasks.values(), *pacing.held(big_hosts, self.big_host_slots)],
+                    [*tasks.values(), *held],
                     workers - len(tasks),
                     big_hosts,
                     self.big_host_slots,
@@ -125,13 +129,13 @@ class HealthWorker:
                     return
                 for row in reserved:
                     tasks[pool.submit(self._test, run, row)] = row["host"]
-                if not tasks and not pacing.resting():
+                if not tasks and not held:
                     self.repository.complete_run(run, self.owner)
                     return
-                done, _ = (
-                    wait(tasks, timeout=1, return_when=FIRST_COMPLETED) if tasks else (set(), None)
-                )
-                if not tasks:
+                if tasks:
+                    done, _ = wait(tasks, timeout=1, return_when=FIRST_COMPLETED)
+                else:
+                    done = set()
                     self.stop.wait(0.2)  # só resta esperar algum site terminar de descansar
                 for task in done:
                     host = tasks.pop(task)
