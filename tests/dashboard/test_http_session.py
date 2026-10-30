@@ -178,3 +178,32 @@ def test_cookie_from_public_403_can_recover_on_next_bounded_attempt(network):
     second = reader(sessions)
     assert second.get(ROOT + "/feed").ok
     assert len(calls) == 2 and calls[-1][2]["Cookie"] == "public_session=abc"
+
+
+def test_the_gap_between_two_accesses_to_a_host_can_be_widened(monkeypatch):
+    """Notícias pedem mais respiro que feeds: o intervalo padrão é 300 ms e pode ser maior."""
+    now = [100.0]
+    slept: list[float] = []
+    monkeypatch.setattr("buscador_midias.catalog.http_session.time.monotonic", lambda: now[0])
+    monkeypatch.setattr("buscador_midias.catalog.http_session.time.sleep", slept.append)
+    sessions = HttpSessions()
+
+    sessions.wait("a.example", 60)
+    sessions.wait("a.example", 60)
+    sessions.wait("b.example", 60, gap=1.5)
+    sessions.wait("b.example", 60, gap=1.5)
+
+    assert slept == pytest.approx([0.3, 1.5])
+
+
+def test_a_gap_larger_than_the_remaining_budget_is_refused_instead_of_slept():
+    sessions = HttpSessions()
+    sessions.wait("a.example", 60, gap=5)
+
+    with pytest.raises(TimeoutError):
+        sessions.wait("a.example", 1, gap=5)
+
+
+def test_the_reader_carries_the_gap_it_was_given():
+    assert TestReader([ROOT], lambda _: None).host_gap == 0.3
+    assert TestReader([ROOT], lambda _: None, host_gap=1.5).host_gap == 1.5

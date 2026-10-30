@@ -38,7 +38,7 @@ Cada falha grava na própria notícia a etapa (`failed_stage`), o motivo (`reaso
 | Classe | Exemplos | Comportamento |
 |---|---|---|
 | `transient` | tempo esgotado, 408/429/5xx, resposta da IA ausente | Repetida sozinha, depois que a rodada termina, até `failed_retry_limit` passadas. |
-| `blocked` | 401, 402, 403 | Espera a sua decisão (ou o Bright Data). |
+| `blocked` | 401, 402, 403 | Um 403 já tentou os outros transportes (ver abaixo). Espera a sua decisão (ou o Bright Data). |
 | `permanent` | 404, 410, fora do domínio, ciclo de redirecionamento | Não repete. |
 | `bug` | "Falha interna" | Espera correção do código. |
 
@@ -52,6 +52,17 @@ os 10 mais recentes: quantas foram reabertas, quantas ainda andam, quantas foram
 terminaram de outro jeito e quantas falharam (com os motivos). O resumo atualiza sozinho a cada 5 s.
 Se um pedido mais novo reabre a mesma notícia, ela passa para ele e o pedido antigo mostra quantas
 saíram. Reprocessar sem encontrar nada não cria pedido.
+
+## Acesso à página da notícia
+
+A etapa `fetch` baixa a página com o transporte do link (`access_transport`, padrão `direct`). Se o
+site responde **403**, ela tenta `curl_chrome_h2`, `curl_chrome_h1` e `curl_firefox_h2`, um de cada
+vez (cada leitor fecha antes do próximo abrir, porque segura a vaga de acesso ao host), e o primeiro
+que abre vale para as próximas notícias do mesmo site (memória do processo, até 512 sites). Só o 403
+dispara a troca: 401 é paywall, 429 e 5xx têm repetição própria e 404 é página inexistente. O custo da
+etapa registra `transport_fallbacks` (a troca resolveu) e `transport_extra_requests` (pedidos a mais).
+O que continua sem sair: login (Mediahuis), redirecionamento para outro domínio (o leitor recusa de
+propósito) e proteções que nenhum transporte atravessa.
 
 ## Retenção
 

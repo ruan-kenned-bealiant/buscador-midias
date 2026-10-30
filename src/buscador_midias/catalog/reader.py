@@ -99,13 +99,15 @@ class TestReader:
         before_request: Callable[[str], None] | None = None,
         policy_cache: dict[str, tuple[float, RobotsPolicy]] | None = None,
         sessions: HttpSessions | None = None,
+        host_gap: float = 0.3,
     ) -> None:
-        """Define escopo explícito e orçamento por teste."""
+        """Define escopo explícito e orçamento por teste; ``host_gap`` é o respiro entre acessos."""
         self.deadline = time.monotonic() + seconds
         self.max_requests = requests
         self.max_bytes = max_bytes
         self.requests = 0
         self.before_request = before_request
+        self.host_gap = host_gap
         self.progress = progress
         self.hosts = [(urlsplit(u).hostname or "").removeprefix("www.") for u in roots]
         # Compatibilidade com scripts históricos: políticas antigas não são aplicadas.
@@ -199,7 +201,7 @@ class TestReader:
                     url,
                     retry_after_seconds=wait,
                 )
-            self.sessions.wait(host, self._check())
+            self.sessions.wait(host, self._check(), self.host_gap)
             key = (
                 self.namespace,
                 parts.scheme,

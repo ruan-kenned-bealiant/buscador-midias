@@ -12,7 +12,6 @@ prefixo de filas do serviço antigo: as filas são `bm.<etapa>[.recovery]`.
 python3.12 -m venv .venv && .venv/bin/python -m pip install -e '.[dev]'
 scripts/bm.sh db install          # cria o que falta (repetir é seguro)
 scripts/bm.sh db status           # contagens do cadastro
-scripts/bm.sh db unify-sites      # migração única dos sites (já aplicada em produção)
 ```
 
 ## Serviços

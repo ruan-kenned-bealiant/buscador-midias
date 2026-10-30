@@ -317,10 +317,21 @@ def test_a_permanent_reason_fails_at_once_and_blocked_is_not_retryable(q):
     gone = taken(q, "gone")
     assert fail(q, gone, "HTTP 404 no XML") == "failed"
     assert current(q, gone["hash"])["reason_class"] == "permanent"
-    blocked = taken(q, "blk")
-    assert fail(q, blocked, "HTTP 403 no XML", retryable=False) == "failed"
-    row = current(q, blocked["hash"])
-    assert (row["reason_class"], row["retryable"]) == ("blocked", False)
+    for status in (401, 402):
+        blocked = taken(q, f"blk{status}")
+        assert fail(q, blocked, f"HTTP {status} no XML", retryable=False) == "failed"
+        row = current(q, blocked["hash"])
+        assert (row["reason_class"], row["retryable"]) == ("blocked", False), status
+
+
+def test_a_403_fails_at_once_but_stays_eligible_for_the_automatic_retry_later(q):
+    """O 403 costuma ser o limite de taxa do site: a notícia falha já, e volta depois da rodada."""
+    job = taken(q, "slow")
+
+    assert fail(q, job, "HTTP 403 na notícia", retryable=False) == "failed"
+
+    row = current(q, job["hash"])
+    assert (row["reason"], row["reason_class"], row["retryable"]) == ("http_403", "blocked", True)
 
 
 def test_failure_by_a_stale_owner_is_ignored(q):

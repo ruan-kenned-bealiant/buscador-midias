@@ -43,6 +43,8 @@ SEARCH_DEFAULTS: dict[str, Any] = dict(
     max_attempts=3,
     retry_minutes=1,
     model="openai/gpt-4.1-mini",
+    # Repete a análise recusada pelo filtro de conteúdo do provedor; vazio desliga.
+    fallback_model="anthropic/claude-haiku-4.5",
     analysis_text_chars=12000,
     content_filter="shadow",
     blocked_content_categories=["horoscope", "weather", "cooking", "sports"],
@@ -134,6 +136,10 @@ def _check(key: str, value: Any) -> Any:
         not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_./:-]{1,150}", value)
     ):
         raise CatalogError("Modelo inválido.")
+    if key == "fallback_model" and (
+        not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_./:-]{0,150}", value)
+    ):
+        raise CatalogError("Modelo alternativo inválido.")
     if key in _BOUNDS:
         low, high = _BOUNDS[key]
         if type(value) is not int or not low <= value <= high:

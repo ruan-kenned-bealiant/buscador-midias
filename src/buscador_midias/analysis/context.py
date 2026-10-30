@@ -217,6 +217,11 @@ class OpenRouterContextAnalyzer:
         return self._chat.model
 
     @property
+    def answered_model(self) -> str:
+        """Modelo que deu a última resposta aproveitada (o alternativo, se o filtro entrou)."""
+        return self._chat.answered_model
+
+    @property
     def usage(self) -> Usage:
         """Consumo acumulado."""
         return self._chat.usage

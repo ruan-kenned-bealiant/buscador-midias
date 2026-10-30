@@ -13,7 +13,6 @@ from buscador_midias.db.connection import DatabaseConfigError, configured_schema
 from buscador_midias.db.retention import BATCH, CATEGORIES, RetentionRepository
 from buscador_midias.db.schema import CATALOG_TABLES
 from buscador_midias.db.settings import SettingsRepository
-from buscador_midias.db.unify import unify_sites
 
 
 def _print(payload: dict[str, Any]) -> None:
@@ -57,12 +56,6 @@ def _install(schema: str) -> dict[str, Any]:
     return dict(schema=schema, tables=int(row[0]), settings=settings)
 
 
-def _unify(schema: str) -> int:
-    with connect(schema) as db:
-        _print(dict(schema=schema, **unify_sites(db)))
-    return 0
-
-
 def _clean(schema: str, category: str | None, days: int | None, batch: int | None) -> int:
     """Roda uma categoria de limpeza e mostra quantas linhas saíram."""
     spec = CATEGORIES.get(category or "")
@@ -75,9 +68,9 @@ def _clean(schema: str, category: str | None, days: int | None, batch: int | Non
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Instala o DDL (idempotente), migra os sites, limpa dados antigos e mostra contagens."""
+    """Instala o DDL (idempotente), limpa dados antigos e mostra contagens."""
     parser = argparse.ArgumentParser(prog="buscador_midias db", description=__doc__)
-    parser.add_argument("command", choices=("install", "unify-sites", "status", "clean"))
+    parser.add_argument("command", choices=("install", "status", "clean"))
     parser.add_argument(
         "category", nargs="?", help="Categoria de `clean`: " + ", ".join(CATEGORIES)
     )
@@ -89,12 +82,7 @@ def main(argv: list[str] | None = None) -> int:
         schema = args.schema or configured_schema()
         if args.command == "clean":
             return _clean(schema, args.category, args.dias, args.lote)
-        if args.command == "install":
-            _print(_install(schema))
-            return 0
-        if args.command == "status":
-            _print(_status(schema))
-            return 0
-        return _unify(schema)
+        _print(_install(schema) if args.command == "install" else _status(schema))
+        return 0
     except (DatabaseConfigError, CatalogError) as error:
         return _fail(str(error))

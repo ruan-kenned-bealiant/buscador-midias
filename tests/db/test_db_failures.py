@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from buscador_midias.db.failures import AUTO_RETRY_CLASSES, classify
+from buscador_midias.db.failures import AUTO_RETRY_CLASSES, AUTO_RETRY_CODES, classify
 
 
 @pytest.mark.parametrize(
@@ -31,6 +31,7 @@ from buscador_midias.db.failures import AUTO_RETRY_CLASSES, classify
         ("Mecanismo incompatível com o XML", "invalid_xml", "transient"),
         ("Falha interna: KeyError", "internal", "bug"),
         ("Resposta de análise vazia", "empty_analysis", "transient"),
+        ("Filtro de conteúdo do provedor; análise recusada", "content_filtered", "permanent"),
         ("alguma coisa nunca vista", "other", "transient"),
     ],
 )
@@ -56,3 +57,9 @@ def test_detail_keeps_the_original_text_truncated():
 
 def test_only_transient_failures_are_retried_automatically():
     assert AUTO_RETRY_CLASSES == ("transient",)
+
+
+def test_a_403_is_also_retried_automatically_because_it_is_often_a_rate_limit():
+    """401 é paywall e 402 pede pagamento: repetir não muda nada. O 403 muitas vezes é o limite de taxa."""
+    assert AUTO_RETRY_CODES == ("http_403",)
+    assert classify("HTTP 403 na notícia").klass == "blocked"  # continua aparecendo como bloqueio

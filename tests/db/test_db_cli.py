@@ -39,10 +39,3 @@ def test_status_reports_counts_of_the_target(target, capsys):
     assert main(["status", "--schema", target]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["sites"] == 0 and out["links"] == 0 and out["mechanisms"] == 6
-
-
-def test_unify_sites_reports_nothing_to_do_on_a_fresh_install(target, capsys):
-    main(["install", "--schema", target])
-    capsys.readouterr()
-    assert main(["unify-sites", "--schema", target]) == 0
-    assert json.loads(capsys.readouterr().out)["migrated"] is False

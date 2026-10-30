@@ -4,8 +4,10 @@ A classe decide o que acontece depois da falha, no lugar do regex ``PERMANENT_FA
 vivia em SQL:
 
 - ``transient``: pode passar sozinha (tempo esgotado, 5xx, XML ilegível); nova tentativa automática;
-- ``blocked``: o site recusa o acesso (401, 402, 403); só o acesso pago ou uma pessoa resolve;
-- ``permanent``: repetir não muda nada (404, 410, ciclo de redirecionamento, fora do domínio);
+- ``blocked``: o site recusa o acesso (401, 402, 403); só o acesso pago ou uma pessoa resolve. O 403
+  é a exceção: muitas vezes é o limite de taxa do site, então também é repetido sozinho (``AUTO_RETRY_CODES``);
+- ``permanent``: repetir não muda nada (404, 410, ciclo de redirecionamento, fora do domínio,
+  notícia recusada pelo filtro de conteúdo do provedor);
 - ``bug``: exceção interna nossa; aparece para investigação e não é repetida sozinha.
 """
 
@@ -16,6 +18,8 @@ from typing import NamedTuple
 
 DETAIL_LIMIT = 500
 AUTO_RETRY_CLASSES = ("transient",)
+#: Falhas ``blocked`` que também voltam sozinhas: o 403 costuma ser limite de taxa, não bloqueio.
+AUTO_RETRY_CODES = ("http_403",)
 
 _HTTP = re.compile(r"HTTP\s+(\d{3})")
 _BLOCKED = {401, 402, 403}
@@ -27,6 +31,7 @@ _TEXT_RULES: tuple[tuple[re.Pattern[str], str, str], ...] = tuple(
     for pattern, code, klass in (
         (r"redirect_cycle", "redirect_cycle", "permanent"),
         (r"fora dos dom", "outside_domain", "permanent"),
+        (r"filtro de conte", "content_filtered", "permanent"),
         (r"robots_unavailable", "robots_unavailable", "permanent"),
         (r"bright_data_api_error", "bright_data_error", "permanent"),
         (r"Falha interna", "internal", "bug"),

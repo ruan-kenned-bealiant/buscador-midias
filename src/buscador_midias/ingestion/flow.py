@@ -192,6 +192,11 @@ def lastmod_outside(stamp: str | None, since: datetime) -> dict[str, Any] | None
 PATH_DATE = re.compile(r"/(20\d{2})/(\d{2})/(\d{2})(?!\d)")
 # Primeiro segmento que identifica listagem de assunto, tag ou autor, nunca uma notícia.
 INDEX_SEGMENTS = frozenset({"topic", "topics", "tag", "tags", "author", "authors", "taxonomy"})
+# Seções que o site lista no próprio feed, mas que redirecionam para outro domínio (a leitura é
+# recusada por sair do domínio da fonte): por host sem ``www``, o primeiro segmento do caminho.
+EXTERNAL_SECTIONS = {
+    "scmp.com": frozenset({"yp", "spark", "posties", "young-post", "goldthread"}),
+}
 
 
 def path_date_outside(
@@ -228,11 +233,34 @@ def index_page(url: str) -> dict[str, Any] | None:
     return dict(rule="index_page", segment=segment) if segment in INDEX_SEGMENTS else None
 
 
+def excluded_section(url: str) -> dict[str, Any] | None:
+    """Reconhece a seção do site que vive em outro domínio (``EXTERNAL_SECTIONS``).
+
+    Decide pelo host (com ou sem ``www``) e pelo primeiro segmento inteiro do caminho: a seção
+    ``yp`` do scmp.com é excluída, mas ``ypsilon`` ou ``yp.scmp.com`` não.
+    """
+    if not isinstance(url, str):
+        return None
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower().removeprefix("www.")
+    segment = parts.path.lstrip("/").split("/", 1)[0].lower()
+    if segment in EXTERNAL_SECTIONS.get(host, ()):
+        return dict(rule="excluded_section", host=host, segment=segment)
+    return None
+
+
 def url_outside(
     url: str, since: datetime, timezone: str = "America/Sao_Paulo", *, explicit_date: bool = False
 ) -> dict[str, Any] | None:
-    """Decide pela forma da URL: índice sempre; data do caminho só sem publicação explícita."""
-    return index_page(url) or (None if explicit_date else path_date_outside(url, since, timezone))
+    """Decide pela forma da URL.
+
+    Índice e seção externa valem sempre; a data do caminho só sem publicação explícita.
+    """
+    return (
+        index_page(url)
+        or excluded_section(url)
+        or (None if explicit_date else path_date_outside(url, since, timezone))
+    )
 
 
 def publication_outside(job: dict[str, Any]) -> dict[str, Any] | None:

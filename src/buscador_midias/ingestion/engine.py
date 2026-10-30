@@ -20,7 +20,11 @@ from psycopg import sql
 
 from buscador_midias.analysis.context import AnalysisItem, OpenRouterContextAnalyzer
 from buscador_midias.analysis.entity_context import CONTEXT_BATCH_SIZE, EntityContext
-from buscador_midias.analysis.openrouter import TRUNCATED_RESPONSE, OpenRouterChat
+from buscador_midias.analysis.openrouter import (
+    CONTENT_FILTERED,
+    TRUNCATED_RESPONSE,
+    OpenRouterChat,
+)
 from buscador_midias.analysis.prompt import PROMPT_VERSION
 from buscador_midias.catalog.head_probe import prefix_outside
 from buscador_midias.catalog.http_policy import retryable
@@ -45,6 +49,7 @@ from buscador_midias.extraction.fetch import PageFetch, PageStatus
 from buscador_midias.extraction.html import decode_html, extract_article
 from buscador_midias.extraction.reliability import PageSnapshot
 from buscador_midias.extraction.sample_audit import audit_page
+from buscador_midias.ingestion.article_access import ARTICLE_HOST_GAP, ArticleAccess
 from buscador_midias.ingestion.artifacts import Artifacts
 from buscador_midias.ingestion.content_filter import (
     category_exclusion,
@@ -116,6 +121,7 @@ class Engine:
         self.corpus_schema = corpus_schema
         self.routes = Routes(repository)
         self.document_memo = DocumentMemo()
+        self.article_access = ArticleAccess()
         # Vagas simultâneas por host; o serviço liga isto à configuração salva.
         self.host_slots: Callable[[], int] = host_slots or (lambda: 1)
         self._country_registry: dict[str, str] | None = None
@@ -153,8 +159,17 @@ class Engine:
         raise HostBusyError()
 
     @contextmanager
-    def reader(self, job: dict[str, Any], roots: list[str]) -> Iterator[Any]:
-        """Trava por host real entre processos; usa somente HTTP direto."""
+    def reader(
+        self,
+        job: dict[str, Any],
+        roots: list[str],
+        transport: str | None = None,
+        gap: float | None = None,
+    ) -> Iterator[Any]:
+        """Trava por host real entre processos; ``transport`` troca o transporte do link.
+
+        ``gap`` é o respiro entre dois pedidos ao mesmo site (padrão do leitor: 0,3 s).
+        """
         if self.reader_factory:
             yield self.reader_factory(roots, lambda _: None)
             return
@@ -173,11 +188,12 @@ class Engine:
             reader = make_reader(
                 roots,
                 lambda _: None,
-                transport=job["snapshot"].get("access_transport", "direct"),
+                transport=transport or job["snapshot"].get("access_transport", "direct"),
                 seconds=60,
                 requests=24,
                 max_bytes=16 * 1024 * 1024,
                 before_request=reserve,
+                **({} if gap is None else dict(host_gap=gap)),
             )
             try:
                 yield reader
@@ -221,13 +237,15 @@ class Engine:
             )
         return result
 
-    def http_failure(self, reader: Any, response: Any, message: str) -> None:
+    def http_failure(
+        self, reader: Any, response: Any, message: str, extra: dict[str, Any] | None = None
+    ) -> None:
         """Classifica falhas antes de reenfileirar; não repete erros permanentes."""
         if getattr(reader, "cooldown_deferred", False):
             raise HostBusyError("Host aguardando Retry-After", reader.retry_after_seconds or 5)
         raise RetryableError(
             response.error or f"HTTP {response.status} {message}",
-            self.metrics(reader),
+            dict(self.metrics(reader), **(extra or {})),
             retryable=retryable(response.status, response.error)
             or (response.status == 403 and bool(getattr(reader, "session_updated", False))),
         )
@@ -658,89 +676,94 @@ class Engine:
                     metrics=dict(avoided_article_requests=1),
                 )
             flag = asdict(found)
-        with self.reader(job, [site.url, job["snapshot"]["url"]]) as reader:
-            response = reader.get(url)
-            metrics = self.metrics(reader)
-            if not response.ok:
-                self.http_failure(reader, response, "na notícia")
-            page = PageSnapshot(
-                url, response.status, response.content_type, response.final_url, response.content
-            )
-            run = job["run"]
-            audit = audit_page(page, since=run["since"], until=run["until"], now=datetime.now(UTC))
-            if not audit["texto_util_confirmado"]:
-                return dict(
-                    outcome=audit["categoria"],
-                    status="no_text",
-                    metrics=metrics,
-                    article=dict(diagnostic=audit["motivos"]),
-                )
-            content = extract_article(
-                decode_html(response.content, response.content_type),
-                max_chars=30000,
-                now=datetime.now(UTC),
-            )
-            published = content.published_at
-            publication_basis = "html" if published else None
-            if (
-                published is None
-                and article["payload"].get("published_hint")
-                and article["payload"].get("published_hint_basis") == "xml_publication"
-            ):
-                with suppress(ValueError, TypeError):
-                    published = datetime.fromisoformat(article["payload"]["published_hint"])
-                    publication_basis = "xml_hint"
-            patch = dict(
-                title=content.title,
-                description=content.description,
-                body=content.text,
-                published_at=published.isoformat() if published else None,
-                published_at_basis=publication_basis,
-                language=content.language,
-                final_url=response.final_url,
-                content_type=response.content_type,
-            )
-            if published and published.tzinfo is None:
-                published = None
-                patch["published_at"] = None
-            if published and not run["since"] <= published <= run["until"]:
-                patch.pop("body", None)
-                return dict(
-                    outcome="fora_da_janela",
-                    status="outside_window",
-                    article=patch,
-                    metrics=metrics,
-                )
-            if not published and (
-                not run["config"]["allow_undated"]
-                or run["config"].get("window_mode", "today") == "today"
-            ):
-                patch.pop("body", None)
-                return dict(
-                    outcome="data_desconhecida",
-                    status="date_unknown",
-                    article=patch,
-                    metrics=metrics,
-                )
-            if filtering and (found := title_exclusion(url, patch.get("title"))):
-                if mode == "enforce":
-                    patch.pop("body", None)
-                    return dict(
-                        outcome="conteudo_sem_interesse",
-                        status="excluded_content",
-                        article=dict(patch, exclusion=asdict(found)),
-                        metrics=metrics,
-                    )
-                flag = flag or asdict(found)
-            if flag:
-                patch["shadow_exclusion"] = flag
-            self.artifacts.put(article["hash"], response.content)
+        roots = [site.url, job["snapshot"]["url"]]
+        got = self.article_access.get(
+            url,
+            job["snapshot"].get("access_transport", "direct"),
+            lambda transport: self.reader(job, roots, transport=transport, gap=ARTICLE_HOST_GAP),
+        )
+        reader, response = got.reader, got.response
+        metrics = dict(self.metrics(reader), **got.metrics())
+        if not response.ok:
+            self.http_failure(reader, response, "na notícia", extra=got.metrics())
+        page = PageSnapshot(
+            url, response.status, response.content_type, response.final_url, response.content
+        )
+        run = job["run"]
+        audit = audit_page(page, since=run["since"], until=run["until"], now=datetime.now(UTC))
+        if not audit["texto_util_confirmado"]:
             return dict(
-                next="evidence" if article["payload"].get("analysis") else "context",
-                outcome="texto_confirmado",
+                outcome=audit["categoria"],
+                status="no_text",
+                metrics=metrics,
+                article=dict(diagnostic=audit["motivos"]),
+            )
+        content = extract_article(
+            decode_html(response.content, response.content_type),
+            max_chars=30000,
+            now=datetime.now(UTC),
+        )
+        published = content.published_at
+        publication_basis = "html" if published else None
+        if (
+            published is None
+            and article["payload"].get("published_hint")
+            and article["payload"].get("published_hint_basis") == "xml_publication"
+        ):
+            with suppress(ValueError, TypeError):
+                published = datetime.fromisoformat(article["payload"]["published_hint"])
+                publication_basis = "xml_hint"
+        patch = dict(
+            title=content.title,
+            description=content.description,
+            body=content.text,
+            published_at=published.isoformat() if published else None,
+            published_at_basis=publication_basis,
+            language=content.language,
+            final_url=response.final_url,
+            content_type=response.content_type,
+        )
+        if published and published.tzinfo is None:
+            published = None
+            patch["published_at"] = None
+        if published and not run["since"] <= published <= run["until"]:
+            patch.pop("body", None)
+            return dict(
+                outcome="fora_da_janela",
+                status="outside_window",
                 article=patch,
                 metrics=metrics,
             )
+        if not published and (
+            not run["config"]["allow_undated"]
+            or run["config"].get("window_mode", "today") == "today"
+        ):
+            patch.pop("body", None)
+            return dict(
+                outcome="data_desconhecida",
+                status="date_unknown",
+                article=patch,
+                metrics=metrics,
+            )
+        if filtering and (found := title_exclusion(url, patch.get("title"))):
+            if mode == "enforce":
+                patch.pop("body", None)
+                return dict(
+                    outcome="conteudo_sem_interesse",
+                    status="excluded_content",
+                    article=dict(patch, exclusion=asdict(found)),
+                    metrics=metrics,
+                )
+            flag = flag or asdict(found)
+        if flag:
+            patch["shadow_exclusion"] = flag
+        self.artifacts.put(article["hash"], response.content)
+        return dict(
+            next="evidence" if article["payload"].get("analysis") else "context",
+            outcome="texto_confirmado",
+            article=patch,
+            metrics=metrics,
+        )
 
     def context(self, job: dict[str, Any]) -> dict[str, Any]:
         """Identifica entidades e completa pareceres individuais em lotes retomáveis."""
@@ -760,6 +783,9 @@ class Engine:
                         base_url=os.environ.get("OPENROUTER_BASE_URL")
                         or "https://openrouter.ai/api/v1",
                         attempts=1,
+                        fallback_model=(
+                            config.get("fallback_model", SEARCH_DEFAULTS["fallback_model"]) or None
+                        ),
                     ),
                     max_text_chars=config["analysis_text_chars"],
                 )
@@ -784,11 +810,21 @@ class Engine:
                 usage = asdict(analyzer.usage.minus(before)) if before else {}
                 if not result or not result[0].decided:
                     error = usage.get("last_error")
+                    if error == CONTENT_FILTERED:
+                        # Recusa deliberada, igual a cada repetição: não é queda do provedor.
+                        raise RetryableError(
+                            "Filtro de conteúdo do provedor; análise recusada",
+                            usage,
+                            retryable=False,
+                        )
                     if error and error != TRUNCATED_RESPONSE:
                         raise ProviderUnavailableError("OpenRouter indisponível: " + error, usage)
                     raise RetryableError("Análise sem resposta válida", usage)
                 verdict = asdict(result[0])
-                verdict.update(model=config["model"], prompt_version=PROMPT_VERSION)
+                verdict.update(
+                    model=getattr(analyzer, "answered_model", None) or config["model"],
+                    prompt_version=PROMPT_VERSION,
+                )
                 verdict["entity_limit_reached"] = len(verdict["entities"]) >= 30
                 progress = dict(signature=signature, analysis=verdict, contexts=[])
             usage = asdict(analyzer.usage.minus(before)) if before else {}
@@ -839,7 +875,7 @@ class Engine:
                 )
                 if not expected.issubset(completed):
                     error = usage.get("last_error")
-                    if error and error != TRUNCATED_RESPONSE:
+                    if error and error not in (TRUNCATED_RESPONSE, CONTENT_FILTERED):
                         raise ProviderUnavailableError("OpenRouter indisponível: " + error, usage)
                     if not final:
                         raise RetryableError("Contexto individual incompleto; lote pendente", usage)

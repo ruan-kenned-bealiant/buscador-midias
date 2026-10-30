@@ -162,6 +162,54 @@ def test_only_recent_enough_transient_failures_under_the_limit_are_retried(q, co
     assert get(q, hash_)["state"] == "failed"
 
 
+def test_a_403_is_retried_automatically_after_the_round_and_within_the_pass_limit(q):
+    q.execute("UPDATE bm_runs SET status='completed'")
+    retried = article(
+        q,
+        "a",
+        stage="fetch",
+        state="failed",
+        failed_stage="fetch",
+        reason="http_403",
+        reason_class="blocked",
+        retryable=True,
+        failed_at=PAST,
+        attempts=1,
+        passes=1,
+    )
+    exhausted = article(
+        q,
+        "b",
+        stage="fetch",
+        state="failed",
+        failed_stage="fetch",
+        reason="http_403",
+        reason_class="blocked",
+        retryable=True,
+        failed_at=PAST,
+        passes=3,
+    )
+    paywall = article(
+        q,
+        "c",
+        stage="fetch",
+        state="failed",
+        failed_stage="fetch",
+        reason="http_401",
+        reason_class="blocked",
+        retryable=False,
+        failed_at=PAST,
+        passes=1,
+    )
+
+    report = maintain(q, auto_retry_after_seconds=60)
+
+    assert report.auto_retried == 1
+    assert get(q, retried)["state"] == "retry" and get(q, retried)["passes"] == 2
+    assert get(q, exhausted)["state"] == "failed"  # já usou as passadas
+    assert get(q, paywall)["state"] == "failed"  # 401 é paywall: repetir não muda nada
+
+
 def test_the_same_round_never_retries_its_own_failure(q):
     hash_ = article(
         q,

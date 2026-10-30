@@ -94,11 +94,11 @@ class HttpSessions:
             jar.extract_cookies(response, Request(url))
             return before != {(c.domain, c.path, c.name): c.value for c in jar}
 
-    def wait(self, host: str, remaining: float) -> None:
-        """Mantém ao menos 300 ms entre inícios de acesso ao mesmo host neste processo."""
+    def wait(self, host: str, remaining: float, gap: float = 0.3) -> None:
+        """Mantém ao menos ``gap`` s (padrão 300 ms) entre inícios de acesso ao mesmo host."""
         with self.lock:
             now = time.monotonic()
-            at = max(now, self.last_started.get(host, 0) + 0.3)
+            at = max(now, self.last_started.get(host, 0) + gap)
             delay = at - now
             if delay >= remaining:
                 raise TimeoutError("Orçamento insuficiente para o intervalo por host")

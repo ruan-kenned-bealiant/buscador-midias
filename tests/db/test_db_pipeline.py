@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from email.utils import format_datetime
 from pathlib import Path
@@ -20,7 +21,7 @@ from buscador_midias.db.store import WorkStore
 from buscador_midias.domain.url import url_hash
 from buscador_midias.evidence.storage import LocalEvidenceStore
 from buscador_midias.ingestion.artifacts import Artifacts
-from buscador_midias.ingestion.engine import Engine
+from buscador_midias.ingestion.engine import Engine, RetryableError
 from buscador_midias.net.fetcher import FetchResult
 
 pytestmark = pytest.mark.skipif(
@@ -122,7 +123,7 @@ def world(schema_name: str, tmp_path: Path) -> dict[str, Any]:
         writer_factory=Writer,
         corpus_schema=schema_name,
     )
-    return dict(store=store, engine=engine, work=tmp_path / "work")
+    return dict(store=store, engine=engine, work=tmp_path / "work", data=data)
 
 
 def waiting(store: WorkStore, stage: str) -> list[Any]:
@@ -205,3 +206,96 @@ def test_a_story_already_complete_in_the_corpus_is_known_and_never_analysed(worl
         55,
     )
     assert waiting(store, "fetch") == []
+
+
+# --- notícia recusada com o transporte do link ---------------------------------------------------
+
+
+def refusing_direct(world: dict[str, Any], monkeypatch: pytest.MonkeyPatch, *, only: str | None):
+    """Leitores por transporte: a notícia dá 403 no ``direct`` e abre em ``only`` (ou em nenhum)."""
+    seen: list[str] = []
+
+    @contextmanager
+    def by_transport(
+        job: dict[str, Any],
+        roots: list[str],
+        transport: str | None = None,
+        gap: float | None = None,
+    ):
+        name = transport or job["snapshot"].get("access_transport", "direct")
+        seen.append(name)
+        data = dict(world["data"])
+        if name != only:
+            data[STORY] = FetchResult(STORY, 403, b"", None, STORY, "text/html")
+        reader = FakeReader(data, None)
+        reader.transport = name
+        yield reader
+
+    monkeypatch.setattr(world["engine"], "reader", by_transport)
+    return seen
+
+
+def test_a_story_refused_with_the_link_transport_is_read_with_another_one(world, monkeypatch):
+    seen = refusing_direct(world, monkeypatch, only="curl_chrome_h2")
+    world["store"].create_run({})
+
+    outputs = {stage: step(world, stage) for stage in ("discovery", "dedup", "fetch")}
+
+    assert outputs["fetch"]["next"] == "context"
+    metrics = outputs["fetch"]["metrics"]
+    assert metrics["access_transport"] == "curl_chrome_h2"
+    assert metrics["transport_attempts"] == ["direct", "curl_chrome_h2"]
+    assert metrics["transport_fallback"] == "curl_chrome_h2"
+    assert seen[-2:] == ["direct", "curl_chrome_h2"]
+    # Só números sobrevivem no custo da etapa: é por eles que se mede o ganho em produção.
+    [article] = rows(world["store"], "SELECT cost FROM bm_articles")
+    assert article["cost"]["fetch"]["transport_fallbacks"] == 1
+    assert article["cost"]["fetch"]["transport_extra_requests"] == 1
+
+
+def test_a_story_refused_by_every_transport_still_fails_as_blocked_with_the_attempts(
+    world, monkeypatch
+):
+    seen = refusing_direct(world, monkeypatch, only=None)
+    store = world["store"]
+    store.create_run({})
+    for stage in ("discovery", "dedup"):
+        step(world, stage)
+    [job] = store.claim_many("fetch", waiting(store, "fetch"), "w1")
+
+    with pytest.raises(RetryableError) as failed:
+        world["engine"].execute(job)
+
+    assert "403" in str(failed.value) and failed.value.retryable is False
+    assert failed.value.metrics["access_transport"] == "direct"
+    assert failed.value.metrics["transport_attempts"] == [
+        "direct",
+        "curl_chrome_h2",
+        "curl_chrome_h1",
+        "curl_firefox_h2",
+    ]
+    assert seen[-4:] == ["direct", "curl_chrome_h2", "curl_chrome_h1", "curl_firefox_h2"]
+
+
+def test_the_story_reader_asks_for_a_wider_gap_between_requests_to_the_same_site(
+    world, monkeypatch
+):
+    """Feeds seguem com 300 ms; as notícias (onde o WAF dos sites reage) pedem 1,5 s."""
+    seen: list[dict[str, Any]] = []
+
+    def fake(roots, progress, **kwargs):
+        seen.append(kwargs)
+        return FakeReader(world["data"], progress)
+
+    monkeypatch.setattr("buscador_midias.ingestion.engine.make_reader", fake)
+    engine = world["engine"]
+    engine.reader_factory = None
+    job = dict(snapshot=dict(access_transport="direct"))
+
+    with engine.reader(job, ["https://news.example"]):
+        pass
+    with engine.reader(job, ["https://news.example"], gap=1.5):
+        pass
+
+    assert "host_gap" not in seen[0]
+    assert seen[1]["host_gap"] == 1.5

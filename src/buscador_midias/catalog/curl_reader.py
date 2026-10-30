@@ -99,7 +99,7 @@ class CurlReader(TestReader):
                 return FetchResult(
                     original, None, b"", "host_cooldown", url, retry_after_seconds=wait
                 )
-            self.sessions.wait(host, self._check())
+            self.sessions.wait(host, self._check(), self.host_gap)
             remaining = self._check()
             size = 0
             try:

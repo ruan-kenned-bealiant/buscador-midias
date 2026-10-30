@@ -15,6 +15,9 @@ DEFAULT_MODEL = "google/gemini-2.5-flash-lite"
 DEFAULT_TIMEOUT_SECONDS = 90.0
 DEFAULT_ATTEMPTS = 3
 TRUNCATED_RESPONSE = "resposta_truncada"
+#: O provedor recusou a notícia pelo filtro de conteúdo (crime sexual, violência gráfica): é uma
+#: recusa deliberada, sem texto nem tokens, que se repete igual com o mesmo modelo.
+CONTENT_FILTERED = "filtro_de_conteudo"
 _EMPTY_RESPONSE = "resposta sem conteúdo"
 _RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
 
@@ -34,6 +37,7 @@ class Usage:
         cost_usd: Custo informado pelo OpenRouter (``None`` se nunca informou).
         retries: Tentativas repetidas por 429/5xx/rede.
         errors: Chamadas que terminaram sem resposta.
+        fallbacks: Vezes em que o modelo alternativo substituiu o principal (filtro de conteúdo).
         last_error: Última falha, sem corpo de resposta nem credenciais.
     """
 
@@ -43,6 +47,7 @@ class Usage:
     cost_usd: float | None = None
     retries: int = 0
     errors: int = 0
+    fallbacks: int = 0
     last_error: str | None = None
 
     def minus(self, earlier: Usage) -> Usage:
@@ -60,6 +65,7 @@ class Usage:
             cost_usd=cost,
             retries=self.retries - earlier.retries,
             errors=self.errors - earlier.errors,
+            fallbacks=self.fallbacks - earlier.fallbacks,
             last_error=self.last_error,
         )
 
@@ -69,7 +75,8 @@ class OpenRouterChat:
 
     Temperatura zero e resposta em JSON. Qualquer falha (rede, 4xx/5xx, resposta vazia) devolve
     ``None`` e é registrada em ``usage``: quem usa decide o que fazer, e nunca vaza a chave.
-    Seguro para várias threads.
+    Quando o filtro de conteúdo do provedor recusa a notícia, repete uma vez com o modelo
+    alternativo (se houver), que não tem a mesma recusa. Seguro para várias threads.
     """
 
     def __init__(
@@ -82,6 +89,7 @@ class OpenRouterChat:
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         attempts: int = DEFAULT_ATTEMPTS,
         sleep: Callable[[float], None] = time.sleep,
+        fallback_model: str | None = None,
     ) -> None:
         """Cria o transporte.
 
@@ -93,10 +101,14 @@ class OpenRouterChat:
             timeout: Tempo limite de cada chamada, em segundos.
             attempts: Tentativas por chamada (429, 5xx e falhas de rede são repetidas).
             sleep: Espera entre tentativas (injetável para testes).
+            fallback_model: Modelo que repete a chamada recusada pelo filtro de conteúdo; sem ele,
+                a recusa vira falha.
         """
         self._client = client
         self._api_key = api_key
         self._model = model
+        self._fallback_model = fallback_model if fallback_model != model else None
+        self._answered = model
         self._endpoint = f"{base_url.rstrip('/')}/chat/completions"
         self._timeout = timeout
         self._attempts = attempts
@@ -108,6 +120,12 @@ class OpenRouterChat:
     def model(self) -> str:
         """Modelo em uso."""
         return self._model
+
+    @property
+    def answered_model(self) -> str:
+        """Modelo que deu a última resposta aproveitada (o alternativo, se o filtro entrou)."""
+        with self._lock:
+            return self._answered
 
     @property
     def usage(self) -> Usage:
@@ -138,8 +156,16 @@ class OpenRouterChat:
             ],
         }
         content, error = self._call(body)
+        model = self._model
+        if error == CONTENT_FILTERED and self._fallback_model:
+            self._record(fallback=True)
+            model = self._fallback_model
+            content, error = self._call(dict(body, model=model))
         if content is None:
             self._record(error=error)
+        else:
+            with self._lock:
+                self._answered = model
         return content
 
     def _call(self, body: dict[str, Any]) -> tuple[str | None, str | None]:
@@ -180,7 +206,10 @@ class OpenRouterChat:
         except (ValueError, KeyError, IndexError, TypeError):
             return None, _EMPTY_RESPONSE
         self._record(usage=(payload.get("usage") if isinstance(payload, dict) else None) or {})
-        if payload["choices"][0].get("finish_reason") in ("length", "max_tokens"):
+        finish = payload["choices"][0].get("finish_reason")
+        if finish == "content_filter":
+            return None, CONTENT_FILTERED
+        if finish in ("length", "max_tokens"):
             return None, TRUNCATED_RESPONSE
         return (content, None) if isinstance(content, str) and content else (None, "conteúdo vazio")
 
@@ -188,6 +217,7 @@ class OpenRouterChat:
         self,
         *,
         retry: bool = False,
+        fallback: bool = False,
         error: str | None = None,
         usage: dict[str, Any] | None = None,
     ) -> None:
@@ -206,5 +236,6 @@ class OpenRouterChat:
                 cost_usd=cost,
                 retries=current.retries + (1 if retry else 0),
                 errors=current.errors + (1 if error is not None else 0),
+                fallbacks=current.fallbacks + (1 if fallback else 0),
                 last_error=error if error is not None else current.last_error,
             )

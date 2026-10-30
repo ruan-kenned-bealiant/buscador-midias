@@ -199,3 +199,81 @@ def test_an_adverse_title_is_never_excluded_even_when_enforced(schema_name, tmp_
     )
     article = run(world, "discovery", "dedup", "fetch")
     assert article["outcome"] != "excluded_content" and waiting(world, "context") == 1
+
+
+def refused() -> type:
+    """Analisador cujo provedor recusou a notícia (filtro de conteúdo), sem veredito."""
+    from buscador_midias.analysis.context import ContextVerdict
+    from buscador_midias.analysis.openrouter import CONTENT_FILTERED, Usage
+
+    class Refused(Analyzer):
+        usage = Usage(errors=1, last_error=CONTENT_FILTERED)
+
+        def analyze(self, items: Any) -> list[Any]:
+            return [ContextVerdict(1, False, False, (), (), "", "", 0.0, "text")]
+
+    return Refused
+
+
+def test_a_provider_refusal_is_a_permanent_failure_not_a_provider_outage(schema_name, tmp_path):
+    world = build(schema_name, tmp_path, analyzer=refused())
+    article = run(world, "discovery", "dedup", "fetch", "context")
+    assert (article["state"], article["failed_stage"]) == ("failed", "context")
+    assert (article["reason"], article["reason_class"]) == ("content_filtered", "permanent")
+    assert article["retryable"] is False
+
+
+def test_the_analysis_records_the_model_that_answered(schema_name, tmp_path):
+    alternate = "anthropic/claude-haiku-4.5"
+    world = build(schema_name, tmp_path, analyzer=classified())
+    world["engine"].analyzer_factory = type(
+        "Answered", (classified(), object), {"answered_model": alternate}
+    )
+    article = run(world, "discovery", "dedup", "fetch", "context")
+    assert article["payload"]["analysis"]["model"] == alternate
+
+
+def test_the_run_config_sets_the_alternate_model_of_the_chat(schema_name, tmp_path, monkeypatch):
+    from buscador_midias.ingestion import engine as engine_module
+
+    seen: dict[str, Any] = {}
+
+    class Chat:
+        model = "m"
+        usage = refused().usage
+
+        def __init__(self, client: Any, **kwargs: Any) -> None:
+            seen.update(kwargs)
+
+        def complete(self, *args: Any, **kwargs: Any) -> None:
+            return None
+
+    monkeypatch.setattr(engine_module, "OpenRouterChat", Chat)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "x")
+    world = build(schema_name, tmp_path, fallback_model="anthropic/claude-haiku-4.5")
+    world["engine"].analyzer_factory = None
+    run(world, "discovery", "dedup", "fetch", "context")
+    assert seen["fallback_model"] == "anthropic/claude-haiku-4.5"
+
+
+def test_an_empty_alternate_model_turns_the_fallback_off(schema_name, tmp_path, monkeypatch):
+    from buscador_midias.ingestion import engine as engine_module
+
+    seen: dict[str, Any] = {}
+
+    class Chat:
+        model = "m"
+        usage = refused().usage
+
+        def __init__(self, client: Any, **kwargs: Any) -> None:
+            seen.update(kwargs)
+
+        def complete(self, *args: Any, **kwargs: Any) -> None:
+            return None
+
+    monkeypatch.setattr(engine_module, "OpenRouterChat", Chat)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "x")
+    world = build(schema_name, tmp_path, fallback_model="")
+    world["engine"].analyzer_factory = None
+    run(world, "discovery", "dedup", "fetch", "context")
+    assert seen["fallback_model"] is None

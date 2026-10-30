@@ -172,3 +172,91 @@ def test_resposta_sem_conteudo_persistente_vira_falha_apos_as_tentativas():
     assert chat.usage.errors == 1
     assert chat.usage.last_error == "resposta sem conteúdo"
     assert SECRET not in (chat.usage.last_error or "")
+
+
+FALLBACK = "anthropic/claude-haiku-4.5"
+
+
+def filtered() -> dict:
+    """O que o provedor devolve quando o filtro de conteúdo recusa: sem texto e sem tokens."""
+    return {
+        "choices": [
+            {
+                "message": {"content": "I am sorry, I cannot assist"},
+                "finish_reason": "content_filter",
+            }
+        ],
+        "usage": {"prompt_tokens": 300, "completion_tokens": 0, "cost": 0},
+    }
+
+
+def test_filtro_de_conteudo_sem_modelo_alternativo_devolve_none_com_motivo_proprio():
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(json.loads(request.content)["model"])
+        return httpx.Response(200, json=filtered())
+
+    chat = make(handler)
+
+    assert chat.complete("S", "U", max_tokens=10) is None
+    assert calls == ["google/gemini-2.5-flash-lite"]  # recusa deliberada não se repete
+    assert chat.usage.last_error == "filtro_de_conteudo"
+    assert chat.usage.errors == 1 and chat.usage.fallbacks == 0
+
+
+def test_filtro_de_conteudo_repete_uma_vez_com_o_modelo_alternativo():
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        model = json.loads(request.content)["model"]
+        calls.append(model)
+        return httpx.Response(200, json=completion(ENTRY) if model == FALLBACK else filtered())
+
+    chat = make(handler, fallback_model=FALLBACK)
+
+    text = chat.complete("S", "U", max_tokens=10)
+
+    assert text is not None and '"items"' in text
+    assert calls == ["google/gemini-2.5-flash-lite", FALLBACK]
+    assert chat.answered_model == FALLBACK
+    assert chat.usage.fallbacks == 1
+    assert chat.usage.errors == 0 and chat.usage.last_error is None
+    assert chat.usage.calls == 2  # as duas chamadas gastaram consumo
+
+
+def test_o_modelo_alternativo_nao_entra_quando_o_principal_responde():
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(json.loads(request.content)["model"])
+        return httpx.Response(200, json=completion(ENTRY))
+
+    chat = make(handler, fallback_model=FALLBACK)
+
+    assert chat.complete("S", "U", max_tokens=10) is not None
+    assert calls == ["google/gemini-2.5-flash-lite"]
+    assert chat.answered_model == "google/gemini-2.5-flash-lite"
+    assert chat.usage.fallbacks == 0
+
+
+def test_o_modelo_alternativo_so_serve_ao_filtro_de_conteudo():
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(json.loads(request.content)["model"])
+        return httpx.Response(500)
+
+    chat = make(handler, fallback_model=FALLBACK)
+
+    assert chat.complete("S", "U", max_tokens=10) is None
+    assert set(calls) == {"google/gemini-2.5-flash-lite"}
+    assert chat.usage.fallbacks == 0
+
+
+def test_se_o_modelo_alternativo_tambem_for_filtrado_a_falha_continua_sendo_o_filtro():
+    chat = make(lambda request: httpx.Response(200, json=filtered()), fallback_model=FALLBACK)
+
+    assert chat.complete("S", "U", max_tokens=10) is None
+    assert chat.usage.last_error == "filtro_de_conteudo"
+    assert chat.usage.fallbacks == 1 and chat.usage.errors == 1

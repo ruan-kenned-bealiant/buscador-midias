@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 import psycopg
 from psycopg.types.json import Jsonb
 
-from buscador_midias.db.failures import classify
+from buscador_midias.db.failures import AUTO_RETRY_CODES, classify
 from buscador_midias.db.serialize import clean
 from buscador_midias.domain.url import url_hash
 
@@ -398,7 +398,9 @@ def fail(
             exhausted=exhausted,
             code=failure.code,
             klass=failure.klass,
-            retryable=retryable and failure.klass == "transient",
+            # "Elegível para repetição automática": transitória que pode repetir, ou 403.
+            retryable=(retryable and failure.klass == "transient")
+            or failure.code in AUTO_RETRY_CODES,
             detail=failure.detail,
             key=job[queue.key],
         ),
@@ -452,7 +454,7 @@ UPDATE bm_articles a SET state='retry', stage=COALESCE(a.failed_stage,a.stage), 
  passes=a.passes+1, lane='primary', next_attempt_at=now(), queued_at=NULL, owner=NULL,
  locked_until=NULL, updated_at=now()
 FROM bm_runs r WHERE r.id=a.run_id AND r.status<>'running' AND a.state='failed'
- AND a.reason_class='transient'
+ AND (a.reason_class='transient' OR a.reason=ANY(%(codes)s))
  AND a.retryable AND a.passes < COALESCE((r.config->>'failed_retry_limit')::int, 1)
  AND a.failed_at < now() - %(after)s * interval '1 second'
 """
@@ -476,7 +478,9 @@ def maintain(
         (queued_stale_seconds,),
     ).rowcount
     retried = (
-        db.execute(_AUTO_RETRY, dict(after=auto_retry_after_seconds)).rowcount
+        db.execute(
+            _AUTO_RETRY, dict(after=auto_retry_after_seconds, codes=list(AUTO_RETRY_CODES))
+        ).rowcount
         if queue is ARTICLES
         else 0
     )
