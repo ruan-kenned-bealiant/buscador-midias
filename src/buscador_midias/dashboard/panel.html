@@ -5,12 +5,12 @@
 <title>Painel · Buscador de mídias</title>
 <link rel="stylesheet" href="/assets/app.css">
 <style>
-:root{--series-1:#2a78d6;--series-2:#eb6834;--series-3:#1baf7a;--mark:var(--green);--grid:var(--line);--track:var(--soft)}
+:root{--series-1:#2a78d6;--series-2:#eb6834;--series-3:#1baf7a;--mark:var(--brand);--grid:var(--line);--track:var(--soft)}
 .range{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .segmented{display:inline-flex;border:1px solid var(--line-strong);border-radius:var(--radius-sm);overflow:hidden;background:var(--paper)}
 .segmented button{border:0;border-radius:0;padding:8px 14px;background:transparent;font-weight:550}
 .segmented button+button{border-left:1px solid var(--line)}
-.segmented button[aria-pressed=true]{background:var(--selected);color:var(--green)}
+.segmented button[aria-pressed=true]{background:var(--selected);color:var(--brand)}
 section.block{margin-top:30px}
 section.block>h2{margin-bottom:4px}
 section.block>p.lead{margin:0 0 14px;color:var(--muted);max-width:70ch}
@@ -49,7 +49,7 @@ section.block>p.lead{margin:0 0 14px;color:var(--muted);max-width:70ch}
 .chart-body .end{fill:var(--ink);font-weight:600}
 .chart-body .grid{stroke:var(--grid);stroke-width:1}
 .chart-body .hit{fill:transparent;cursor:default}
-.chart-body .hit:focus-visible{outline:2px solid var(--green);outline-offset:-2px}
+.chart-body .hit:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
 .chart-body rect.bar{transition:filter .1s}
 .chart-body g.mark:hover rect.bar,.chart-body g.mark:focus-within rect.bar{filter:brightness(1.12)}
 .legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--ink)}
@@ -61,7 +61,7 @@ section.block>p.lead{margin:0 0 14px;color:var(--muted);max-width:70ch}
 .chart-card.as-table .chart-table{display:block}
 .chart-table td:first-child,.chart-table th:first-child{white-space:nowrap}
 .chart-table td{font-variant-numeric:tabular-nums}
-.tip{position:fixed;z-index:30;pointer-events:none;background:var(--paper);border:1px solid var(--line-strong);border-radius:8px;box-shadow:0 6px 24px #10221a26;padding:8px 10px;font-size:12px;min-width:140px;max-width:260px}
+.tip{position:fixed;z-index:30;pointer-events:none;background:var(--paper);border:1px solid var(--line-strong);border-radius:8px;box-shadow:0 6px 24px #3b066426;padding:8px 10px;font-size:12px;min-width:140px;max-width:260px}
 .tip b{font-variant-numeric:tabular-nums}
 .tip .tip-title{color:var(--muted);margin-bottom:4px}
 .tip .row{display:flex;align-items:center;gap:8px;justify-content:space-between}

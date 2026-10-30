@@ -14,7 +14,7 @@
   const money = (n, d = 2) => 'US$ ' + dec(n, d);
   const STAGES = { discovery: 'Descoberta', dedup: 'Verificação no corpus', fetch: 'Extração textual', context: 'Análise de contexto', evidence: 'Evidência', persist: 'Gravação no corpus' };
   const SERIES = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)'];
-  const MARK = 'var(--green)';
+  const MARK = 'var(--brand)';
   const RUN_STATE = { running: ['Em andamento', 'blue'], completed: ['Concluída', 'green'], partial: ['Concluída com falhas', 'amber'] };
   const CATEGORY = { healthy: ['Saudáveis', 'green'], access_error: ['Falha de acesso', 'red'], review: ['Aguardam revisão', 'amber'], stale: ['Parados', 'amber'], invalid: ['Inválidos', 'red'], removed: ['Excluídos', 'gray'], inconclusive: ['Inconclusivos', 'gray'], no_text: ['Sem texto', 'amber'], no_news: ['Sem notícias', 'amber'], skipped: ['Cadastro alterado', 'gray'], error: ['Falha interna', 'red'] };
 

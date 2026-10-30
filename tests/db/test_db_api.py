@@ -169,7 +169,14 @@ def test_the_search_settings_can_be_changed_with_a_revision(client):
     assert stale[0] == 409
 
 
-def test_health_runs_are_created_and_listed(client):
+def test_a_health_run_is_refused_while_a_search_round_is_open(client):
+    status, body = client.call(BASE + "/saude/rodadas", "POST", dict(kind="active"))
+    assert status == 409 and "busca" in str(body)
+
+
+def test_health_runs_are_created_and_listed(schema_name, client):
+    with ReportRepository(schema_name).connection() as db:
+        db.execute("UPDATE bm_runs SET status='partial',finished_at=now() WHERE type='search'")
     status, run = client.call(BASE + "/saude/rodadas", "POST", dict(kind="active"))
     assert status == 202 and run["total"] == 3
     status, overview = client.call(BASE + "/saude")
