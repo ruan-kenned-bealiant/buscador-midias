@@ -19,6 +19,7 @@ from buscador_midias.catalog.link_review import (
 )
 from buscador_midias.catalog.testing import ReaderFactory, run_test
 from buscador_midias.db.health import KINDS, HealthRepository
+from buscador_midias.db.host_pacing import HostPacing
 
 _LOG = logging.getLogger(__name__)
 LEADER_KEY = 674931206
@@ -33,6 +34,9 @@ class HealthWorker:
     # tempo; lido um a um, ele sozinho prolongaria a rodada inteira por mais de uma hora.
     big_host_links = 100
     big_host_slots = 3
+    # Respiro entre duas leituras do mesmo site pequeno e espera depois de um 429 (segundos).
+    host_gap = 3.0
+    throttle_pause = 30.0
 
     def __init__(
         self,
@@ -100,9 +104,10 @@ class HealthWorker:
         return self.repository.next_run(self.owner)
 
     def execute_run(self, run: dict[str, Any], leader: Any = None) -> None:
-        """Um host por vez (vários nos sites grandes); nenhuma descoberta aumenta a fila."""
+        """Um host por vez (vários nos sites grandes), com respiro entre as leituras de um site."""
         big_hosts = self.repository.big_hosts(run["id"], self.big_host_links)
         workers = run["config"]["workers"]
+        pacing = HostPacing(self.host_gap, self.throttle_pause)
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="health-link") as pool:
             tasks: dict[Any, str] = {}
             while not self.stop.is_set():
@@ -111,7 +116,7 @@ class HealthWorker:
                 status, reserved = self.repository.reserve(
                     run,
                     self.owner,
-                    list(tasks.values()),
+                    [*tasks.values(), *pacing.held(big_hosts, self.big_host_slots)],
                     workers - len(tasks),
                     big_hosts,
                     self.big_host_slots,
@@ -120,13 +125,18 @@ class HealthWorker:
                     return
                 for row in reserved:
                     tasks[pool.submit(self._test, run, row)] = row["host"]
-                if not tasks:
+                if not tasks and not pacing.resting():
                     self.repository.complete_run(run, self.owner)
                     return
-                done, _ = wait(tasks, timeout=1, return_when=FIRST_COMPLETED)
+                done, _ = (
+                    wait(tasks, timeout=1, return_when=FIRST_COMPLETED) if tasks else (set(), None)
+                )
+                if not tasks:
+                    self.stop.wait(0.2)  # só resta esperar algum site terminar de descansar
                 for task in done:
-                    del tasks[task]
-                    task.result()
+                    host = tasks.pop(task)
+                    pace = task.result() or {}
+                    pacing.finished(host, big=host in big_hosts, **pace)
 
     # --- um link ------------------------------------------------------------------------------
 
@@ -164,42 +174,47 @@ class HealthWorker:
             reader = real_reader
         return review_with_transports(link, reader, datetime.now(UTC))
 
-    def _probe(self, run: dict[str, Any], row: dict[str, Any]) -> None:
+    @staticmethod
+    def _pace(status: Any, retry_after: Any) -> dict[str, Any]:
+        """O que o laço precisa saber da leitura: se o site respondeu 429 e quanto pediu de espera."""
+        return dict(throttled=status == 429, retry_after=retry_after if status == 429 else None)
+
+    def _probe(self, run: dict[str, Any], row: dict[str, Any]) -> dict[str, Any] | None:
         """Braço leve: uma leitura do documento decide manter, inativar ou excluir."""
         snapshot = row["snapshot"]
         if self.stop.is_set():
-            return
+            return None
         if not self.repository.is_current(snapshot, run["kind"]):
             self._finish(run, row, "skipped", None, CHANGED)
-            return
+            return None
         if not self._owned_and_running(run):
             self._finish(run, row, "cancelled", None, "Execução cancelada")
-            return
+            return None
         try:
             outcome = self._review(snapshot)
         except Exception:
             _LOG.exception("Erro interno na sonda do link %s", row["link_id"])
             self._finish(run, row, "error", None, INTERNAL_FAILURE)
-            return
+            return None
         self.repository.finish_probe(run, row, self.owner, outcome)
         self.stop.wait(0.3)
+        return self._pace(outcome.get("status"), outcome.get("retry_after"))
 
-    def _test(self, run: dict[str, Any], row: dict[str, Any]) -> None:
+    def _test(self, run: dict[str, Any], row: dict[str, Any]) -> dict[str, Any] | None:
         config = run["config"]
         if config.get("mode") == "probe" and run["kind"] == "active":
-            self._probe(run, row)
-            return
+            return self._probe(run, row)
         snapshot = row["snapshot"]
         reactivating = run["kind"] == "recovery" and config.get("activate_recovered")
         for attempt in range(row["attempts"] + 1, config["max_attempts"] + 1):
             if self.stop.is_set():
-                return
+                return None
             if not self.repository.is_current(snapshot, run["kind"]):
                 self._finish(run, row, "skipped", None, CHANGED)
-                return
+                return None
             if not self._owned_and_running(run):
                 self._finish(run, row, "cancelled", None, "Execução cancelada")
-                return
+                return None
             test_config = dict(snapshot["config"], test_id=uuid.uuid4().hex)
             try:
                 result = run_test(test_config, snapshot["source"], lambda step: None, self.factory)
@@ -207,7 +222,7 @@ class HealthWorker:
             except Exception:
                 _LOG.exception("Erro interno no teste periódico do link %s", row["link_id"])
                 self._finish(run, row, "error", None, INTERNAL_FAILURE)
-                return
+                return None
             final = category != "access_error" or attempt == config["max_attempts"]
             if not self.repository.is_current(snapshot, run["kind"]):
                 self._finish(
@@ -217,7 +232,7 @@ class HealthWorker:
                     (attempt, category, result),
                     "Cadastro alterado durante o teste",
                 )
-                return
+                return None
             if final and reactivating and category == "access_error":
                 result, category = self._other_transports(test_config, snapshot, result, category)
             gate = None
@@ -233,7 +248,8 @@ class HealthWorker:
             )
             if final:
                 self.stop.wait(0.3)
-                return
+                return self._pace(result.get("endpoint_status"), None)
+        return None
 
     def _other_transports(
         self,

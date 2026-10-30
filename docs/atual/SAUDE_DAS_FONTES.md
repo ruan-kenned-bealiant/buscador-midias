@@ -10,11 +10,18 @@ A saúde é uma rodada como as outras (`bm_runs` com `type='health'`), conduzida
 
 Horários padrão: 10h e 20h de Brasília. Cada rodada congela os elegíveis e a revisão de cada link.
 
+**Ritmo por site.** A rodada lê um link por vez de cada site pequeno e espera 3 s entre duas
+leituras do mesmo site (sem isso, sites pequenos respondem 429 e o link parecia quebrado). Depois de um
+429 o site descansa 30 s (ou o `Retry-After` que ele pediu, no máximo 300 s), inclusive os sites
+grandes (100 links ou mais), que normalmente leem 3 por vez.
+
 ## Modos
 
 - **`probe`** (ativos): uma leitura leve do documento. Decide `keep`, `inactivate`, `delete` ou
-  `review` pelas regras de frescor, período encerrado e tema inútil. Falha de acesso passageira só
-  inativa na segunda verificação seguida; 404, 410 e ciclo de redirecionamento inativam na hora.
+  `review` pelas regras de frescor, período encerrado e tema inútil. Recusa (401, 403, 406) e
+  documento ilegível inativam na segunda verificação seguida; 404, 410 e ciclo de redirecionamento
+  inativam na hora. Falha que passa sozinha (429, 5xx, timeout) só inativa depois de 6 verificações
+  seguidas (cerca de 3 dias): o site pode ter tido um dia ruim, ou nós o sobrecarregamos.
   Se o transporte do link foi recusado, tenta os outros e, achando um que funcione, troca o
   transporte (a prova antiga é descartada).
 - **`full`** (teste completo): o mesmo teste do Gerenciador, em amostra, sem alterar o cadastro,

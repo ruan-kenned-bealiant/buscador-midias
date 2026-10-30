@@ -28,6 +28,8 @@ TRANSIENT_ERRORS = (
     "host_cooldown",
     "DNS excedeu",
     "timed out",
+    "Timeout",  # curl: "Timeout: Failed to perform, curl: (28)"
+    "curl: (28)",
     "Remote end closed",
     "Connection reset",
 )

@@ -13,6 +13,7 @@ import pytest
 from health_support import FakeReader, FreshProbe, build, old_news, set_state
 from psycopg.types.json import Jsonb
 
+from buscador_midias.catalog import link_review
 from buscador_midias.catalog.store_errors import CatalogError
 from buscador_midias.db.health import HealthRepository
 from buscador_midias.db.health_worker import HealthWorker
@@ -21,6 +22,12 @@ from buscador_midias.net.fetcher import FetchResult
 pytestmark = pytest.mark.skipif(
     os.environ.get("BM_TEST_POSTGRES") != "1", reason="Requer PostgreSQL de teste explícito."
 )
+
+
+@pytest.fixture(autouse=True)
+def no_pause_between_reads(monkeypatch):
+    """A espera entre leituras do mesmo site é testada à parte; os demais testes não a esperam."""
+    monkeypatch.setattr(HealthWorker, "host_gap", 0.0)
 
 
 @pytest.fixture
@@ -482,15 +489,34 @@ def test_a_missing_page_is_inactivated_at_once(world):
     assert (row["health_category"], row["health_failures"]) == ("access_error", 1)
 
 
-def test_a_passing_failure_inactivates_only_on_the_second_check_in_a_row(world):
+def test_a_refusal_inactivates_only_on_the_second_check_in_a_row(world):
     health = world["health"]
-    run_probe(health, Probe(status=503))
+    run_probe(health, Probe(status=403))
     row = state_row(health)
     assert link_row(health)["active"] and row and row["health_failures"] == 1
     sql(health, "UPDATE bm_runs SET status='completed'")
-    run_probe(health, Probe(status=503))
+    run_probe(health, Probe(status=403))
     row = state_row(health)
     assert not link_row(health)["active"] and row and row["health_failures"] == 2
+
+
+def test_a_rate_limit_or_a_timeout_does_not_inactivate_on_the_second_check(world):
+    health = world["health"]
+    for expected in (1, 2, 3):
+        run_probe(health, Probe(status=429))
+        row = state_row(health)
+        assert link_row(health)["active"] and row and row["health_failures"] == expected
+        assert row["health_category"] == "access_error"
+        sql(health, "UPDATE bm_runs SET status='completed'")
+
+
+def test_a_success_after_rate_limits_clears_the_count(world):
+    health = world["health"]
+    run_probe(health, Probe(status=429))
+    sql(health, "UPDATE bm_runs SET status='completed'")
+    run_probe(health, Probe(rss(1)))
+    row = state_row(health)
+    assert row and row["health_failures"] == 0 and row["health_category"] == "healthy"
 
 
 def test_a_success_in_between_clears_the_failure_count(world):
@@ -708,3 +734,64 @@ def test_the_frozen_snapshot_carries_the_transport_of_the_link(world):
     with patch("buscador_midias.db.health_worker.run_test", spy):
         execute(health)
     assert seen == ["curl_chrome_h2"]
+
+
+# --- ritmo por host -----------------------------------------------------------------------------
+
+
+class Timed:
+    """Sonda que registra o instante em que cada leitura começou e responde como combinado."""
+
+    def __init__(
+        self, body: bytes, statuses: list[int] | None = None, retry_after: int | None = None
+    ):
+        self.body, self.statuses, self.retry_after = body, list(statuses or []), retry_after
+        self.starts: list[float] = []
+
+    def __call__(self, link: dict[str, Any]) -> Timed:
+        return self
+
+    def get(self, url: str) -> FetchResult:
+        self.starts.append(time.monotonic())
+        status = self.statuses.pop(0) if self.statuses else 200
+        if status == 429:
+            return FetchResult(url, 429, b"", None, url, retry_after_seconds=self.retry_after)
+        return FetchResult(url, 200, self.body, None, url)
+
+
+def test_a_small_site_gets_a_pause_between_two_of_its_links(world):
+    many_links(world)
+    reader = Timed(rss(1))
+    health = world["health"]
+    health.create("active")
+    worker = HealthWorker(health, old_news, probe_reader=reader)
+    worker.host_gap = 0.4
+    worker.recover()
+    started = time.monotonic()
+    worker.execute_run(worker.next_run())
+
+    gaps = [b - a for a, b in zip(reader.starts, reader.starts[1:], strict=False)]
+    assert len(reader.starts) == 6 and min(gaps) >= 0.35
+    assert time.monotonic() - started >= 0.4 * 5 - 0.1  # o último item também é lido
+
+
+def test_a_site_that_answers_429_rests_before_its_next_link_and_the_run_still_finishes(world):
+    many_links(world)
+    reader = Timed(rss(1), statuses=[429, 429, 429])  # as 3 tentativas do 1º link
+    health = world["health"]
+    run = health.create("active")
+    worker = HealthWorker(health, old_news, probe_reader=reader)
+    worker.host_gap, worker.throttle_pause = 0.0, 0.8
+    real = link_review.review_with_transports
+
+    def without_waiting(link, make_reader, now):
+        return real(link, make_reader, now, sleep=lambda _seconds: None)
+
+    with patch("buscador_midias.db.health_worker.review_with_transports", without_waiting):
+        worker.recover()
+        worker.execute_run(worker.next_run())
+
+    # Depois do 429 do primeiro link, o próximo só começa depois da pausa do site.
+    assert reader.starts[3] - reader.starts[2] >= 0.75
+    assert detail(health, run)["total"] == 6
+    assert health.overview()["runs"][0]["status"] == "completed"

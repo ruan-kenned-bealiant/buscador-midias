@@ -6,7 +6,14 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from buscador_midias.catalog.health_rules import decide, next_run, recovery_due
+from buscador_midias.catalog.health_rules import (
+    FAILURES_TO_INACTIVATE,
+    TRANSIENT_FAILURES_TO_INACTIVATE,
+    decide,
+    next_run,
+    recovery_due,
+)
+from buscador_midias.catalog.link_review import _transient
 
 
 def outcome(proposal, **extra):
@@ -59,10 +66,63 @@ def test_a_transient_failure_is_only_recorded_the_first_time(extra):
     assert (found.action, found.failures) == ("review", 1)
 
 
-@pytest.mark.parametrize("cause", ["access", "unreadable"])
-def test_the_second_failure_in_a_row_inactivates(cause):
-    found = decide(outcome("review", cause=cause, status=503, transient=True), previous_failures=1)
-    assert (found.action, found.failures) == ("inactivate", 2)
+@pytest.mark.parametrize(
+    "extra",
+    [
+        dict(cause="access", status=403),
+        dict(cause="access", status=406),
+        dict(cause="access", status=401),
+        dict(cause="unreadable", status=200),
+    ],
+)
+def test_a_refusal_or_unreadable_document_inactivates_on_the_second_failure_in_a_row(extra):
+    found = decide(outcome("review", **extra), previous_failures=FAILURES_TO_INACTIVATE - 1)
+    assert (found.action, found.failures) == ("inactivate", FAILURES_TO_INACTIVATE)
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        dict(cause="access", status=429, transient=True),
+        dict(cause="access", status=503, transient=True),
+        dict(cause="access", status=None, transient=True, reason="acesso: timed out"),
+    ],
+)
+def test_a_failure_that_passes_by_itself_does_not_inactivate_on_the_second_in_a_row(extra):
+    """429, 5xx e timeout são do site (ou nossos) naquela hora; o link só sai se persistir."""
+    found = decide(outcome("review", **extra), previous_failures=FAILURES_TO_INACTIVATE - 1)
+    assert (found.action, found.category, found.failures) == (
+        "review",
+        "access_error",
+        FAILURES_TO_INACTIVATE,
+    )
+
+
+def test_a_failure_that_keeps_passing_for_days_is_finally_inactivated():
+    found = decide(
+        outcome("review", cause="access", status=429, transient=True),
+        previous_failures=TRANSIENT_FAILURES_TO_INACTIVATE - 1,
+    )
+    assert (found.action, found.failures) == ("inactivate", TRANSIENT_FAILURES_TO_INACTIVATE)
+    assert TRANSIENT_FAILURES_TO_INACTIVATE > FAILURES_TO_INACTIVATE
+
+
+@pytest.mark.parametrize(
+    ("status", "error", "expected"),
+    [
+        (429, None, True),
+        (503, None, True),
+        (None, "The read operation timed out", True),
+        (None, "Timeout: Failed to perform, curl: (28) Operation timed out after 25001 ms", True),
+        (None, "curl: (28) Connection timed out", True),
+        (403, None, False),
+        (404, None, False),
+        (None, "SSL: certificate verify failed", False),
+    ],
+)
+def test_timeouts_of_every_transport_are_failures_that_pass(status, error, expected):
+    """O curl escreve ``Timeout: Failed to perform``; só ``timed out`` deixava 47 links de fora."""
+    assert _transient(status, error) is expected
 
 
 @pytest.mark.parametrize("cause", ["undated", "sports"])

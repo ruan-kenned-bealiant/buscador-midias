@@ -2,8 +2,9 @@
 
 A decisão parte do resultado da sonda (``link_review``) e do número de verificações seguidas em
 que o link falhou. Falha definitiva (404, 410, redirecionamento em ciclo) inativa na hora; falha
-que costuma passar (timeout, recusa, 5xx, documento ilegível) só inativa na segunda seguida, para
-um site com um dia ruim não sair da rodada. Frescor, período encerrado e tema inútil vêm da
+de recusa ou documento ilegível só inativa na segunda seguida. Falha que passa sozinha (429, 5xx,
+timeout) pesa menos: o site pode só ter tido um dia ruim, ou nós o sobrecarregamos, então o link só
+sai depois de várias verificações seguidas. Frescor, período encerrado e tema inútil vêm da
 própria sonda, as mesmas regras da varredura do catálogo.
 """
 
@@ -18,6 +19,8 @@ ZONE = ZoneInfo("America/Sao_Paulo")
 DEFINITIVE_STATUS = (404, 410)
 # Quantas verificações seguidas com falha passageira até o link ser inativado.
 FAILURES_TO_INACTIVATE = 2
+# Para falha que passa sozinha (429, 5xx, timeout): com duas rodadas por dia, são cerca de 3 dias.
+TRANSIENT_FAILURES_TO_INACTIVATE = 6
 # Recuperação: quem caiu há menos de RECENT_DAYS é retestado em toda rodada (é onde as
 # recuperações acontecem); os antigos só voltam a ser testados a cada SWEEP_DAYS.
 RECENT_DAYS = 7
@@ -55,7 +58,8 @@ def decide(outcome: dict[str, Any], previous_failures: int) -> Decision:
         return Decision("review", "review", reason, 0)
     failures = previous_failures + 1
     category = "access_error" if cause == "access" else "invalid"
-    if _gone_for_good(outcome) or failures >= FAILURES_TO_INACTIVATE:
+    limit = TRANSIENT_FAILURES_TO_INACTIVATE if outcome.get("transient") else FAILURES_TO_INACTIVATE
+    if _gone_for_good(outcome) or failures >= limit:
         return Decision("inactivate", category, reason, failures)
     return Decision("review", category, reason, failures)
 
