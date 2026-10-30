@@ -357,13 +357,52 @@ def test_a_run_of_an_unknown_scheduler_is_not_created_without_bright_credentials
         world["health"].create("active")
 
 
-def test_runs_of_other_types_do_not_block_or_appear(world):
+def test_closed_runs_of_other_types_do_not_block_or_appear(world):
+    # Uma busca aberta bloqueia a saúde (testes abaixo); a já encerrada nunca aparece nem bloqueia.
     health = world["health"]
     with health.connection() as db:
         db.execute(
             "INSERT INTO bm_runs(id,type,trigger,status,config) "
-            "VALUES('s1','search','manual','running','{}')"
+            "VALUES('s1','search','manual','partial','{}')"
         )
     health.create("active")
     assert [r["id"] for r in health.overview()["runs"]] != ["s1"]
     assert health.overview()["total"] == 1
+
+
+def open_search(health: HealthRepository, status: str = "running") -> None:
+    """Uma rodada de busca no estado dado, sem links: só o que a regra de exclusão enxerga."""
+    with health.connection() as db:
+        db.execute(
+            "INSERT INTO bm_runs(id,type,trigger,status,config) VALUES('s1','search','scheduled',%s,'{}')",
+            (status,),
+        )
+
+
+def due(health: HealthRepository) -> None:
+    with health.connection() as db:
+        db.execute("UPDATE bm_settings SET next_run_at=now()-interval '1 minute'")
+
+
+def test_a_scheduled_routine_does_not_start_while_a_search_round_is_open(world):
+    health = world["health"]
+    due(health)
+    open_search(health)
+    assert health.create("active", "scheduled") is None
+    [setting] = [s for s in health.settings() if s["kind"] == "active"]
+    assert setting["next_run_at"] < datetime.now(UTC)  # continua devida: roda ao fim da busca
+
+
+def test_a_scheduled_routine_starts_once_the_search_round_is_closed(world):
+    health = world["health"]
+    due(health)
+    open_search(health, "partial")
+    assert health.create("active", "scheduled")["trigger"] == "scheduled"
+
+
+def test_a_manual_routine_is_refused_while_a_search_round_is_open(world):
+    health = world["health"]
+    open_search(health)
+    with pytest.raises(CatalogError) as refused:
+        health.create("active")
+    assert refused.value.status == 409 and "busca" in str(refused.value)

@@ -117,11 +117,14 @@ class HealthWorker:
                 # em descanso, senão o descanso pode acabar entre as duas e fechar a rodada com
                 # links pendentes.
                 held = pacing.held(big_hosts, self.big_host_slots)
+                # Rodada de busca aberta: não reserva links novos (os em curso terminam) e
+                # retoma quando ela fechar. Cancelar e perder o dono continuam sendo vistos.
+                yielding = self.repository.search_running()
                 status, reserved = self.repository.reserve(
                     run,
                     self.owner,
                     [*tasks.values(), *held],
-                    workers - len(tasks),
+                    0 if yielding else workers - len(tasks),
                     big_hosts,
                     self.big_host_slots,
                 )
@@ -129,14 +132,15 @@ class HealthWorker:
                     return
                 for row in reserved:
                     tasks[pool.submit(self._test, run, row)] = row["host"]
-                if not tasks and not held:
+                if not tasks and not held and not yielding:
                     self.repository.complete_run(run, self.owner)
                     return
                 if tasks:
                     done, _ = wait(tasks, timeout=1, return_when=FIRST_COMPLETED)
                 else:
                     done = set()
-                    self.stop.wait(0.2)  # só resta esperar algum site terminar de descansar
+                    # só resta esperar a busca fechar ou algum site terminar de descansar
+                    self.stop.wait(2.0 if yielding else 0.2)
                 for task in done:
                     host = tasks.pop(task)
                     pace = task.result() or {}

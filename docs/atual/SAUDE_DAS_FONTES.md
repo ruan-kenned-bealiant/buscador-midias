@@ -8,7 +8,14 @@ A saúde é uma rodada como as outras (`bm_runs` com `type='health'`), conduzida
 | `active` | Links ativos de sites ativos. |
 | `recovery` | Links inativos cuja última verificação foi falha de acesso (ou todos, manual). |
 
-Horários padrão: 10h e 20h de Brasília. Cada rodada congela os elegíveis e a revisão de cada link.
+Horários padrão (Brasília): a `active` às 10h e 20h; a `recovery` às 09h. Cada rodada congela os
+elegíveis e a revisão de cada link.
+
+**Uma rodada de cada vez.** A saúde e a busca não rodam juntas. Uma rodada de saúde agendada não
+começa enquanto houver uma busca aberta (continua devida e sai quando a busca fecha), e a manual é
+recusada com 409. A busca tem hora marcada (tolerância de 15 min) e por isso não espera: se uma saúde
+estiver em andamento, ela **cede a vez**, deixa de reservar links novos, termina os que já estão em
+teste e retoma quando a busca fecha. As rodadas de saúde entre si já são em sequência.
 
 **Ritmo por site.** A rodada lê um link por vez de cada site pequeno e espera 3 s entre duas
 leituras do mesmo site (sem isso, sites pequenos respondem 429 e o link parecia quebrado). Depois de um

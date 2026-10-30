@@ -118,6 +118,14 @@ class HealthRepository(Repository):
                 not config["enabled"] or setting["next_run_at"] > datetime.now(UTC)
             ):
                 return None
+            if self._search_running(db):
+                # Duas rodadas ao mesmo tempo disputam rede e banco: a saúde espera a busca fechar.
+                # A agendada continua devida (``next_run_at`` não anda) e sai assim que ela fechar.
+                if trigger == "scheduled":
+                    return None
+                raise CatalogError(
+                    "Há uma rodada de busca em andamento; aguarde ela terminar.", 409
+                )
             if db.execute(
                 "SELECT 1 FROM bm_runs WHERE type='health' AND kind=%s "
                 f"AND status IN {OPEN_STATUSES}",
@@ -379,6 +387,21 @@ class HealthRepository(Repository):
                 "WHERE q.state='running' AND EXISTS(SELECT 1 FROM bm_runs r WHERE r.id=q.run_id "
                 "AND r.type='health' AND r.status IN ('running','cancelling'))"
             )
+
+    @staticmethod
+    def _search_running(db: psycopg.Connection[Any]) -> bool:
+        return (
+            db.execute(
+                "SELECT 1 FROM bm_runs WHERE type='search' AND status='running' "
+                "AND finished_at IS NULL LIMIT 1"
+            ).fetchone()
+            is not None
+        )
+
+    def search_running(self) -> bool:
+        """Se há uma rodada de busca aberta: a saúde cede a vez enquanto ela durar."""
+        with self.connection() as db:
+            return self._search_running(db)
 
     def next_run(self, owner: str) -> dict[str, Any] | None:
         """Prioriza rodadas já iniciadas antes das novas e assume a escolhida."""

@@ -818,3 +818,32 @@ def test_a_rest_that_ends_between_two_checks_never_closes_the_run_with_pending_l
     assert len(reader.asked) == 6
     assert detail(health, run)["total"] == 6
     assert sql(health, "SELECT count(*) n FROM bm_run_links WHERE state='pending'")[0]["n"] == 0
+
+
+def test_a_running_round_yields_to_a_search_round_and_resumes_when_it_closes(world):
+    health = world["health"]
+    run = health.create("active")
+    with health.connection() as db:
+        db.execute(
+            "INSERT INTO bm_runs(id,type,trigger,status,config) "
+            "VALUES('s1','search','scheduled','running','{}')"
+        )
+    tested: list[str] = []
+
+    def check(config, source, progress, factory):
+        tested.append(config["url"])
+        return dict(usable_for_news=True)
+
+    worker = HealthWorker(health, old_news, probe_reader=FreshProbe())
+    worker.recover()
+    claimed = worker.next_run()
+    with patch("buscador_midias.db.health_worker.run_test", check):
+        thread = threading.Thread(target=worker.execute_run, args=(claimed,))
+        thread.start()
+        time.sleep(1.5)
+        assert tested == [] and thread.is_alive()  # cedeu a vez: nada testado, rodada aberta
+        assert detail(health, run)["run"]["status"] == "running"
+        sql(health, "UPDATE bm_runs SET status='partial',finished_at=now() WHERE id='s1'")
+        thread.join(timeout=15)
+    assert not thread.is_alive() and len(tested) == 1
+    assert detail(health, run)["run"]["status"] == "completed"
