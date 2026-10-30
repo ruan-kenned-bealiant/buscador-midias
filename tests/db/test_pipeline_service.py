@@ -233,6 +233,24 @@ def test_a_non_retryable_block_fails_the_article_with_its_class(world):
     )
 
 
+def test_a_provider_refusal_fails_the_article_for_good_without_pausing_the_stage(world):
+    store, _, pipeline = world
+    key = run_one(
+        world,
+        error=RetryableError(
+            "Filtro de conteúdo do provedor; análise recusada", {}, retryable=False
+        ),
+    )
+    after = row(store, key)
+    assert (after["state"], after["reason"], after["reason_class"]) == (
+        "failed",
+        "content_filtered",
+        "permanent",
+    )
+    assert after["retryable"] is False
+    assert not pipeline.should_wait("dedup", 0, "primary")
+
+
 def test_a_provider_outage_pauses_the_stage_and_sends_the_work_to_recovery(world):
     store, _, pipeline = world
     key = run_one(world, error=ProviderUnavailableError("OpenRouter indisponível", {}))

@@ -18,7 +18,7 @@ from buscador_midias.db.settings import SettingsRepository
 from buscador_midias.db.store import WorkStore
 from buscador_midias.evidence.storage import LocalEvidenceStore
 from buscador_midias.ingestion.artifacts import Artifacts
-from buscador_midias.ingestion.engine import Engine
+from buscador_midias.ingestion.engine import Engine, RetryableError
 from buscador_midias.net.fetcher import FetchResult
 
 pytestmark = pytest.mark.skipif(
@@ -215,12 +215,20 @@ def refused() -> type:
     return Refused
 
 
-def test_a_provider_refusal_is_a_permanent_failure_not_a_provider_outage(schema_name, tmp_path):
+def test_a_provider_refusal_is_a_final_failure_not_a_provider_outage(schema_name, tmp_path):
+    from buscador_midias.ingestion.engine import ProviderUnavailableError
+
     world = build(schema_name, tmp_path, analyzer=refused())
-    article = run(world, "discovery", "dedup", "fetch", "context")
-    assert (article["state"], article["failed_stage"]) == ("failed", "context")
-    assert (article["reason"], article["reason_class"]) == ("content_filtered", "permanent")
-    assert article["retryable"] is False
+    for stage in ("discovery", "dedup", "fetch"):
+        run(world, stage)
+    store = world["store"]
+    [key] = [r["hash"] for r in rows(store, "SELECT hash FROM bm_articles WHERE stage='context'")]
+    [job] = store.claim_many("context", [key], "w1")
+    with pytest.raises(RetryableError) as failed:
+        world["engine"].execute(job)
+    assert not isinstance(failed.value, ProviderUnavailableError)
+    assert failed.value.retryable is False
+    assert "Filtro de conteúdo" in str(failed.value)
 
 
 def test_the_analysis_records_the_model_that_answered(schema_name, tmp_path):
@@ -252,7 +260,8 @@ def test_the_run_config_sets_the_alternate_model_of_the_chat(schema_name, tmp_pa
     monkeypatch.setenv("OPENROUTER_API_KEY", "x")
     world = build(schema_name, tmp_path, fallback_model="anthropic/claude-haiku-4.5")
     world["engine"].analyzer_factory = None
-    run(world, "discovery", "dedup", "fetch", "context")
+    with pytest.raises(RetryableError):
+        run(world, "discovery", "dedup", "fetch", "context")
     assert seen["fallback_model"] == "anthropic/claude-haiku-4.5"
 
 
@@ -275,5 +284,6 @@ def test_an_empty_alternate_model_turns_the_fallback_off(schema_name, tmp_path, 
     monkeypatch.setenv("OPENROUTER_API_KEY", "x")
     world = build(schema_name, tmp_path, fallback_model="")
     world["engine"].analyzer_factory = None
-    run(world, "discovery", "dedup", "fetch", "context")
+    with pytest.raises(RetryableError):
+        run(world, "discovery", "dedup", "fetch", "context")
     assert seen["fallback_model"] is None

@@ -39,7 +39,7 @@ Cada falha grava na própria notícia a etapa (`failed_stage`), o motivo (`reaso
 |---|---|---|
 | `transient` | tempo esgotado, 408/429/5xx, resposta da IA ausente | Repetida sozinha, depois que a rodada termina, até `failed_retry_limit` passadas. |
 | `blocked` | 401, 402, 403 | Um 403 já tentou os outros transportes (ver abaixo). Espera a sua decisão (ou o Bright Data). |
-| `permanent` | 404, 410, fora do domínio, ciclo de redirecionamento | Não repete. |
+| `permanent` | 404, 410, fora do domínio, ciclo de redirecionamento, recusa do filtro de conteúdo do provedor | Não repete. |
 | `bug` | "Falha interna" | Espera correção do código. |
 
 A tela **Pendências** do Buscador agrupa por etapa, motivo e tipo e reabre por grupo, por site ou
@@ -52,6 +52,22 @@ os 10 mais recentes: quantas foram reabertas, quantas ainda andam, quantas foram
 terminaram de outro jeito e quantas falharam (com os motivos). O resumo atualiza sozinho a cada 5 s.
 Se um pedido mais novo reabre a mesma notícia, ela passa para ele e o pedido antigo mostra quantas
 saíram. Reprocessar sem encontrar nada não cria pedido.
+
+## Filtro de conteúdo do provedor
+
+Notícias sobre crime sexual contra menores ou violência gráfica são recusadas por alguns modelos
+(`finish_reason=content_filter`, sem texto e sem tokens). A análise repete **uma vez** com o modelo
+alternativo (`fallback_model`, padrão `anthropic/claude-haiku-4.5`, vazio desliga), e o modelo que
+respondeu fica em `analysis.model` e em `ai_model` no corpus. O custo da etapa registra `fallbacks`.
+Se o alternativo também recusa, a notícia falha na etapa `context` com o motivo `content_filtered`
+(classe `permanent`): não é queda do provedor e não aciona o disjuntor. Muda-se o modelo na
+configuração da busca; depois, reabrir pela tela Pendências.
+
+## Seções que moram em outro domínio
+
+`ingestion/flow.py` (`EXTERNAL_SECTIONS`) lista seções que o feed de um site traz, mas que
+redirecionam para outro domínio (no scmp.com: `yp`, `spark`, `posties`, `young-post` e
+`goldthread`). Com `url_filter=enforce` elas nem entram na fila; com `shadow` só são marcadas.
 
 ## Acesso à página da notícia
 

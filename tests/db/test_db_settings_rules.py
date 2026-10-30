@@ -42,6 +42,8 @@ def test_defaults_are_complete_and_valid():
         {"blocked_content_categories": ["news"]},
         {"blocked_content_categories": ["sports", "sports"]},
         {"model": "modelo com espaço"},
+        {"fallback_model": "modelo com espaço"},
+        {"fallback_model": 5},
         {"max_attempts": 4},
         {"host_concurrency": 5},
         {"failed_retry_limit": 0},
@@ -61,8 +63,14 @@ def test_valid_patch_is_returned_unchanged():
         failed_retry_limit=3,
         host_concurrency_max=3,
         model="openai/gpt-4.1-mini",
+        fallback_model="anthropic/claude-haiku-4.5",
     )
     assert validate_search_patch(patch) == patch
+
+
+def test_the_alternate_model_can_be_turned_off_with_an_empty_value():
+    assert validate_search_patch(dict(fallback_model="")) == dict(fallback_model="")
+    assert SEARCH_DEFAULTS["fallback_model"] == "anthropic/claude-haiku-4.5"
 
 
 @pytest.mark.parametrize("scope", ["health_active", "health_recovery"])
